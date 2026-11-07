@@ -355,6 +355,11 @@ abstract class _ChatControllerBase extends ChangeNotifier
   StreamSubscription<({String approvalId, String requestId, bool reopened})>?
       _formDeferredSub;
 
+  /// H9-4 / H9-9：主机没接住 deferred 卡片答案，卡片保留。把主机给的
+  /// 文案直接提示出来，别让用户以为已经答成功了。
+  StreamSubscription<({String requestId, String code, String message})>?
+      _deferredCardErrorSub;
+
   // ---- Reply state ----
   Message? replyingToMessage;
 
@@ -743,6 +748,15 @@ abstract class _ChatControllerBase extends ChangeNotifier
         PeerAgentClientService.instance.formDeferredEvents.listen(
       _handleFormDeferred,
     );
+    // 主机保留卡片、答案没接住：把原因提示出来（卡片由 formDeferred 事件
+    // 退回可答态），不能让 UI 停留在「已提交」。
+    _deferredCardErrorSub =
+        PeerAgentClientService.instance.deferredCardErrors.listen((event) {
+      final message = event.message.trim().isEmpty
+          ? '卡片回答未被主机接住（${event.code}），请稍后重试'
+          : event.message;
+      _emit(ShowErrorSnackBarEvent(message));
+    });
     // 广播流只发一次：卡片在聊天页没打开时到达就丢了。这里把缓存里的补上。
     unawaited(_drainPendingOrphanCards());
   }
@@ -930,6 +944,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
     _orphanFormSub?.cancel();
     _interactionClosedSub?.cancel();
     _formDeferredSub?.cancel();
+    _deferredCardErrorSub?.cancel();
     if (_sessionRuntimeListener != null &&
         getIt.isRegistered<SessionRuntimeMirror>()) {
       getIt<SessionRuntimeMirror>()

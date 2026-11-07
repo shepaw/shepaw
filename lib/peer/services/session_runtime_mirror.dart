@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show ValueNotifier, visibleForTesting;
 
 /// 主机 `session.state` 快照在 App 侧的镜像。
 ///
@@ -78,6 +78,11 @@ class SessionState {
   /// 产生这份快照的主机实例 id。换 hub 后 revision 从 1 重新计数、墙钟也
   /// 可能回拨，只有身份能可靠区分两代 revision 空间。
   final String hubId;
+
+  /// 主机进程代次（每次重启换号）。`hub_id` / 配对 peer 在主机重启时不变，
+  /// 但 flow 的 per-key revision 会回到 1；epoch 把同一个身份下的两代
+  /// revision 空间分开，水位不能跨代比较（A9-1）。老主机没有这个字段时为空。
+  final String epoch;
   final SessionTerminal? lastTerminal;
   final List<QueuedItem> queue;
 
@@ -99,6 +104,7 @@ class SessionState {
     this.lastProgressAtMs = 0,
     this.atMs = 0,
     this.hubId = '',
+    this.epoch = '',
     this.lastTerminal,
     this.queue = const <QueuedItem>[],
     this.isFlow = false,
@@ -123,6 +129,7 @@ class SessionState {
       lastProgressAtMs: (json['last_progress_at_ms'] as num?)?.toInt() ?? 0,
       atMs: (json['at'] as num?)?.toInt() ?? 0,
       hubId: (json['hub_id'] as String?) ?? '',
+      epoch: _parseEpoch(json['epoch']),
       lastTerminal:
           rawTerminal is Map ? SessionTerminal.fromJson(rawTerminal) : null,
       queue: rawQueue is List
@@ -144,6 +151,7 @@ class SessionState {
         peerId: peerId,
         atMs: atMs,
         hubId: hubId,
+        epoch: epoch,
       );
 
   /// 气泡的「正在输出」态。只有主机说 idle 才会变成 null。
@@ -169,6 +177,20 @@ class SessionState {
     if (queuedPosition(requestId) != null) return 'queued';
     return 'unknown';
   }
+}
+
+/// 主机给 epoch 的形态不固定（数字 / 字符串都可能），统一成字符串比较。
+String _parseEpoch(Object? raw) {
+  if (raw == null) return '';
+  final text = raw.toString().trim();
+  return text.isEmpty ? '' : text;
+}
+
+/// 两边都是数字时才能判「旧进程」；随机 id / 启动串一律不猜大小。
+bool _isOlderEpoch(String incoming, String current) {
+  final a = int.tryParse(incoming);
+  final b = int.tryParse(current);
+  return a != null && b != null && a < b;
 }
 
 // 流帧的归属由 PeerAgentClientService 的 _pending[request_id] 判定，不在
@@ -205,8 +227,19 @@ class SessionRuntimeMirror {
 
   final Map<String, ValueNotifier<SessionState>> _notifiers = {};
 
-  /// 重连保留的 running flow key → 到期计时器。
-  final Map<String, Timer> _flowRetentionTimers = {};
+  /// running flow key → 最后一次真实活动的墙钟（ms）。
+  ///
+  /// 以前每片 chunk / metadata 都 `_armFlowRetention` 重建一个 Timer，一个
+  /// 长回合几百片就是几百个 Timer 分配。现在只记时间戳，由**一个**周期
+  /// Timer 统一检查（A9-10）。
+  final Map<String, int> _flowLastActivity = {};
+
+  /// 所有 running flow key 共用的检查 Timer；没有 running 条目时不装。
+  Timer? _flowSweepTimer;
+
+  /// Test seam：实际分配过几个 retention Timer。大量 chunk 不该让它增长。
+  @visibleForTesting
+  int debugRetentionTimerAllocations = 0;
 
   /// 任何会话状态跃迁都会通知。订阅方用 [lastChangedKey] + [peek] 判断
   /// 这次变化是不是自己那段会话，不必为每个会话单独管理订阅生命周期。
@@ -226,13 +259,20 @@ class SessionRuntimeMirror {
   /// 裸帧根本不带 `hub_id`，换主机后只有连接身份能挡住旧主机的迟到回放。
   String? _hubPeerId;
 
-  /// 每个 flow key 的权威状态水位：该身份下见过的最高 revision、最近是否收尾。
+  /// 当前主机进程代次（A9-1）。换代后 per-key revision 从 1 重来，旧水位
+  /// 与旧回合 id 一律失效。空表示主机还没报过 epoch（老版本主机）。
+  String? _epoch;
+
+  /// 每个 flow key 的权威状态水位：该身份下见过的最高 revision、最近是否收尾、
+  /// 以及收尾的是哪个回合。
   ///
   /// flow 帧的 revision 是 per-key 计数器，不能拿它和别的 key / hub 全局空间
   /// 做严格比较；但同一个 key 上「先 running(rev2)、再 idle(rev3)、又来迟到
   /// running(rev2)」必须拒绝，否则停止按钮会对已经死掉的回合发取消（A8-2）。
-  /// 换 hub（revision 从 1 重来）时整张表清空，身份不同的帧互不挡路。
-  final Map<String, ({int revision, bool terminal, String identity})>
+  /// 换 hub / 换 epoch（revision 从 1 重来）时整张表清空，身份不同的帧互不挡路；
+  /// 同一身份下新 turnId 的 running-after-idle 也不算旧回合的重放（A9-1）。
+  final Map<String,
+          ({int revision, bool terminal, String identity, String turnId})>
       _flowWatermarks = {};
 
   /// 换 hub 前还在 running 的 flow turn id。旧主机重放的 running 帧既没有
@@ -357,6 +397,13 @@ class SessionRuntimeMirror {
       if (fromPeer.isNotEmpty && _hubPeerId != null && fromPeer != _hubPeerId) {
         return false;
       }
+      // A9-1：epoch 是单调计数时，旧进程的迟到帧一律丢；字符串形态（无法
+      // 排序）就交给下面的水位身份比较，只保证新进程不被旧水位挡住。
+      if (incoming.epoch.isNotEmpty &&
+          _epoch != null &&
+          _isOlderEpoch(incoming.epoch, _epoch!)) {
+        return false;
+      }
       if (_isStaleFlowReplay(incoming, fromPeer)) return false;
       if (_isStaleRunningFlowFrame(incoming, fromPeer)) return false;
     }
@@ -386,6 +433,12 @@ class SessionRuntimeMirror {
     if (!incoming.isFlow || !incoming.isRunning) return false;
     if (incoming.hubId.isNotEmpty) return false;
     if (fromPeer.isNotEmpty && _hubPeerId != null) return false;
+    // A9-1：主机换了进程代次，旧回合的 retired id 不能挡住新进程的新帧。
+    if (incoming.epoch.isNotEmpty &&
+        _epoch != null &&
+        incoming.epoch != _epoch) {
+      return false;
+    }
     final turnId = incoming.turnId;
     if (turnId.isNotEmpty && _retiredFlowTurns.contains(turnId)) return true;
     final current = _notifiers[incoming.sessionKey]?.value;
@@ -401,16 +454,21 @@ class SessionRuntimeMirror {
     return false;
   }
 
-  /// flow 帧的身份：优先帧里的 hub_id，其次连接对端，都没有就是「无身份」。
-  /// 只有同一身份下的水位才有可比性（换 hub / 换 peer 后 revision 从 1 重来）。
+  /// flow 帧的身份：优先帧里的 hub_id，其次连接对端，都没有就是「无身份」；
+  /// 再带上主机进程代次 epoch。只有同一身份 + 同一代次下的水位才有可比性
+  /// （换 hub / 换 peer / 主机重启后 revision 都从 1 重来，A9-1）。
   String _flowFrameIdentity(SessionState state, String fromPeer) {
-    if (state.hubId.isNotEmpty) return 'hub:${state.hubId}';
-    if (fromPeer.isNotEmpty) return 'peer:$fromPeer';
-    return '';
+    final base = state.hubId.isNotEmpty
+        ? 'hub:${state.hubId}'
+        : (fromPeer.isNotEmpty ? 'peer:$fromPeer' : '');
+    if (state.epoch.isEmpty) return base;
+    return '$base|epoch:${state.epoch}';
   }
 
   /// 记下一份已接受的 flow 快照作为该 key 的权威水位。
   /// 只对同身份取最大 revision；idle / 终态把水位标成「已收尾」。
+  /// 终态帧常常不带 turn_id，要沿用上一个 running 帧的 turnId，否则「旧回合
+  /// 的迟到 running」会被误认成新回合（A8-2 / A9-1）。
   void _rememberFlowFrame(SessionState accepted, String fromPeer) {
     final key = accepted.sessionKey;
     final identity = _flowFrameIdentity(accepted, fromPeer);
@@ -419,56 +477,108 @@ class SessionRuntimeMirror {
     final revision = sameIdentity && previous.revision > accepted.revision
         ? previous.revision
         : accepted.revision;
+    final turnId = accepted.turnId.isNotEmpty
+        ? accepted.turnId
+        : (sameIdentity ? previous.turnId : '');
     _flowWatermarks[key] = (
       revision: revision,
       terminal: !accepted.isRunning,
       identity: identity,
+      turnId: turnId,
     );
   }
 
   /// A8-2：flow 帧跳过 hub 全局 revision / 严格比较，但同一 key、同一身份下，
   /// 比权威水位更旧的 running 帧不能被接受 —— 主机临时重试先发 running 再发
   /// idle，迟到的 running 会把已收尾的回合复活成「正在输出」。
-  /// 更高 revision 的真实新回合、以及身份不同的帧（换 hub / 老版本无身份帧）
-  /// 一律照常落地。
+  /// A9-1：身份里带 epoch，主机重启后 rev1 属于全新的一代，不能被旧 rev10
+  /// 的水位拒绝；老主机没有 epoch 时，收尾之后**换了 turnId** 的 running 帧
+  /// 是另一个回合，同样不是同回合的陈旧重放。未收尾时的低 revision 重放仍拒。
   bool _isStaleRunningFlowFrame(SessionState incoming, String fromPeer) {
     if (!incoming.isFlow || !incoming.isRunning) return false;
     final mark = _flowWatermarks[incoming.sessionKey];
     if (mark == null) return false;
-    if (incoming.revision > mark.revision) return false;
     if (_flowFrameIdentity(incoming, fromPeer) != mark.identity) return false;
+    // 收尾之后来了新回合：只有同 turnId 的低 revision running 才是重放。
+    if (mark.terminal &&
+        incoming.turnId.isNotEmpty &&
+        mark.turnId.isNotEmpty &&
+        incoming.turnId != mark.turnId) {
+      return false;
+    }
+    if (incoming.revision > mark.revision) return false;
     // 终态之后（含同 revision）的 running 都只可能是重放；未收尾时只挡更旧的。
     return mark.terminal || incoming.revision < mark.revision;
   }
 
-  /// 该 flow 会话还有真实活动（流式 chunk / metadata）：把保留计时**刷新**回完整的
-  /// [flowRetention]，不是取消。主机之后沉默就靠这个计时器自动回 idle。
-  void noteFlowActivity(String sessionKey) {
-    final notifier = _notifiers[sessionKey];
-    if (notifier != null && notifier.value.isRunning) {
-      _armFlowRetention(sessionKey);
-      return;
+  /// 该 flow 会话还有真实活动（流式 chunk / metadata）：把保留窗口**刷新**回
+  /// 完整的 [flowRetention]，不是取消。
+  ///
+  /// [notifierKey] 是调用方已经算好的权威 key（`agent:<id>:flow_...`）。带它
+  /// 进来就不必每片 chunk 全表扫一遍 notifier 后缀（A9-10）。
+  void noteFlowActivity(String sessionKey, {String? notifierKey}) {
+    var matched = false;
+    for (final key in <String>{
+      if (notifierKey != null && notifierKey.isNotEmpty) notifierKey,
+      if (sessionKey.isNotEmpty) sessionKey,
+    }) {
+      final notifier = _notifiers[key];
+      if (notifier != null && notifier.value.isRunning) {
+        _armFlowRetention(key);
+        matched = true;
+      }
     }
+    if (matched) return;
     // 裸 `flow_<tag>_<node>` 帧（metadata 常常不带 agent 前缀）也要能刷新
     // `agent:<id>:flow_<tag>_<node>` 那份权威状态（A8-5）。命中不唯一时不猜。
-    final matched = notifierForChannel(sessionKey);
-    if (matched == null || !matched.value.isRunning) return;
-    _armFlowRetention(matched.value.sessionKey);
+    if (sessionKey.isEmpty) return;
+    final matchedBySuffix = notifierForChannel(sessionKey);
+    if (matchedBySuffix == null || !matchedBySuffix.value.isRunning) return;
+    _armFlowRetention(matchedBySuffix.value.sessionKey);
+  }
+
+  /// 真实活动 / 新 running 帧都走这里重置窗口；只有权威的 idle/终态帧才走
+  /// [_cancelFlowRetention] 真正取消。这里只写时间戳，不分配 Timer。
+  void _armFlowRetention(String sessionKey) {
+    _flowLastActivity[sessionKey] = DateTime.now().millisecondsSinceEpoch;
+    _ensureFlowSweep();
   }
 
   void _cancelFlowRetention(String sessionKey) {
-    _flowRetentionTimers.remove(sessionKey)?.cancel();
+    _flowLastActivity.remove(sessionKey);
+    if (_flowLastActivity.isEmpty) _cancelFlowSweep();
   }
 
-  /// 装（或重新装）一个保留计时器。activity / 新 running 帧都走这里重置窗口；
-  /// 只有权威的 idle/终态帧才走 [_cancelFlowRetention] 真正取消。
-  void _armFlowRetention(String sessionKey) {
-    _cancelFlowRetention(sessionKey);
-    _flowRetentionTimers[sessionKey] = Timer(flowRetention, () {
-      _flowRetentionTimers.remove(sessionKey);
+  void _cancelFlowSweep() {
+    _flowSweepTimer?.cancel();
+    _flowSweepTimer = null;
+  }
+
+  /// 所有 running flow 条目共用一个周期 Timer：chunk 再密也只是多写一次
+  /// 时间戳，不再反复分配 Timer（A9-10）。
+  void _ensureFlowSweep() {
+    if (_flowSweepTimer != null) return;
+    final tickMs = flowRetention.inMilliseconds ~/ 4;
+    final interval = Duration(
+      milliseconds: tickMs < 5 ? 5 : (tickMs > 1000 ? 1000 : tickMs),
+    );
+    debugRetentionTimerAllocations++;
+    _flowSweepTimer = Timer.periodic(interval, (_) => _onFlowSweep());
+  }
+
+  void _onFlowSweep() {
+    if (_flowLastActivity.isEmpty) {
+      _cancelFlowSweep();
+      return;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final retentionMs = flowRetention.inMilliseconds;
+    for (final entry in _flowLastActivity.entries.toList()) {
+      if (now - entry.value < retentionMs) continue;
+      final sessionKey = entry.key;
+      _flowLastActivity.remove(sessionKey);
       final notifier = _notifiers[sessionKey];
-      if (notifier == null) return;
-      if (!notifier.value.isRunning) return;
+      if (notifier == null || !notifier.value.isRunning) continue;
       // 到期仍没有任何 flow 活动：按 idle 收尾，回落到 revision 基线重来。
       notifier.value = notifier.value.asIdle();
       // 这是 App 自己的兜底收尾，不是主机宣告的权威终态：清掉水位，别拿它
@@ -476,12 +586,13 @@ class SessionRuntimeMirror {
       _flowWatermarks.remove(sessionKey);
       lastChangedKey = sessionKey;
       changes.value++;
-    });
+    }
+    if (_flowLastActivity.isEmpty) _cancelFlowSweep();
   }
 
   /// 重连保留：先留着 running（停止按钮要靠 turnId），但设一个上限。
   void _retainRunningFlow(String sessionKey) {
-    if (_flowRetentionTimers.containsKey(sessionKey)) return;
+    if (_flowLastActivity.containsKey(sessionKey)) return;
     _armFlowRetention(sessionKey);
   }
 
@@ -510,16 +621,20 @@ class SessionRuntimeMirror {
 
   /// 启动 / 重连全量对账：快照里的会话强制落地（新 hub 的 revision 可能比
   /// 本地低），没提到的会话重置为空。[hubId] 是响应顶层的主机身份，空快照
-  /// 时也要靠它识别换 hub；[sourcePeerId] 是回执来自哪个连接，裸
-  /// `session.state` 帧不带 hub_id，之后的身份校验要靠它。
+  /// 时也要靠它识别换 hub；[epoch] 是主机进程代次，重启后它变化但 hub_id
+  /// 不变，必须据此清掉 per-key 水位（A9-1）；[sourcePeerId] 是回执来自哪个
+  /// 连接，裸 `session.state` 帧不带 hub_id，之后的身份校验要靠它。
   void reconcileTo(
     Iterable<dynamic> snapshots, {
     String? hubId,
     String? sourcePeerId,
+    String? epoch,
   }) {
     final seen = <String>{};
     final parsed = <Map<dynamic, dynamic>>[];
     String? effectiveHub = (hubId == null || hubId.isEmpty) ? null : hubId;
+    String? effectiveEpoch =
+        _parseEpoch(epoch).isEmpty ? null : _parseEpoch(epoch);
     for (final snapshot in snapshots) {
       if (snapshot is! Map) continue;
       final state = SessionState.fromSnapshot(snapshot);
@@ -527,18 +642,42 @@ class SessionRuntimeMirror {
       if (effectiveHub == null && state.hubId.isNotEmpty) {
         effectiveHub = state.hubId;
       }
+      if (effectiveEpoch == null && state.epoch.isNotEmpty) {
+        effectiveEpoch = state.epoch;
+      }
       seen.add(state.sessionKey);
       parsed.add(snapshot);
+    }
+    // A9-1：主机进程重启，hub_id / peer 都没变，但 per-key revision 回到 1。
+    // 换代时旧水位、旧回合黑名单、保留窗口全部失效，否则新回合的低 revision
+    // running 帧会被旧 rev10 的终态水位永久拒掉。
+    if (effectiveEpoch != null &&
+        effectiveEpoch.isNotEmpty &&
+        effectiveEpoch != _epoch) {
+      _flowWatermarks.clear();
+      _retiredFlowTurns.clear();
+      _flowLastActivity.clear();
+      _cancelFlowSweep();
+      // 旧进程还在跑的 flow 回合已经死了：把 notifier 复位，否则停止按钮会
+      // 一直指向一个永远不会有 idle 帧的 turnId。快照里提到的 key 随后会被
+      // force 落地，不在这里丢新状态。
+      for (final entry in _notifiers.entries) {
+        if (!_isFlowSessionKey(entry.key)) continue;
+        final before = entry.value.value;
+        if (!before.isRunning && before.queue.isEmpty) continue;
+        entry.value.value = SessionState.empty(entry.key);
+        lastChangedKey = entry.key;
+        changes.value++;
+      }
+      _epoch = effectiveEpoch;
     }
     if (effectiveHub != null &&
         effectiveHub.isNotEmpty &&
         effectiveHub != _hubId) {
       // 换 hub：清空本地 revision 空间，让新 hub 的任何 revision 都能落地。
       // 之后旧 hub 的历史回放按 hub_id 不匹配被 apply 拒绝。
-      for (final timer in _flowRetentionTimers.values) {
-        timer.cancel();
-      }
-      _flowRetentionTimers.clear();
+      _flowLastActivity.clear();
+      _cancelFlowSweep();
       // 新 hub 的 per-key revision 从 1 重来，旧水位一律失效。
       _flowWatermarks.clear();
       for (final entry in _notifiers.entries) {
@@ -586,12 +725,11 @@ class SessionRuntimeMirror {
   }
 
   void dispose() {
-    for (final timer in _flowRetentionTimers.values) {
-      timer.cancel();
-    }
-    _flowRetentionTimers.clear();
+    _flowLastActivity.clear();
+    _cancelFlowSweep();
     _flowWatermarks.clear();
     _retiredFlowTurns.clear();
+    _epoch = null;
     for (final notifier in _notifiers.values) {
       notifier.dispose();
     }

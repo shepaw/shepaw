@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/peer/services/flow_session_open.dart';
+import 'package:shepaw/peer/services/peer_agent_client_service.dart';
+import 'package:shepaw/service_locator.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/she_service.dart';
 
@@ -56,6 +58,62 @@ void main() {
       await db.getChannelMemberIds(channelId),
       containsAll(<String>['user', 'agent-7']),
     );
+  });
+
+  test('A9-8: 卡片先到的频道标题干净，后续 session_title 能改名', () async {
+    await StorageTestHarness.init();
+    if (!getIt.isRegistered<LocalDatabaseService>()) {
+      getIt.registerSingleton<LocalDatabaseService>(LocalDatabaseService());
+    }
+    final db = LocalDatabaseService();
+    await db.database;
+    const sessionId = 'flow_r9_a98_impl';
+    const channelId = 'psess_$sessionId';
+    const implicit = '[implicit]\n'
+        'This message mentions pouch:// URI(s). Read it with pouch_read.\n'
+        '[/implicit]';
+    await db.deleteChannel(channelId);
+
+    // 卡片问题里混着 [implicit] 提示块：不能直接拿整段当频道名。
+    await ensureFlowSessionShell(
+      channelId: channelId,
+      agentId: 'agent-r9',
+      title: '$implicit\n确认部署？',
+      db: db,
+    );
+    var channel = await db.getChannelById(channelId);
+    expect(channel, isNotNull);
+    expect(channel!.name, '确认部署？');
+
+    // 之后带 session_title 的 message.created 走 prepareLocalTargetForHubMessage
+    // 建壳：两条路径共用一份逻辑，必须把错名字改过来。
+    final target =
+        await PeerAgentClientService.instance.prepareLocalTargetForHubMessage(
+      peerId: 'p1',
+      remoteAgentId: 'agent-r9',
+      sessionId: sessionId,
+      rawChannelId: channelId,
+      senderType: 'agent',
+      fallbackSenderId: 'agent-r9',
+      fallbackSenderName: '',
+      sessionTitle: '主机给的节点标题',
+    );
+    expect(target.channelId, channelId);
+    channel = await db.getChannelById(channelId);
+    expect(channel!.name, '主机给的节点标题',
+        reason: '后续 message.created 的 session_title 要更新频道名');
+
+    // 整段都是提示块时回落默认名，而不是把标记写进会话列表。
+    const secondId = 'flow_r9_a98_impl2';
+    const secondChannel = 'psess_$secondId';
+    await db.deleteChannel(secondChannel);
+    await ensureFlowSessionShell(
+      channelId: secondChannel,
+      agentId: 'agent-r9',
+      title: implicit,
+      db: db,
+    );
+    expect((await db.getChannelById(secondChannel))!.name, 'Session');
   });
 
   test('A2-9: 运行会话用 SheService.sheId，而不是第四份字面量', () async {

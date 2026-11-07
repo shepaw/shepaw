@@ -140,7 +140,11 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
         _selectedName = null;
       }
     });
-    if (hostChanged) unawaited(_ensureAgents(host));
+    if (hostChanged || _agentsHost != host || _agents.isEmpty) {
+      // A9-7：开机时 peer agent 还没同步，缓存会是 `[]` + 正确的 host key。
+      // 空缓存不算「已缓存」，刷新时必须再拉一次。
+      unawaited(_ensureAgents(host));
+    }
   }
 
   bool _wideFor(BoxConstraints constraints) =>
@@ -262,6 +266,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   /// 拉取并缓存某台主机的 agent 候选。换主机时调用方会先把缓存清空。
   Future<void> _ensureAgents(String peerId) async {
     if (peerId.isEmpty) return;
+    // A9-7：空列表是「名单还没同步过来」，不是缓存命中。只有真正拿到过
+    // 非空候选才按 host key 跳过。
+    if (_agentsHost == peerId && _agents.isNotEmpty) return;
     final all = widget.initialAgents ??
         await LocalDatabaseService().getAllRemoteAgents();
     // 拉取期间主机又切了：这批结果属于旧主机，丢掉。
@@ -281,8 +288,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   /// 已经转过，这里必须用同一套逻辑，否则开跑时主机会收到一个它不认识的 id。
   Future<String?> _pickAgent() async {
     final peerId = _host.isNotEmpty ? _host : widget.peerId;
-    // 主机可能刚切过（_load 是异步的），候选必须和当前主机一致。
-    if (_agentsHost != peerId) {
+    // 主机可能刚切过（_load 是异步的），候选必须和当前主机一致；空缓存
+    // 也要重拉（A9-7）。
+    if (_agentsHost != peerId || _agents.isEmpty) {
       await _ensureAgents(peerId);
       if (!mounted) return null;
     }

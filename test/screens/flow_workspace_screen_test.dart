@@ -498,6 +498,53 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  // ── A9-7：空缓存不算「已缓存」 ───────────────────────────────────────
+
+  testWidgets('A9-7 首次空名单、agent 后同步出来：刷新后选择器能看到', (tester) async {
+    tester.view.physicalSize = const Size(2400, 1800);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+
+    final harness = _Harness()
+      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps: []\n';
+    addTearDown(harness.close);
+    // 开机那一刻 peer agent 还没同步：缓存是一份空列表（非 null）。
+    final agents = <RemoteAgent>[];
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: FlowWorkspaceScreen(
+        peerId: 'p1',
+        client: harness.client,
+        embedded: true,
+        initialAgents: agents,
+      ),
+    ));
+    await _settle(tester);
+
+    // 名单同步到了，但主机没换；刷新要重新拉一次候选。
+    agents.add(_peerAgent('agent-late', '后同步 Agent', 'p1'));
+    await tester.tap(find.byIcon(Icons.refresh));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    Future<void> settleLong() async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await settleLong();
+    await tester.tap(find.byKey(const ValueKey('start-role-coder')));
+    await settleLong();
+    expect(find.text('后同步 Agent'), findsOneWidget,
+        reason: '空缓存不能被当成命中，刷新后选择器必须看到新同步的 agent');
+    await tester.pumpWidget(const SizedBox());
+  });
+
   // ── A6-1：切主机后详情必须换 key（连同 controller 一起重建） ─────────────
 
   testWidgets('A6-1 同名流程切主机后详情的 ValueKey 带上新 peerId', (tester) async {

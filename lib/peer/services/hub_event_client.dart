@@ -99,14 +99,24 @@ class HubEventClient {
   @visibleForTesting
   Future<void> Function()? debugBeforeFlowChunkResolve;
 
+  /// Test seam：收尾计时器**实际分配**过几个（A9-10）。
+  /// 每片 chunk 只刷新 deadline、不重建 Timer，这个数不该随 chunk 数增长。
+  @visibleForTesting
+  int debugFinalizeTimerAllocations = 0;
+
+  /// Test seam：`_insertMessage` 按频道扫过几次占位行（A9-9）。
+  /// 普通 DM 长历史重放应该是 0。
+  @visibleForTesting
+  int debugLivePlaceholderScans = 0;
+
   /// Test seam：收尾计时器被装回过几次（A7-3：每片 chunk 都必须刷新并重新
-  /// 装回，不能只取消）。
+  /// 装回，不能只取消）。A9-10 之后「装回」= 刷新 deadline，不再分配 Timer。
   @visibleForTesting
   int debugFinalizeTimerArms = 0;
 
   @visibleForTesting
   bool debugHasFinalizeTimer(String turnId) =>
-      _idleFinalizeTimers.containsKey(turnId);
+      _finalizeDeadlines.containsKey(turnId);
 
   @visibleForTesting
   Duration debugFinalizeDelayFor(String turnId) =>
@@ -117,7 +127,8 @@ class HubEventClient {
   /// Test seam：不等墙钟，立刻跑一次该回合的收尾计时器回调（A7-3）。
   @visibleForTesting
   void debugFireFinalizeTimer(String turnId) {
-    _idleFinalizeTimers.remove(turnId)?.cancel();
+    _finalizeDeadlines.remove(turnId);
+    _ensureFinalizeTimer();
     unawaited(_finalizeIdleTurn(turnId));
   }
 
@@ -138,9 +149,12 @@ class HubEventClient {
   /// 回来先比对代次，否则会把已结束的回合重新登记回去，留下永不消失的流式气泡。
   final _liveTurnTokens = <String, Object>{};
 
-  /// 每个回合的收尾计时器：第一片 chunk 起用兜底窗口，idle 到达改短，之后
-  /// 每片 chunk 都刷新（重新装回），不是取消。
-  final _idleFinalizeTimers = <String, Timer>{};
+  /// 每回合的收尾截止时刻（ms）。第一片 chunk 起用兜底窗口，idle 到达改短，
+  /// 之后每片 chunk 都把 deadline 顺延。**一个** Timer 盯住最早的 deadline，
+  /// 回调再按剩余回合续期；chunk 再密也不重建 Timer（A9-10）。
+  final _finalizeDeadlines = <String, int>{};
+  Timer? _finalizeTimer;
+  int? _finalizeWakeAtMs;
 
   /// 已经收到过 idle 的回合：这些回合的收尾窗口用较短的
   /// [flowIdleFinalizeDelay]，其余用 [flowFallbackFinalizeDelay]。
@@ -173,6 +187,22 @@ class HubEventClient {
   /// 已落过流式占位行的 turn（裸流程帧专用，避免每片 chunk 都写一次库）。
   final _flowPlaceholders = <String>{};
 
+  /// 本机登记过 live/finalized 占位行的频道（A9-9）。普通 DM 频道从不进这里，
+  /// 重放几千条历史时就不必为每条 agent 消息全表扫 `hub-live-%`。
+  final _channelsWithLivePlaceholders = <String>{};
+
+  /// 启动时（或重登后）从库里重建 retain 集合，整个 client 生命周期只做一次。
+  Future<void>? _placeholderHydration;
+
+  /// turn → 最近一次见到的 attempt / generation。主机瞬态重试会重放
+  /// `begin_turn` 且 turn_id 不变，靠它认出新的一代（A9-5）。
+  final _liveTurnGenerations = <String, String>{};
+  static const _liveTurnGenerationCap = 512;
+
+  /// 刚被重新激活、还带旧 `finalized` 占位行的 turn（A9-5）。
+  /// 下一次建占位时把那行改回 streaming，别让新答案挂上「已收尾」标记。
+  final _reactivatedTurns = <String>{};
+
   /// 已经收尾（idle 超时 / 最终消息 / turn.finished）的回合。
   ///
   /// 主机可能发完 idle / 最终消息后还有迟到的 chunk。回合此时已从
@@ -193,10 +223,143 @@ class HubEventClient {
     }
   }
 
-  /// 本回合还有真实活动（chunk / metadata）：取消 mirror 里重连保留条目上的
-  /// idle 收尾计时。主机 `session.state` 的节点 key 是 `agent:<id>:flow_...`，
-  /// 裸控制帧却常常只有 channel_id（或裸 `flow_...` session_key），两种 key
-  /// 都要刷到（A8-5）；mirror 自己也会把裸 key 映射到 agent 前缀的 notifier。
+  /// 一次启动时把库里还留着的占位行重建进内存（A9-4）：`dispose` / 重登
+  /// 之后 `_finalizedRetainedTurns` 是空的，但 DB 行上的 `finalized` 标记还在。
+  /// 只查一次，不做成每条消息一次全表扫。
+  Future<void> _ensurePlaceholderHydrated() {
+    final running = _placeholderHydration;
+    if (running != null) return running;
+    final future = _hydratePlaceholderState();
+    _placeholderHydration = future;
+    return future;
+  }
+
+  Future<void> _hydratePlaceholderState() async {
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    try {
+      final rows =
+          await getIt<LocalDatabaseService>().listLiveTurnPlaceholderRows();
+      for (final row in rows) {
+        final id = row['id'] as String? ?? '';
+        if (!id.startsWith(liveTurnPlaceholderPrefix)) continue;
+        final channelId = row['channel_id'] as String? ?? '';
+        if (channelId.isNotEmpty) {
+          _channelsWithLivePlaceholders.add(channelId);
+        }
+        if (_placeholderIsFinalized(row['metadata'])) {
+          _rememberFinalizedRetainedTurn(
+            id.substring(liveTurnPlaceholderPrefix.length),
+          );
+        }
+      }
+    } catch (_) {
+      // 库还没就绪不该挡住事件处理；删除路径还会逐行查 finalized 标记兜底。
+    }
+  }
+
+  void _markPlaceholderChannel(String channelId) {
+    if (channelId.isNotEmpty) _channelsWithLivePlaceholders.add(channelId);
+  }
+
+  /// 任何删占位之前都查一次 DB 的 `finalized` 标记（A9-4）：内存集合可能因
+  /// 重登 / dispose 丢过，DB 才是持久的保护依据。
+  Future<bool> _isRetainedPlaceholder(String turnId) async {
+    if (turnId.isEmpty) return false;
+    if (_finalizedRetainedTurns.contains(turnId)) return true;
+    if (!getIt.isRegistered<LocalDatabaseService>()) return false;
+    final row = await getIt<LocalDatabaseService>()
+        .getMessageById(liveTurnPlaceholderId(turnId));
+    if (row == null) return false;
+    final channelId = row['channel_id'] as String? ?? '';
+    _markPlaceholderChannel(channelId);
+    if (!_placeholderIsFinalized(row['metadata'])) return false;
+    _rememberFinalizedRetainedTurn(turnId);
+    return true;
+  }
+
+  /// 主机瞬态重试复用 turn_id：新的 `begin_turn` / attempt / generation，或
+  /// `turn.started` / running `session.state` 帧，都要把这个回合从 settled 里
+  /// 重新激活，否则重试的 chunk 会被整批丢掉（A9-5）。
+  void _reactivateSettledTurn(String turnId) {
+    if (!_settledTurns.remove(turnId)) return;
+    _finalizedRetainedTurns.remove(turnId);
+    _idleSeenTurns.remove(turnId);
+    _finalizeDeadlines.remove(turnId);
+    _ensureFinalizeTimer();
+    _flowPlaceholders.remove(turnId);
+    _suppressRebuildTurns.remove(turnId);
+    _liveBuffers.remove(turnId);
+    _liveDirty.remove(turnId);
+    _liveTurnTokens.remove(turnId);
+    _attached.remove(turnId);
+    _liveChannels.remove(turnId);
+    _placeholderSenders.remove(turnId);
+    _attachRequests.removeWhere((_, id) => id == turnId);
+    _forgetFlowTargets(turnId);
+    _reactivatedTurns.remove(turnId);
+    _reactivatedTurns.add(turnId);
+    while (_reactivatedTurns.length > _settledTurnCap) {
+      _reactivatedTurns.remove(_reactivatedTurns.first);
+    }
+  }
+
+  /// 带新 attempt/generation 的 chunk/metadata 自己就能证明这是重试的一代。
+  /// 帧里没有 attempt 时靠 [_reactivateSettledTurn] 的调用方（turn.started /
+  /// running 帧）激活。
+  bool _reactivateOnNewAttempt(String turnId, Map<String, dynamic> data) {
+    final attempt =
+        (data['attempt'] ?? data['generation'] ?? '').toString().trim();
+    final begin = data['type'] == 'begin_turn' ||
+        data['kind'] == 'begin_turn' ||
+        data['event'] == 'begin_turn';
+    if (_isSettledFlowTurn(turnId) &&
+        (begin ||
+            (attempt.isNotEmpty && attempt != _liveTurnGenerations[turnId]))) {
+      _reactivateSettledTurn(turnId);
+    }
+    if (attempt.isEmpty) return false;
+    _liveTurnGenerations.remove(turnId);
+    _liveTurnGenerations[turnId] = attempt;
+    while (_liveTurnGenerations.length > _liveTurnGenerationCap) {
+      _liveTurnGenerations.remove(_liveTurnGenerations.keys.first);
+    }
+    return true;
+  }
+
+  /// flow 节点会话的频道（`psess_flow_...`）。普通 DM / 群频道只有在确实
+  /// 登记过占位时才需要扫库（A9-9）。
+  static bool _isFlowChannel(String channelId) {
+    final bare = remoteSessionIdFromChannelId(channelId) ?? channelId;
+    return bare.startsWith('flow_') || channelId.contains(':flow_');
+  }
+
+  /// 这条消息属于哪个回合。主机并不总带 turn_id；带得出来就只处理那一回合
+  /// 的占位，带不出来则由调用方走「只动当前 live、不碰别的 retained 行」的
+  /// 保守路径（A9-2）。
+  static String? _messageTurnId(Map<String, dynamic> data) {
+    String? value(Object? raw) {
+      final text = raw?.toString().trim() ?? '';
+      return text.isEmpty ? null : text;
+    }
+
+    final direct = value(data['turn_id']);
+    if (direct != null) return direct;
+    final meta = data['metadata'];
+    if (meta is Map) {
+      final fromMeta = value(meta['turn_id']) ?? value(meta['request_id']);
+      if (fromMeta != null) return fromMeta;
+      final flow = meta['flow'];
+      if (flow is Map) {
+        final fromFlow = value(flow['turn_id']) ?? value(flow['request_id']);
+        if (fromFlow != null) return fromFlow;
+      }
+    }
+    return value(data['request_id']);
+  }
+
+  /// 本回合还有真实活动（chunk / metadata）：刷新 mirror 里重连保留条目的
+  /// 活动时间戳。以前这里把 3 个候选 key 逐个丢给 mirror，每个 key 一次后缀
+  /// 全表扫 + 一次 Timer 重建（A9-10）；现在直接给出已解析好的权威 key。
   void _noteFlowActivity(Map<String, dynamic> data, String rawChannelId) {
     if (!getIt.isRegistered<SessionRuntimeMirror>()) return;
     String text(String key) => data[key]?.toString().trim() ?? '';
@@ -208,16 +371,16 @@ class HubEventClient {
             : explicitKey)
         : (remoteSessionIdFromChannelId(channel) ?? channel);
     final agentId = text('agent_id');
-    final keys = <String>{
-      if (explicitKey.isNotEmpty) explicitKey,
-      if (bare.isNotEmpty) bare,
-      if (bare.isNotEmpty && agentId.isNotEmpty) 'agent:$agentId:$bare',
-    };
-    if (keys.isEmpty) return;
-    final mirror = getIt<SessionRuntimeMirror>();
-    for (final key in keys) {
-      mirror.noteFlowActivity(key);
+    String? notifierKey;
+    if (explicitKey.isNotEmpty && explicitKey.contains(':')) {
+      notifierKey = explicitKey;
+    } else if (bare.isNotEmpty && agentId.isNotEmpty) {
+      notifierKey = 'agent:$agentId:$bare';
     }
+    final key = notifierKey ?? (explicitKey.isNotEmpty ? explicitKey : bare);
+    if (key.isEmpty) return;
+    getIt<SessionRuntimeMirror>()
+        .noteFlowActivity(key, notifierKey: notifierKey);
   }
 
   /// 流式 chunk 的落点解析缓存，key = `peerId\u0000turnId`。
@@ -296,6 +459,9 @@ class HubEventClient {
   }
 
   void start() {
+    // A9-4：dispose / 重登之后内存里的 retain 集合没了，但库里带 finalized
+    // 标记的行还在。启动时一次性重建，之后任何删除都会再查一次 DB 兜底。
+    unawaited(_ensurePlaceholderHydrated());
     _sub ??= events.listen(_onControl);
     _reloginSub ??= PouchLoginKeeper.instance.relogged.listen((_) {
       unawaited(_syncActiveHost());
@@ -337,14 +503,19 @@ class HubEventClient {
     _resumeSub = null;
     _liveFlushTimer?.cancel();
     _liveFlushTimer = null;
-    for (final timer in _idleFinalizeTimers.values) {
-      timer.cancel();
-    }
-    _idleFinalizeTimers.clear();
+    _finalizeTimer?.cancel();
+    _finalizeTimer = null;
+    _finalizeWakeAtMs = null;
+    _finalizeDeadlines.clear();
     _idleSeenTurns.clear();
     _finalizedRetainedTurns.clear();
     _placeholderSenders.clear();
     _suppressRebuildTurns.clear();
+    _flowPlaceholders.clear();
+    _channelsWithLivePlaceholders.clear();
+    _reactivatedTurns.clear();
+    _liveTurnGenerations.clear();
+    _placeholderHydration = null;
     _liveDirty.clear();
     _flowTargets.clear();
     _liveTurnTokens.clear();
@@ -426,7 +597,7 @@ class HubEventClient {
           return;
         }
         _snapshotAppliedSeq = seq;
-        final activeHost = PouchChannel.active?.session?.hostPeerId;
+        final activeHost = PouchChannel.active?.session.hostPeerId;
         if (activeHost != null &&
             activeHost.isNotEmpty &&
             event.peerId != activeHost) {
@@ -437,6 +608,7 @@ class HubEventClient {
           getIt<SessionRuntimeMirror>().reconcileTo(
             sessions,
             hubId: event.data['hub_id'] as String?,
+            epoch: event.data['epoch']?.toString(),
             sourcePeerId: event.peerId,
           );
         }
@@ -454,7 +626,7 @@ class HubEventClient {
   final Map<String, int> _snapshotRequests = {};
 
   Future<void> requestSessionSnapshot(String peerId) async {
-    final activeHost = PouchChannel.active?.session?.hostPeerId;
+    final activeHost = PouchChannel.active?.session.hostPeerId;
     if (activeHost != null && activeHost.isNotEmpty && peerId != activeHost) {
       return;
     }
@@ -1310,7 +1482,9 @@ class HubEventClient {
       );
     }
     if (senderType != 'user') {
-      final turnId = _liveChannels.entries
+      // A9-4：重登 / dispose 之后 retain 集合是空的，先从库里重建一次（只一次）。
+      await _ensurePlaceholderHydrated();
+      final liveTurns = _liveChannels.entries
           .where((entry) => entry.value == channelId)
           .map((entry) => entry.key)
           .toList();
@@ -1318,7 +1492,11 @@ class HubEventClient {
       // 否则已收尾保留的占位不会被删，出现「半段 + 完整」两条答案。
       final finalAnswer = _isFinalAnswerMessage(data);
       final intermediate = !finalAnswer && _isIntermediateAgentMessage(data);
-      for (final id in turnId) {
+      // A9-2：消息明确带回合归属时，只收那一个回合的 live turn / 占位。
+      final attributedTurn = _messageTurnId(data);
+      var clearedLiveTurn = false;
+      for (final id in liveTurns) {
+        if (attributedTurn != null && id != attributedTurn) continue;
         if (intermediate) {
           // A7-5：工具结果 / 进度消息只删占位行，绝不结束回合。删掉
           // _attached / 标记 settled 会让后续 pouch_turn_event / agent_chunk
@@ -1330,47 +1508,67 @@ class HubEventClient {
         // 和 idle / turn.finished 走同一条路径，只删占位的话
         // _flowPlaceholders 会永远留着这个 turnId，后续同回合 chunk
         // 建不出占位、集合也无限增长。
-        //
-        // 这里不关交互卡：同一频道里的 agent 普通消息不代表回合结束，主机
-        // 可能仍停在 `ask_ui` 等用户作答。卡只在真正的回合终态
-        // （idle / turn.finished / attach done）收。
+        clearedLiveTurn = true;
         await _clearLiveTurn(id, closeCards: false);
       }
-      // 重启后内存里的回合索引已经没了，但占位行还在库里。最终消息到达时
-      // 按确定性 id 前缀把它们收掉（跳过仍在接流的回合，它们的占位由上面
-      // 的循环或后续终态帧负责）。不依赖内存，重放也能幂等清干净。
-      final livePlaceholders = {
-        for (final id in _liveChannels.keys) liveTurnPlaceholderId(id),
-      };
-      for (final placeholderId
-          in await db.listLiveTurnPlaceholderIds(channelId)) {
-        if (livePlaceholders.contains(placeholderId)) continue;
-        final idTurn = placeholderId.startsWith(liveTurnPlaceholderPrefix)
-            ? placeholderId.substring(liveTurnPlaceholderPrefix.length)
-            : '';
-        // A7-1：已收尾保留的占位是这个回合仅有的一段回答，不能被下一条
-        // 无关消息删掉。只有这条回合自己的最终回复（metadata.flow /
-        // peerhist_ 形态）才该把它换成完整答案，避免两条答案并存。
-        if (!finalAnswer &&
-            idTurn.isNotEmpty &&
-            _finalizedRetainedTurns.contains(idTurn)) {
-          continue;
-        }
-        // 重启后内存索引没了：库里标了 finalized 的行，对明确的进度 / 工具
-        // 消息也跳过；重放的最终回复仍照常删掉占位。
-        if (!finalAnswer && intermediate && idTurn.isNotEmpty) {
+      // A9-9：普通 DM / 群频道从没登记过占位就不必为每条 agent 消息扫库。
+      // 只有 flow 频道、本频道有 live/finalized 占位、或刚收掉一个 live 回合
+      // 时才按确定性 id 前缀把残留收干净（重启后内存索引没了也能幂等清理）。
+      final shouldScan = _isFlowChannel(channelId) ||
+          clearedLiveTurn ||
+          liveTurns.isNotEmpty ||
+          _channelsWithLivePlaceholders.contains(channelId);
+      if (shouldScan) {
+        debugLivePlaceholderScans++;
+        final placeholderIds = await db.listLiveTurnPlaceholderIds(channelId);
+        final livePlaceholders = {
+          for (final id in _liveChannels.keys) liveTurnPlaceholderId(id),
+        };
+        var remaining = 0;
+        for (final placeholderId in placeholderIds) {
+          if (livePlaceholders.contains(placeholderId)) {
+            remaining++;
+            continue;
+          }
+          final idTurn = placeholderId.startsWith(liveTurnPlaceholderPrefix)
+              ? placeholderId.substring(liveTurnPlaceholderPrefix.length)
+              : '';
+          if (attributedTurn != null &&
+              idTurn.isNotEmpty &&
+              idTurn != attributedTurn) {
+            remaining++;
+            continue;
+          }
+          // A9-4：任何删除之前都查 DB 的 finalized 标记，不只 intermediate 分支。
           final row = await db.getMessageById(placeholderId);
-          if (row != null && _placeholderIsFinalized(row['metadata'])) continue;
+          final retained =
+              (idTurn.isNotEmpty && _finalizedRetainedTurns.contains(idTurn)) ||
+                  _placeholderIsFinalized(row?['metadata']);
+          if (retained) {
+            // A9-2：retained 的半段回答只能由「它自己那一回合」的最终回复
+            // 换掉。带不出归属时只在这条频道里仅剩它一个占位、且没有别的
+            // live 回合被收掉时才认为属于本回合；否则一律保留。
+            final ownFinalAnswer = finalAnswer &&
+                (attributedTurn != null ||
+                    (!clearedLiveTurn &&
+                        liveTurns.isEmpty &&
+                        placeholderIds.length == 1));
+            if (!ownFinalAnswer) {
+              remaining++;
+              continue;
+            }
+          }
+          await db.deleteMessage(placeholderId);
+          if (idTurn.isNotEmpty) {
+            _finalizedRetainedTurns.remove(idTurn);
+            // A6-6：占位行是 `hub-live-<turnId>`。重启后内存里的回合索引已经
+            // 没了，光删行不够——同一 turn 的迟到 chunk 会把它当新回合再建一个
+            // 永久 streaming 占位。把从 id 反解出来的 turnId 记成 settled（同样
+            // 有界），迟到帧才会在 [_onFlowControlChunk] 入口被丢掉。
+            _markSettledTurn(idTurn);
+          }
         }
-        await db.deleteMessage(placeholderId);
-        if (idTurn.isNotEmpty) {
-          _finalizedRetainedTurns.remove(idTurn);
-          // A6-6：占位行是 `hub-live-<turnId>`。重启后内存里的回合索引已经
-          // 没了，光删行不够——同一 turn 的迟到 chunk 会把它当新回合再建一个
-          // 永久 streaming 占位。把从 id 反解出来的 turnId 记成 settled（同样
-          // 有界），迟到帧才会在 [_onFlowControlChunk] 入口被丢掉。
-          _markSettledTurn(idTurn);
-        }
+        if (remaining == 0) _channelsWithLivePlaceholders.remove(channelId);
       }
     }
     _notify(channelId);
@@ -1439,6 +1637,10 @@ class HubEventClient {
     final target = await _resolveHubTarget(peerId, event);
     final channelId =
         target.channelId.isEmpty ? rawChannelId : target.channelId;
+    // A9-5：主机瞬态重试会重放 turn.started 且 turn_id 不变；上一代已经
+    // settled，必须把这一回合重新激活，否则重试的 chunk 全被丢掉。
+    _reactivateSettledTurn(turnId);
+    _reactivateOnNewAttempt(turnId, event.data);
     _attached.add(turnId);
     _liveChannels[turnId] = channelId;
     _liveBuffers[turnId] = '';
@@ -1460,6 +1662,7 @@ class HubEventClient {
         metadata: const {'status': 'streaming'},
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
+      _markPlaceholderChannel(channelId);
       _placeholderSenders[turnId] =
           (senderId: senderId, senderName: target.senderName);
       _notify(channelId);
@@ -1493,7 +1696,8 @@ class HubEventClient {
     // 先登记「已收尾」：任何在 await 期间 / 之后到达的迟到 chunk 都不能再
     // 把这个回合当成新回合重建占位。
     _markSettledTurn(turnId);
-    _idleFinalizeTimers.remove(turnId)?.cancel();
+    _finalizeDeadlines.remove(turnId);
+    _ensureFinalizeTimer();
     _idleSeenTurns.remove(turnId);
     _attached.remove(turnId);
     _flowPlaceholders.remove(turnId);
@@ -1505,12 +1709,13 @@ class HubEventClient {
     _placeholderSenders.remove(turnId);
     _suppressRebuildTurns.remove(turnId);
     final channelId = _liveChannels.remove(turnId);
-    // A7-1：idle 超时收尾保留的半成品回答不能被迟到的 turn.finished /
-    // attach-lost 删掉。只有最终回复（见 [_insertMessage]）才收它。
+    // A7-1 / A9-4：idle 超时收尾保留的半成品回答不能被迟到的 turn.finished /
+    // attach-lost / 重登后的无关消息删掉。内存集合可能丢过，DB 的 finalized
+    // 标记才是持久依据；只有最终回复（见 [_insertMessage]）才收它。
     if (deletePlaceholder &&
-        !_finalizedRetainedTurns.contains(turnId) &&
         turnId.isNotEmpty &&
-        getIt.isRegistered<LocalDatabaseService>()) {
+        getIt.isRegistered<LocalDatabaseService>() &&
+        !await _isRetainedPlaceholder(turnId)) {
       await getIt<LocalDatabaseService>()
           .deleteMessage(liveTurnPlaceholderId(turnId));
     }
@@ -1523,7 +1728,7 @@ class HubEventClient {
   /// 才能接着拼进同一个回复（A7-5）。删掉的行由 [_flushLiveTurn] 或下一片
   /// chunk 按 [_placeholderSenders] 重建。
   Future<void> _clearIntermediatePlaceholder(String turnId) async {
-    if (_finalizedRetainedTurns.contains(turnId)) return;
+    if (await _isRetainedPlaceholder(turnId)) return;
     _flowPlaceholders.remove(turnId);
     _liveDirty.remove(turnId);
     _suppressRebuildTurns.add(turnId);
@@ -1566,7 +1771,15 @@ class HubEventClient {
       String peerId, Map<String, dynamic> data) async {
     final turnId = data['request_id'] as String? ?? '';
     if (!_attached.contains(turnId)) return;
-    if (data['kind'] == 'interaction') {
+    final kind = data['kind'];
+    // A9-6：attached DM 回合的 40s 工具调用可能只有 metadata / interaction
+    // 帧，没有 chunk。A8-1 只给 flow metadata 刷了计时器，30s 兜底一到就把
+    // 回合收尾并移除 _attached，后续 chunk 全丢。任何「回合还活着」的帧都
+    // 刷新兜底窗口（done / error 是终态，不用再刷）。
+    if (kind != 'done' && kind != 'error') {
+      _scheduleFinalize(turnId);
+    }
+    if (kind == 'interaction') {
       // 主机在我们断线时问的问题：重连续传时补发回来（宿主侧
       // PhoneState::pending_interaction_for_turn → LiveTurns::attach）。
       // 不渲染的话只能等主机自己放弃（30 分钟），用户连「被问过」都不知道。
@@ -1585,9 +1798,8 @@ class HubEventClient {
     }
     if (data['kind'] == 'chunk') {
       final chunk = data['chunk'] as String? ?? '';
-      // A7-3：还在出字就把兜底 / idle 收尾窗口刷新回完整时长，且必须重新
-      // 装回计时器；只取消会让主机沉默后永远停在 streaming。
-      _scheduleFinalize(turnId);
+      // A7-3 / A9-6：还在出字就把兜底 / idle 收尾窗口刷新回完整时长
+      // （上面的统一刷新已经做过，这里不再重复装）。
       _suppressRebuildTurns.remove(turnId);
       _liveBuffers[turnId] = (_liveBuffers[turnId] ?? '') + chunk;
       if (_liveChannels[turnId] == null ||
@@ -1663,6 +1875,7 @@ class HubEventClient {
           metadata: const {'status': 'streaming'},
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
+        _markPlaceholderChannel(channelId);
       } else {
         await db.updateMessage(messageId: messageId, content: content);
       }
@@ -1766,6 +1979,10 @@ class HubEventClient {
     final turnId = (data['turn_id'] ?? data['request_id'] ?? '').toString();
     final rawChannelId = (data['channel_id'] as String? ?? '').trim();
     if (turnId.isEmpty || rawChannelId.isEmpty) return;
+    // A9-5：主机瞬态重试会重放 begin_turn 且 turn_id 不变。带新 attempt /
+    // generation（或明确的 begin_turn）的帧要先把这个回合从 settled 里激活；
+    // 帧里没有 attempt 时靠 turn.started / running session.state 帧激活。
+    _reactivateOnNewAttempt(turnId, data);
     // 收尾过的回合再来迟到 chunk：不能把它当成新回合重新建占位。
     if (_isSettledFlowTurn(turnId)) return;
     _noteFlowActivity(data, rawChannelId);
@@ -1806,8 +2023,19 @@ class HubEventClient {
     if (resolved &&
         !_flowPlaceholders.contains(turnId) &&
         getIt.isRegistered<LocalDatabaseService>()) {
-      await getIt<LocalDatabaseService>().createMessage(
-        id: liveTurnPlaceholderId(turnId),
+      final db = getIt<LocalDatabaseService>();
+      final messageId = liveTurnPlaceholderId(turnId);
+      // A9-5：重试复用的 turnId 上可能还挂着上一代 `finalized` 的半段回答。
+      // 只在重新激活后的第一次建占位时把它改回 streaming，避免新答案带着
+      // 「已收尾」标记、之后又被无关消息当成别回合的保留行。
+      if (_reactivatedTurns.remove(turnId)) {
+        await db.updateMessageMetadata(
+          messageId,
+          const {'status': 'streaming'},
+        );
+      }
+      await db.createMessage(
+        id: messageId,
         channelId: channelId,
         senderId: target.senderId,
         senderType: 'agent',
@@ -1817,6 +2045,7 @@ class HubEventClient {
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
       _flowPlaceholders.add(turnId);
+      _markPlaceholderChannel(channelId);
       _placeholderSenders[turnId] =
           (senderId: target.senderId, senderName: target.senderName);
     }
@@ -1851,6 +2080,8 @@ class HubEventClient {
       if (target.channelId.isNotEmpty) _notify(target.channelId);
       return;
     }
+    // A9-5：带新 attempt 的 metadata 也是重试的一代，settled 要重新激活。
+    _reactivateOnNewAttempt(turnId, data);
     if (_isSettledFlowTurn(turnId)) return;
     _scheduleFinalize(turnId);
     if (agentId.isEmpty) return;
@@ -1902,6 +2133,16 @@ class HubEventClient {
         await _flushLiveTurn(turnId);
         if (_liveChannels.containsKey(turnId)) _scheduleIdleFinalize(turnId);
       }
+    } else {
+      // A9-5：running 帧就是「这个回合又活了」的权威信号。主机瞬态重试
+      // 复用 turn_id 时，上一代可能已经被收进 settled；不重新激活的话重试
+      // 的 running 之后所有 chunk 都会被丢掉。
+      final turnId =
+          (snapshot['turn_id'] ?? snapshot['request_id'] ?? '').toString();
+      if (turnId.isNotEmpty) {
+        _reactivateOnNewAttempt(turnId, data);
+        _reactivateSettledTurn(turnId);
+      }
     }
   }
 
@@ -1912,18 +2153,67 @@ class HubEventClient {
     _scheduleFinalize(turnId);
   }
 
-  /// 装回（刷新）一个回合的收尾计时器。第一片 chunk / turn.started 起用兜底
-  /// 窗口，收到 idle 之后用短窗口；任何活动都重新装回，绝不只取消（A7-3）。
+  /// 顺延一个回合的收尾窗口（A7-3 / A9-10）。
+  ///
+  /// 第一片 chunk / turn.started 起用兜底窗口，idle 之后用短窗口；任何活动
+  /// 都把 deadline 顺延回去，绝不只取消。这里**不分配 Timer**：整台 client
+  /// 只用一个 Timer 盯住最早的 deadline，回调再按剩余回合续期，所以几百片
+  /// chunk 也不会变成几百个 Timer 分配。
   void _scheduleFinalize(String turnId) {
-    _idleFinalizeTimers.remove(turnId)?.cancel();
     final delay = _idleSeenTurns.contains(turnId)
         ? flowIdleFinalizeDelay
         : flowFallbackFinalizeDelay;
     debugFinalizeTimerArms++;
-    _idleFinalizeTimers[turnId] = Timer(delay, () {
-      _idleFinalizeTimers.remove(turnId);
+    _finalizeDeadlines[turnId] =
+        DateTime.now().millisecondsSinceEpoch + delay.inMilliseconds;
+    _ensureFinalizeTimer();
+  }
+
+  /// 只在「最早 deadline 比当前唤醒点更晚」时才需要新建 Timer；已有 Timer
+  /// 到点会重新检查所有 deadline 并自行续期。
+  void _ensureFinalizeTimer() {
+    if (_finalizeDeadlines.isEmpty) {
+      _finalizeTimer?.cancel();
+      _finalizeTimer = null;
+      _finalizeWakeAtMs = null;
+      return;
+    }
+    var earliest = 0;
+    var first = true;
+    for (final deadline in _finalizeDeadlines.values) {
+      if (first || deadline < earliest) {
+        earliest = deadline;
+        first = false;
+      }
+    }
+    final wakeAt = _finalizeWakeAtMs;
+    if (_finalizeTimer != null && wakeAt != null && wakeAt <= earliest) {
+      return;
+    }
+    _finalizeTimer?.cancel();
+    _finalizeWakeAtMs = earliest;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final waitMs = earliest - now;
+    debugFinalizeTimerAllocations++;
+    _finalizeTimer = Timer(
+      Duration(milliseconds: waitMs > 0 ? waitMs : 0),
+      _onFinalizeTick,
+    );
+  }
+
+  void _onFinalizeTick() {
+    _finalizeTimer = null;
+    _finalizeWakeAtMs = null;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final due = <String>[];
+    for (final entry in _finalizeDeadlines.entries) {
+      if (entry.value <= now) due.add(entry.key);
+    }
+    for (final turnId in due) {
+      _finalizeDeadlines.remove(turnId);
       unawaited(_finalizeIdleTurn(turnId));
-    });
+    }
+    _ensureFinalizeTimer();
   }
 
   /// 等不到最终消息：把占位从「流式」收成终态，正文保留。

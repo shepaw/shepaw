@@ -10,8 +10,7 @@ import '../../screens/group_view_screen.dart';
 import '../../screens/session_history_screen.dart';
 import '../session_folders.dart';
 import 'folded_session_items.dart';
-import 'folded_session_open.dart'
-    show flowFoldedSessionId, pushFlowRunScreen;
+import 'folded_session_open.dart' show flowFoldedSessionId, pushFlowRunScreen;
 
 /// 私聊会话列表顶部的折叠组（折叠方案 §2.1）：群聊、其他 Agent 发起、工作流、
 /// 引擎客户端、引擎终端，只在不为空时出现。
@@ -117,12 +116,13 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
   /// 展开后点其中一项 → 打开它的会话。工作流条目有真会话 id 时按私聊打开
   /// （能继续聊 / 停止），旧条目才退回只读的运行视图。
   void _openSession(BuildContext context, FoldedSession session) {
-    // A7-9：多 agent 流程里 `origin.from_agent` 才是这个节点的 agent；抽屉
-    // 的 remoteAgentId 是「打开抽屉时」那个 agent，拿它建频道成员 / 头像 /
-    // 发送目标全错。只有折叠项没带 fromAgent 时才退回抽屉的 agent。
-    final sessionAgent = session.fromAgent.trim().isNotEmpty
-        ? session.fromAgent.trim()
-        : widget.remoteAgentId;
+    // A9-3：只有 flow 分支的 `origin.from_agent` 是这个节点的 agent。
+    // delegated / history / 群聊条目的 from_agent 是**发起方**（主机硬编码
+    // 惜宝 id），拿它当会话归属会让历史页 / fork 打不开；它们一律用抽屉
+    // 当前选中的 agent（A7-9 之前就是这么做的）。
+    final drawerAgent = widget.remoteAgentId;
+    final fromAgent = session.fromAgent.trim();
+    final sessionAgent = fromAgent.isNotEmpty ? fromAgent : drawerAgent;
     if (session.isFlow && session.runId.isNotEmpty) {
       final sessionId = flowFoldedSessionId(session.sessionId);
       if (sessionId != null) {
@@ -141,7 +141,7 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
       Navigator.of(context).push(MaterialPageRoute<void>(
         builder: (_) => GroupViewScreen(
           peerId: widget.peerId,
-          agentId: sessionAgent,
+          agentId: drawerAgent,
           groupId: session.groupId,
           groupSessionId: session.groupSessionId,
           title: session.title,
@@ -156,7 +156,7 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => SessionHistoryScreen.forFolderSession(
         peerId: widget.peerId,
-        agentId: sessionAgent,
+        agentId: drawerAgent,
         sessionId: session.sessionId,
         title: session.title.isEmpty ? session.sessionId : session.title,
         client: _client,

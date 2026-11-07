@@ -5,8 +5,12 @@ import '../../service_locator.dart' show getIt;
 import '../../services/chat_navigation_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/she_service.dart' show SheService;
+import '../../utils/session_utils.dart';
 import 'peer_agent_client_service.dart'
-    show kSyncedPeerSessionPrefix, syncedPeerChannelId;
+    show
+        kSyncedPeerSessionPrefix,
+        remoteSessionIdFromChannelId,
+        syncedPeerChannelId;
 import 'peer_agent_ids.dart';
 
 /// 折叠组 / 运行视图里的 session id 能不能当主机会话 id 用。
@@ -73,6 +77,58 @@ Future<String> resolveFlowAgentLocalId({
   return fallback;
 }
 
+/// 建壳 / 补成员 / 改名的**唯一实现**（A9-8）。
+///
+/// 两条路径共用它：Hub 的 `message.created` /
+/// `agent_chunk`（[PeerAgentClientService.prepareLocalTargetForHubMessage]），
+/// 以及卡片 / 折叠项先到的 P4 频道壳（[ensureFlowSessionShell]）。以前两份
+/// 各写一遍，卡片那条直接用卡面问题当标题（`[implicit]` 标记会混进会话
+/// 名），也永远不会因为后续带 `session_title` 的消息而改名。
+///
+/// 标题一律过 [SessionUtils.cleanClaudeSessionTitle]：清不干净就回落
+/// 'Session'。已存在的壳在有干净标题时改回主机给的标题（flow 壳，或还停在
+/// 默认 'Session' 的壳），普通用户改过名的会话不动。
+Future<void> ensureLocalSessionShell({
+  required LocalDatabaseService db,
+  required String channelId,
+  required String agentId,
+  required String? sessionTitle,
+}) async {
+  if (channelId.isEmpty) return;
+  final clean = SessionUtils.cleanClaudeSessionTitle(sessionTitle);
+  final existing = await db.getChannelById(channelId);
+  if (existing == null) {
+    // 没有 agent 可当成员时不要建一个只有 user 的空频道：主机名单还没
+    // 同步过来的空 agentId 会拼出 `['user', '']` 这种脏成员。
+    if (agentId.isEmpty) return;
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: channelId,
+        name: clean ?? 'Session',
+        type: 'dm',
+        memberIds: ['user', agentId],
+        isPrivate: true,
+      ),
+      'user',
+    );
+    return;
+  }
+  final members = await db.getChannelMemberIds(channelId);
+  if (!members.contains('user')) {
+    await db.addChannelMember(channelId, 'user');
+  }
+  if (agentId.isNotEmpty && !members.contains(agentId)) {
+    await db.addChannelMember(channelId, agentId);
+  }
+  final bare = remoteSessionIdFromChannelId(channelId) ?? channelId;
+  final isFlowShell = bare.startsWith('flow_');
+  if (clean != null &&
+      clean != existing.name &&
+      (isFlowShell || existing.name.isEmpty || existing.name == 'Session')) {
+    await db.updateChannelName(channelId, clean);
+  }
+}
+
 /// 频道还没被 `message.created` 同步下来时，先在本机建一个空壳。
 ///
 /// `ChatNavigationService._resolveSelection` 在频道不存在时会试
@@ -91,30 +147,12 @@ Future<void> ensureFlowSessionShell({
   }
   if (database == null) return;
   try {
-    final existing = await database.getChannelById(channelId);
-    if (existing == null) {
-      // 没有 agent 可当成员时不要建一个只有 user 的空频道：主机名单还没
-      // 同步过来的空 agentId 会拼出 `['user', '']` 这种脏成员。
-      if (agentId.isEmpty) return;
-      await database.createChannel(
-        Channel.withMemberIds(
-          id: channelId,
-          name: title.isEmpty ? 'Session' : title,
-          type: 'dm',
-          memberIds: ['user', agentId],
-          isPrivate: true,
-        ),
-        'user',
-      );
-      return;
-    }
-    final members = await database.getChannelMemberIds(channelId);
-    if (!members.contains('user')) {
-      await database.addChannelMember(channelId, 'user');
-    }
-    if (agentId.isNotEmpty && !members.contains(agentId)) {
-      await database.addChannelMember(channelId, agentId);
-    }
+    await ensureLocalSessionShell(
+      db: database,
+      channelId: channelId,
+      agentId: agentId,
+      sessionTitle: title,
+    );
   } catch (_) {
     // 建壳失败也要让导航继续：ChatScreen 对未落库的频道有兜底路径。
   }

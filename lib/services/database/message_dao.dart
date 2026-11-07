@@ -337,6 +337,20 @@ extension MessageDao on LocalDatabaseService {
     ];
   }
 
+  /// 全库一次取回所有本机流式占位行（A9-4 启动时重建 retain 集合用）。
+  ///
+  /// 按频道逐条扫会变成长历史重放里每条消息一次查询；这里只扫一次，之后靠
+  /// 内存里的频道标记决定还要不要按频道查。
+  Future<List<Map<String, dynamic>>> listLiveTurnPlaceholderRows() async {
+    final db = await database;
+    return await db.query(
+      'messages',
+      columns: const ['id', 'channel_id', 'metadata'],
+      where: 'id LIKE ?',
+      whereArgs: ['$liveTurnPlaceholderPrefix%'],
+    );
+  }
+
   /// 根据 ID 获取单条消息
   Future<Map<String, dynamic>?> getMessageById(String messageId) async {
     final db = await database;

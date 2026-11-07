@@ -14,6 +14,7 @@ Map<String, dynamic> snap({
   int at = 1300,
   String hubId = 'hub-a',
   bool flow = false,
+  String epoch = '',
 }) =>
     <String, dynamic>{
       'session_key': key,
@@ -31,6 +32,7 @@ Map<String, dynamic> snap({
       'at': at,
       'hub_id': hubId,
       if (flow) 'flow': true,
+      if (epoch.isNotEmpty) 'epoch': epoch,
     };
 
 void main() {
@@ -979,6 +981,175 @@ void main() {
     expect(mirror.stateFor(key).turnId, 'flow-a85-impl-a1');
     // 是刷新不是取消：沉默一个窗口后仍会自动回 idle。
     await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(mirror.stateFor(key).isRunning, isFalse);
+  });
+
+  // ── A9-1：主机重启（host_id/peer 不变、revision 从 1 重来）─────────────
+
+  test('A9-1: epoch 换代后 rev1 running 不被旧 rev10 的终态水位拒绝', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    const key = 'agent:a:flow_r9_epoch';
+    const oldTurn = 'flow-r9-epoch-old';
+    const newTurn = 'flow-r9-epoch-new';
+
+    // 旧进程：running(rev10) → idle(rev11)，水位停在 rev11 且已收尾。
+    expect(
+      mirror.apply(snap(
+        key: key,
+        revision: 10,
+        flow: true,
+        hubId: 'hub-r9',
+        turnId: oldTurn,
+        epoch: '7',
+      )),
+      isTrue,
+    );
+    expect(
+      mirror.apply(snap(
+        key: key,
+        revision: 11,
+        state: 'idle',
+        flow: true,
+        hubId: 'hub-r9',
+        turnId: '',
+        epoch: '7',
+      )),
+      isTrue,
+    );
+    expect(mirror.stateFor(key).isRunning, isFalse);
+
+    // 主机重启：全量对账报出新 epoch，revision 从 1 重新开始。
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(
+        key: key,
+        revision: 1,
+        flow: true,
+        hubId: 'hub-r9',
+        turnId: newTurn,
+        epoch: '8',
+      ),
+    ], hubId: 'hub-r9', epoch: '8');
+    expect(
+      mirror.apply(snap(
+        key: key,
+        revision: 1,
+        flow: true,
+        hubId: 'hub-r9',
+        turnId: newTurn,
+        epoch: '8',
+      )),
+      isTrue,
+      reason: '换代后的 rev1 是新进程的真实回合，不能被旧 rev11 水位拒掉',
+    );
+    expect(mirror.stateFor(key).isRunning, isTrue);
+    expect(mirror.stateFor(key).turnId, newTurn, reason: '停止按钮要拿到新 turnId');
+
+    // 旧进程的迟到 running 帧仍按 epoch 单调性拒绝。
+    expect(
+      mirror.apply(snap(
+        key: key,
+        revision: 10,
+        flow: true,
+        hubId: 'hub-r9',
+        turnId: oldTurn,
+        epoch: '7',
+      )),
+      isFalse,
+      reason: '旧进程的回放不能复活已结束回合',
+    );
+    expect(mirror.stateFor(key).turnId, newTurn);
+  });
+
+  test('A9-1: 无 epoch 的老主机按 turnId 判 running-after-idle，A8-2 仍生效', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    const key = 'agent:a:flow_r9_turnaware';
+    const oldTurn = 'flow-r9-turnaware-old';
+    const newTurn = 'flow-r9-turnaware-new';
+
+    expect(
+      mirror.apply(snap(
+          key: key,
+          revision: 10,
+          flow: true,
+          hubId: 'hub-r9',
+          turnId: oldTurn)),
+      isTrue,
+    );
+    expect(
+      mirror.apply(snap(
+        key: key,
+        revision: 11,
+        state: 'idle',
+        flow: true,
+        hubId: 'hub-r9',
+        turnId: '',
+      )),
+      isTrue,
+    );
+    // 同身份、水位 rev11 idle，新 turnId 的 rev1 running 是新回合。
+    expect(
+      mirror.apply(snap(
+          key: key, revision: 1, flow: true, hubId: 'hub-r9', turnId: newTurn)),
+      isTrue,
+    );
+    expect(mirror.stateFor(key).turnId, newTurn);
+
+    // 同 turnId 的更旧 running 仍是 A8-2 要挡的陈旧重放。
+    const replayTurn = 'flow-r9-turnaware-replay';
+    expect(
+      mirror.apply(snap(
+          key: key,
+          revision: 20,
+          flow: true,
+          hubId: 'hub-r9',
+          turnId: replayTurn)),
+      isTrue,
+    );
+    expect(
+      mirror.apply(snap(
+        key: key,
+        revision: 21,
+        state: 'idle',
+        flow: true,
+        hubId: 'hub-r9',
+        turnId: '',
+      )),
+      isTrue,
+    );
+    expect(
+      mirror.apply(snap(
+          key: key,
+          revision: 20,
+          flow: true,
+          hubId: 'hub-r9',
+          turnId: replayTurn)),
+      isFalse,
+    );
+    expect(mirror.stateFor(key).isRunning, isFalse);
+  });
+
+  test('A9-10: 连续 chunk 不再逐个分配 retention Timer', () async {
+    final mirror = SessionRuntimeMirror(
+      flowRetention: const Duration(milliseconds: 120),
+    );
+    addTearDown(mirror.dispose);
+    const key = 'agent:a:flow_r9_timers';
+    expect(
+      mirror.apply(snap(key: key, revision: 1, flow: true, hubId: 'hub-r9')),
+      isTrue,
+    );
+    final afterStart = mirror.debugRetentionTimerAllocations;
+    expect(afterStart, 1);
+    for (var i = 0; i < 40; i++) {
+      mirror.noteFlowActivity(key);
+    }
+    expect(mirror.debugRetentionTimerAllocations, afterStart,
+        reason: '40 次活动只写时间戳，不该重建 Timer');
+    expect(mirror.stateFor(key).isRunning, isTrue);
+    // 沉默一个窗口后仍会自动回 idle（刷新语义不变）。
+    await Future<void>.delayed(const Duration(milliseconds: 220));
     expect(mirror.stateFor(key).isRunning, isFalse);
   });
 }

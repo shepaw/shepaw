@@ -61,7 +61,8 @@ import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
 import '../host_she_turn.dart';
 import 'peer_agent_ids.dart';
-import 'flow_session_open.dart' show ensureFlowSessionShell;
+import 'flow_session_open.dart'
+    show ensureFlowSessionShell, ensureLocalSessionShell;
 import 'peer_connection_manager.dart';
 import 'peer_inflight_turn.dart';
 import 'peer_storage_service.dart';
@@ -368,11 +369,7 @@ class PeerRemoteSession {
 
   static PeerRemoteSession? fromJson(Map<String, dynamic> json) {
     final rawId = json['session_id'];
-    final id = rawId is String
-        ? rawId
-        : rawId != null
-            ? rawId.toString()
-            : null;
+    final id = rawId is String ? rawId : rawId?.toString();
     if (id == null || id.isEmpty) return null;
     DateTime? updated;
     final rawUpdated = json['updated_at'];
@@ -2325,6 +2322,12 @@ class PeerAgentClientService {
   /// 已提交的 AskUserQuestion 表单。重连重发 `agent_form_req` 时用它自动回填。
   final Map<String, Map<String, dynamic>> _submittedForms = {};
 
+  /// H9-4 / H9-9：最近提交过的表单按 `request_id` 反查 approvalId。错误帧
+  /// 只带 request_id，提交时 `_approvalToRequest` 已经被摘掉，得留一条短期
+  /// 映射才能把「主机没接住」的那张卡退回可答态。有界。
+  final Map<String, String> _recentFormAnswersByRequest = {};
+  static const _recentFormAnswerCap = 50;
+
   /// 回合内收到、还没收场的提问 / 审批帧（按 approvalId，附 `_peer_id` /
   /// `_remote_agent_id`）。
   ///
@@ -2417,6 +2420,15 @@ class PeerAgentClientService {
   Stream<({String approvalId, String requestId, bool reopened})>
       get formDeferredEvents => _formDeferredController.stream;
 
+  /// H9-4 / H9-9：主机没接住 deferred 节点卡的回答，会把卡片保留下来并回
+  /// `agent_error`（code = `orphan_card` / `answer_pending`）。这条帧不能被
+  /// 当成普通 turn 错误吞掉，也不能让本机继续显示「已提交」。
+  /// 单例上的长期流，[stop] 不关闭它。
+  final _deferredCardErrorController = StreamController<
+      ({String requestId, String code, String message})>.broadcast();
+  Stream<({String requestId, String code, String message})>
+      get deferredCardErrors => _deferredCardErrorController.stream;
+
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   final _fileStorage = LocalFileStorageService();
 
@@ -2496,6 +2508,7 @@ class PeerAgentClientService {
     _openApprovalFrames.clear();
     _submittedApprovals.clear();
     _submittedForms.clear();
+    _recentFormAnswersByRequest.clear();
     _deferredForms.clear();
     _cancelledWhileSuspended.clear();
     _reconcileNeeded.clear();
@@ -3682,7 +3695,13 @@ class PeerAgentClientService {
         _onDone(event.data);
         break;
       case 'agent_error':
-        _onError(event.data);
+        // H9-4 / H9-9：主机保留卡片、答案没接住。这不是 turn 失败，不能走
+        // [_onError]（那会关卡、把在途回合判成错误完成）。
+        if (_isDeferredCardError(event.data)) {
+          unawaited(_onDeferredCardError(event.data, peerId: event.peerId));
+        } else {
+          _onError(event.data);
+        }
         break;
       case 'peer_busy':
         // 主机上行队列满，这一帧没有收下（agent_chat 会走 agent_error）。
@@ -7021,27 +7040,14 @@ class PeerAgentClientService {
       final localAgentId = matched?.id ?? rAgent;
       final agentName = matched?.name ?? fallbackSenderName;
       final channelId = await _localChannelIdForRemoteSession(rSession);
-      final existing = await _db.getChannelById(channelId);
-      final name =
-          SessionUtils.cleanClaudeSessionTitle(sessionTitle) ?? 'Session';
-      if (existing == null) {
-        final channel = Channel.withMemberIds(
-          id: channelId,
-          name: name,
-          type: 'dm',
-          memberIds: ['user', localAgentId],
-          isPrivate: true,
-        );
-        await _db.createChannel(channel, 'user');
-      } else {
-        final members = await _db.getChannelMemberIds(channelId);
-        if (!members.contains('user')) {
-          await _db.addChannelMember(channelId, 'user');
-        }
-        if (!members.contains(localAgentId)) {
-          await _db.addChannelMember(channelId, localAgentId);
-        }
-      }
+      // A9-8：和 P4 卡片 / 折叠项共用同一份建壳逻辑 —— 干净的会话标题、
+      // 补成员，以及后续 message.created 带 session_title 时改掉错名字。
+      await ensureLocalSessionShell(
+        db: _db,
+        channelId: channelId,
+        agentId: localAgentId,
+        sessionTitle: sessionTitle,
+      );
       return (
         channelId: channelId,
         senderId: senderType == 'user' ? 'user' : localAgentId,
@@ -9071,6 +9077,15 @@ class PeerAgentClientService {
       throw Exception('表单发送失败，请确认配对设备在线后重试');
     }
     final requestId = _approvalToRequest.remove(approvalId);
+    // H9-4 / H9-9：错误帧只带 request_id，留一条短期反查，便于主机说
+    // 「卡片保留 / 答案没接住」时把这张卡退回可答。
+    if (requestId != null && requestId.isNotEmpty) {
+      _recentFormAnswersByRequest[requestId] = approvalId;
+      while (_recentFormAnswersByRequest.length > _recentFormAnswerCap) {
+        _recentFormAnswersByRequest
+            .remove(_recentFormAnswersByRequest.keys.first);
+      }
+    }
     // 这张卡是回合外作答：主机已经不在旧通道等它了。
     final wasDeferred = _deferredForms.remove(approvalId) != null;
     // 孤儿表单提交成功后清掉占位，避免重复点击落到 NO MATCH。
@@ -9856,6 +9871,96 @@ class PeerAgentClientService {
       Exception(data['message'] as String? ?? 'Peer agent error'),
     );
   }
+
+  /// H9-4 / H9-9：主机对「找不到归属 / 驱动已结束」的 deferred 节点卡回答
+  /// 不再静默写消息，而是回这条错误帧并**保留卡片**。
+  static bool _isDeferredCardError(Map<String, dynamic> data) {
+    final code = data['code']?.toString() ?? '';
+    return code == 'orphan_card' || code == 'answer_pending';
+  }
+
+  /// 把错误交给 UI、把已经乐观标成「已提交」的卡退回可答态。
+  /// 绝不能走 [_onError]：那会关掉卡片、把在途回合当成失败完成。
+  Future<void> _onDeferredCardError(
+    Map<String, dynamic> data, {
+    String peerId = '',
+  }) async {
+    final code = data['code']?.toString() ?? '';
+    final requestId = data['request_id']?.toString() ?? '';
+    final message = (data['error'] ?? data['message'])?.toString() ?? '';
+    _log.warning(
+      'deferred card answer rejected: code=$code requestId=$requestId '
+      'message=$message',
+      tag: _tag,
+    );
+    // 错误帧只带 request_id：从近期提交记录和各张卡账簿反查 approvalId。
+    final approvalIds = <String>{};
+    final recent = requestId.isEmpty
+        ? null
+        : _recentFormAnswersByRequest.remove(requestId);
+    if (recent != null) approvalIds.add(recent);
+    for (final entry in _approvalToRequest.entries) {
+      if (requestId.isNotEmpty && entry.value == requestId) {
+        approvalIds.add(entry.key);
+      }
+    }
+    for (final entry in _deferredForms.entries) {
+      if (requestId.isNotEmpty && entry.value == requestId) {
+        approvalIds.add(entry.key);
+      }
+    }
+    for (final entry in _orphanedForms.entries) {
+      if (requestId.isNotEmpty &&
+          entry.value['request_id']?.toString() == requestId) {
+        approvalIds.add(entry.key);
+      }
+    }
+    for (final entry in _openFormFrames.entries) {
+      if (requestId.isNotEmpty &&
+          entry.value['request_id']?.toString() == requestId) {
+        approvalIds.add(entry.key);
+      }
+    }
+    for (final approvalId in approvalIds) {
+      // 别假装回答成功：清掉自动回填记录，把卡重新挂成回合外可答。
+      _submittedForms.remove(approvalId);
+      _deferredForms[approvalId] = requestId;
+      if (_deferredForms.length > 50) {
+        _deferredForms.remove(_deferredForms.keys.first);
+      }
+      final write = _formSubmitWrites.remove(approvalId);
+      if (write != null) await write;
+      await _persistFormDeferred(approvalId, requestId, peerId, reopen: true);
+      if (!_formDeferredController.isClosed) {
+        _formDeferredController.add(
+          (approvalId: approvalId, requestId: requestId, reopened: true),
+        );
+      }
+    }
+    if (!_deferredCardErrorController.isClosed) {
+      _deferredCardErrorController.add(
+        (requestId: requestId, code: code, message: message),
+      );
+    }
+  }
+
+  /// Test seam：模拟一张刚刚提交、但主机还没确认的 deferred 表单。
+  @visibleForTesting
+  void debugSeedSubmittedFormAnswer({
+    required String approvalId,
+    required String requestId,
+  }) {
+    _submittedForms[approvalId] = const {
+      'action': 'accept',
+      'content': <String, dynamic>{},
+      'deferred': true,
+    };
+    _recentFormAnswersByRequest[requestId] = approvalId;
+  }
+
+  @visibleForTesting
+  bool debugIsFormSubmitted(String approvalId) =>
+      _submittedForms.containsKey(approvalId);
 
   // ── agent 列表注入 / 清理 ──────────────────────────────────────────────
 

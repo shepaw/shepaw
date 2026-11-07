@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/peer/models/folded_sessions.dart';
+import 'package:shepaw/screens/session_history_screen.dart';
 import 'package:shepaw/peer/services/flow_session_open.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/widgets/chat/agent_session_folders.dart';
-import 'package:shepaw/widgets/session_folders.dart';
 
 HubFoldedSessions _host(
         StreamController<PeerControlEvent> bus, Object? folders) =>
@@ -76,14 +76,12 @@ class _WithExpandedState extends StatefulWidget {
     required this.peerId,
     required this.remoteAgentId,
     required this.client,
-    this.onForked,
     this.refresh,
   });
 
   final String peerId;
   final String remoteAgentId;
   final HubFoldedSessions client;
-  final void Function(String sessionId)? onForked;
   final Future<void> Function(String, String)? refresh;
 
   @override
@@ -102,7 +100,6 @@ class _WithExpandedStateState extends State<_WithExpandedState> {
             peerId: widget.peerId,
             remoteAgentId: widget.remoteAgentId,
             client: widget.client,
-            onForked: widget.onForked,
             refresh: widget.refresh,
             expandedKind: _expanded?.kind,
             onToggle: (summary) => setState(() {
@@ -391,6 +388,95 @@ void main() {
     expect(opened.single.channelId, 'psess_flow_deadbe12_impl');
     expect(opened.single.agentId, 'agent-node',
         reason: '多 agent 流程里 fromAgent 才是该节点的 agent');
+    await bus.close();
+  });
+
+  testWidgets('A9-3: delegated 条目用抽屉 agent，而不是 from_agent 发起方', (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    final sent = <Map<String, dynamic>>[];
+    final client = HubFoldedSessions(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        sent.add(Map<String, dynamic>.from(frame));
+        if (frame['type'] == 'agent_session_fork_req') {
+          bus.add(PeerControlEvent(peerId: peerId, data: {
+            'type': 'agent_session_fork_resp',
+            'request_id': frame['request_id'],
+            'ok': true,
+            'session_id': 'forked-r9',
+          }));
+          return true;
+        }
+        if (frame['folder'] != null) {
+          bus.add(PeerControlEvent(peerId: peerId, data: {
+            'type': 'agent_sessions_resp',
+            'request_id': frame['request_id'],
+            'agent_id': 'a1',
+            'folder': frame['folder'],
+            'sessions': [
+              {
+                'session_id': 'session-r9-delegated',
+                'title': '别的 Agent 发起的会话',
+                'updated_at': 1,
+                'origin': {
+                  'kind': 'delegated',
+                  // 主机把发起方硬编码成惜宝 id；它不是这个会话的归属 agent。
+                  'from_agent': 'she-builtin-agent-001',
+                },
+              },
+            ],
+          }));
+          return true;
+        }
+        bus.add(PeerControlEvent(peerId: peerId, data: {
+          'type': 'agent_sessions_resp',
+          'request_id': frame['request_id'],
+          'agent_id': 'a1',
+          'sessions': [],
+          'folders': [
+            {'kind': 'delegated', 'count': 1, 'latest_title': '转交给我的'},
+          ],
+        }));
+        return true;
+      },
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(
+        body: _WithExpandedState(
+          peerId: 'p1',
+          remoteAgentId: 'a1',
+          client: client,
+        ),
+      ),
+    ));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await tester.tap(find.textContaining('转交'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('别的 Agent 发起的会话'));
+    // 历史页有加载中的 spinner，pumpAndSettle 不会收敛；用有界 pump。
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    final history = tester.widget<SessionHistoryScreen>(
+      find.byType(SessionHistoryScreen),
+    );
+    // 会话历史 / 分叉请求里的 agent 就是打开历史页用的归属 agent。
+    await history.fork!();
+    final fork = sent.firstWhere(
+      (frame) => frame['type'] == 'agent_session_fork_req',
+    );
+    expect(fork['agent_id'], 'a1',
+        reason: 'delegated/history 条目必须用抽屉当前选中的 agent');
+    expect(fork['agent_id'], isNot('she-builtin-agent-001'));
+    // flow 分支仍用 fromAgent，由上面的 A7-9 用例钉住。
+    await tester.pumpWidget(const SizedBox());
     await bus.close();
   });
 }

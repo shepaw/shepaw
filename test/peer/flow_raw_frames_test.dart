@@ -687,6 +687,12 @@ void main() {
             'agent_id': 'agent-7',
             'content': '最终回复',
             'type': 'text',
+            // A9-4：主机最终回复带 metadata.flow。以前这个用例发的是一条
+            // 没有最终标记的普通消息，靠「重登后 retain 集合被清空」这个 bug
+            // 才把占位删掉；现在无关的普通消息必须保留半段回答。
+            'metadata': {
+              'flow': {'run_id': 'a51run'},
+            },
             'from': {'id': 'agent-7', 'type': 'agent', 'name': 'Impl'},
           },
         },
