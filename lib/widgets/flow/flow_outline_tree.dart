@@ -130,6 +130,13 @@ class _Hover {
   final List<String> warnings;
 }
 
+/// 只通知「落点高亮变了」。拖拽过程中不能 setState 整棵大纲：
+/// 那会让带 GlobalKey 的行在同一帧里换父节点，Column 更新时打出
+/// `_children.contains(child)` / `_elements.contains(element)`。
+class _HoverSignal extends ChangeNotifier {
+  void ping() => notifyListeners();
+}
+
 class _FlowOutlineTreeState extends State<FlowOutlineTree> {
   String? _dragId;
   _Hover? _hover;
@@ -137,11 +144,15 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
   bool _pointerLeftOutline = false;
   ScrollableState? _scrollable;
   Timer? _autoScroll;
+  final _hoverSignal = _HoverSignal();
+
+  /// 调用方没给 [FlowOutlineTree.rowKeys] 时，自己备一份，供落点测量和滚动定位。
   final Map<String, GlobalKey> _boxKeys = {};
 
   @override
   void dispose() {
     _cancelDragState();
+    _hoverSignal.dispose();
     super.dispose();
   }
 
@@ -168,11 +179,14 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
     if (!mounted) return;
     _scrollable = Scrollable.maybeOf(context);
     _autoScroll?.cancel();
-    setState(() {
-      _dragId = id;
-      _hover = null;
-      _pointerLeftOutline = false;
-    });
+    // 不 setState。拖拽回调发生在指针命中测试里，整树重建会把还没 layout
+    // 的 Overlay 卷进去，下一笔 move 就打出 "never been laid out"。
+    // 手柄占位由 Draggable 自己的 childWhenDragging 换，不依赖这里刷新。
+    _dragId = id;
+    final hadHover = _hover != null;
+    _hover = null;
+    _pointerLeftOutline = false;
+    if (hadHover) _publishHover();
     _resumeAutoScroll();
   }
 
@@ -188,18 +202,27 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
   void _endDrag() {
     _autoScroll?.cancel();
     _autoScroll = null;
-    if (_dragId == null) return;
+    if (_dragId == null && _hover == null) return;
     if (!mounted) {
       _cancelDragState();
       return;
     }
-    setState(() {
-      _dragId = null;
-      _hover = null;
-      _pointerDy = null;
-      _pointerLeftOutline = false;
-    });
+    final hadHover = _hover != null;
+    _dragId = null;
+    _hover = null;
+    _pointerDy = null;
+    _pointerLeftOutline = false;
+    if (hadHover) _publishHover();
   }
+
+  void _publishHover() {
+    if (!mounted) return;
+    _hoverSignal.ping();
+  }
+
+  /// 行的 GlobalKey 只挂在这一层：拖拽高亮显隐不会把它换到另一个父节点上。
+  GlobalKey _keyFor(String id) =>
+      widget.rowKeys[id] ?? _boxKeys.putIfAbsent(id, () => GlobalKey());
 
   void _autoScrollTick() {
     FlowOutlineTree.debugAutoScrollTicks++;
@@ -254,7 +277,7 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
     FlowOutlineRow row,
     Offset global,
   ) {
-    final box = _boxKeys[row.node.id]?.currentContext?.findRenderObject();
+    final box = _keyFor(row.node.id).currentContext?.findRenderObject();
     if (box is! RenderBox || !box.attached) return null;
     final local = box.globalToLocal(global);
     final h = box.size.height;
@@ -325,7 +348,8 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
       return;
     }
     final next = _hoverFor(dragId, slot);
-    setState(() => _hover = next);
+    _hover = next;
+    _publishHover();
   }
 
   void _onAccept(FlowOutlineRow row, DragTargetDetails<String> details) {
@@ -360,10 +384,8 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
   ) {
     final editable = widget._editable(row);
     final draggable = widget.dragEnabled && editable;
-    final hover = _hover?.overId == row.node.id ? _hover : null;
 
     Widget rowWidget = _Row(
-      key: widget.rowKeys[row.node.id],
       l10n: l10n,
       scheme: scheme,
       theme: theme,
@@ -393,45 +415,69 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
           : () => widget.onLongPressRow!(row),
     );
 
-    if (hover != null) {
-      Widget highlight = _DropHighlight(
-        hover: hover,
-        row: row,
-        scheme: scheme,
-        l10n: l10n,
-      );
-      highlight = IgnorePointer(child: highlight);
-      if (hover.warnings.isNotEmpty) {
-        // Tooltip 必须在 IgnorePointer **外层**：落在里面时子树的命中测试被
-        // 整个跳过，hover / 长按都到不了 tooltip，预警永远看不到。
-        highlight = Tooltip(
-          message: '${l10n.flow_dropRefWarning}\n${hover.warnings.join('\n')}',
-          child: highlight,
-        );
-      }
-      rowWidget = Stack(
-        clipBehavior: Clip.none,
-        children: [
-          rowWidget,
-          Positioned.fill(child: highlight),
-        ],
+    // GlobalKey 固定在这一层。落点高亮只刷新 Stack 的第二个子，
+    // 行本身（含 Draggable）不换父、也不跟着整树 setState。
+    return KeyedSubtree(
+      key: _keyFor(row.node.id),
+      child: widget.dragEnabled
+          ? DragTarget<String>(
+              onWillAcceptWithDetails: (details) =>
+                  widget.dragEnabled && _dragId != null,
+              onMove: (details) => _onMove(row, details.offset),
+              onLeave: (data) {
+                if (_hover?.overId == row.node.id) {
+                  _hover = null;
+                  _publishHover();
+                }
+                _onPointerLeaveRow();
+              },
+              onAcceptWithDetails: (details) => _onAccept(row, details),
+              builder: (context, candidate, rejected) {
+                return ListenableBuilder(
+                  listenable: _hoverSignal,
+                  builder: (context, stableChild) {
+                    final hover = _hover?.overId == row.node.id ? _hover : null;
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        stableChild!,
+                        if (hover != null)
+                          Positioned.fill(
+                            child: _dropHighlight(hover, row, scheme, l10n),
+                          ),
+                      ],
+                    );
+                  },
+                  child: rowWidget,
+                );
+              },
+            )
+          : rowWidget,
+    );
+  }
+
+  /// 落点高亮。Tooltip 必须在 IgnorePointer 外层，否则命中测试被跳过，
+  /// 断引用预警永远看不到。
+  Widget _dropHighlight(
+    _Hover hover,
+    FlowOutlineRow row,
+    ColorScheme scheme,
+    AppLocalizations l10n,
+  ) {
+    Widget highlight = _DropHighlight(
+      hover: hover,
+      row: row,
+      scheme: scheme,
+      l10n: l10n,
+    );
+    highlight = IgnorePointer(child: highlight);
+    if (hover.warnings.isNotEmpty) {
+      highlight = Tooltip(
+        message: '${l10n.flow_dropRefWarning}\n${hover.warnings.join('\n')}',
+        child: highlight,
       );
     }
-
-    if (!widget.dragEnabled) return rowWidget;
-
-    return DragTarget<String>(
-      key: _boxKeys.putIfAbsent(row.node.id, () => GlobalKey()),
-      onWillAcceptWithDetails: (details) =>
-          widget.dragEnabled && _dragId != null,
-      onMove: (details) => _onMove(row, details.offset),
-      onLeave: (data) {
-        if (_hover?.overId == row.node.id) setState(() => _hover = null);
-        _onPointerLeaveRow();
-      },
-      onAcceptWithDetails: (details) => _onAccept(row, details),
-      builder: (context, candidate, rejected) => rowWidget,
-    );
+    return highlight;
   }
 }
 

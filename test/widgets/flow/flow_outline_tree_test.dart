@@ -357,6 +357,95 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
   });
+
+  testWidgets('拖拽重排时行不会变成框架断言占位', (tester) async {
+    final nodes = [
+      FlowNode(
+        key: 'build',
+        id: 'build',
+        kind: 'seq',
+        children: [
+          FlowNode(
+            key: 'until',
+            id: 'until',
+            kind: 'loop',
+            children: [
+              FlowNode(key: 'review', id: 'review', kind: 'task'),
+            ],
+          ),
+          FlowNode(key: 'impl', id: 'impl', kind: 'task'),
+          FlowNode(key: 'summary', id: 'summary', kind: 'task'),
+        ],
+      ),
+    ];
+    final keys = <String, GlobalKey>{
+      for (final id in ['build', 'until', 'review', 'impl', 'summary'])
+        id: GlobalKey(),
+    };
+    await tester.pumpWidget(_app(_ReorderOnDrop(nodes: nodes, keys: keys)));
+    await tester.pump();
+
+    final start = tester.getCenter(find.byKey(const ValueKey('drag-until')));
+    final rect = tester.getRect(find.byKey(keys['summary']!));
+    final end = Offset(rect.center.dx, rect.bottom - 4);
+    final gesture = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    // 同一帧里连着移动，不给中间 layout 留空档。
+    for (var i = 1; i <= 6; i++) {
+      await gesture.moveTo(Offset.lerp(start, end, i / 6)!);
+    }
+    await tester.pump();
+    expect(find.text('impl'), findsOneWidget);
+    expect(find.text('summary'), findsOneWidget);
+    expect(find.textContaining('_children.contains'), findsNothing);
+    expect(find.textContaining('_elements.contains'), findsNothing);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('impl'), findsOneWidget);
+    expect(find.text('summary'), findsOneWidget);
+    expect(find.textContaining('until'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+class _ReorderOnDrop extends StatefulWidget {
+  const _ReorderOnDrop({required this.nodes, required this.keys});
+
+  final List<FlowNode> nodes;
+  final Map<String, GlobalKey> keys;
+
+  @override
+  State<_ReorderOnDrop> createState() => _ReorderOnDropState();
+}
+
+class _ReorderOnDropState extends State<_ReorderOnDrop> {
+  late List<FlowNode> _nodes = List<FlowNode>.of(widget.nodes);
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = buildFlowOutline(_nodes);
+    return FlowOutlineTree(
+      rows: rows,
+      canEdit: true,
+      dragEnabled: true,
+      canMove: true,
+      tree: _nodes,
+      rowKeys: widget.keys,
+      onDrop: (id, target) {
+        setState(() {
+          final from = _nodes.indexWhere((n) => n.id == id);
+          if (from < 0) return;
+          final node = _nodes.removeAt(from);
+          var to = target.index ?? _nodes.length;
+          if (to > _nodes.length) to = _nodes.length;
+          _nodes.insert(to, node);
+        });
+      },
+    );
+  }
 }
 
 /// 宽一点的窗口，免得可编辑行的五个 IconButton 挤溢出。
