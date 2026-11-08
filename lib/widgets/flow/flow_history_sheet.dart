@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../peer/services/hub_flow.dart';
+import '../../utils/layout_utils.dart';
 
 /// 版本历史（方案「关键设计 12」）。
 ///
@@ -18,15 +19,29 @@ Future<FlowHistoryChoice?> showFlowHistorySheet(
   required String name,
   required int latest,
 }) {
+  final sheet = FlowHistorySheet(
+    client: client,
+    peerId: peerId,
+    scope: scope,
+    name: name,
+    latest: latest,
+  );
+  if (LayoutUtils.isDesktopLayout(context)) {
+    return showDialog<FlowHistoryChoice>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: SizedBox(width: 480, height: 560, child: sheet),
+      ),
+    );
+  }
   return showModalBottomSheet<FlowHistoryChoice>(
     context: context,
     isScrollControlled: true,
-    builder: (sheet) => FlowHistorySheet(
-      client: client,
-      peerId: peerId,
-      scope: scope,
-      name: name,
-      latest: latest,
+    showDragHandle: true,
+    useSafeArea: true,
+    builder: (sheetContext) => SizedBox(
+      height: MediaQuery.sizeOf(sheetContext).height * 0.8,
+      child: sheet,
     ),
   );
 }

@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../controllers/flow/flow_edit_ops.dart';
+import '../controllers/flow/flow_field_catalog.dart';
 import '../controllers/flow/flow_diagnostics.dart';
 import '../controllers/flow/flow_draft_store.dart';
 import '../controllers/flow/flow_editor_controller.dart';
@@ -21,6 +23,7 @@ import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
+import '../widgets/flow/flow_context_panel.dart';
 import '../widgets/flow/flow_diagnostics_panel.dart';
 import '../widgets/flow/flow_header_form.dart';
 import '../widgets/flow/flow_history_sheet.dart';
@@ -103,10 +106,18 @@ class FlowDesignScreen extends StatefulWidget {
 class _FlowDesignScreenState extends State<FlowDesignScreen> {
   late FlowEditorController _controller;
 
-  /// 侧栏抽屉当前页签：null = 收起。问题 / 对比 / 演练 / 源码都在这里，
-  /// 不再作为卡片插在节点树顶上把它挤下去。
-  String? _drawerTab;
-  static const _drawerTabs = ['problems', 'diff', 'rehearsal', 'source'];
+  /// 右侧上下文面板。默认展开，页签是属性 / 问题 / 演练 / 源码。
+  bool _panelOpen = true;
+  String _panelTab = 'properties';
+  double _panelWidth = 380;
+  bool _overlay = false;
+  bool _leaveArmed = false;
+  bool _inspectorInvalid = false;
+  int _focusNonce = 0;
+  int _discardNonce = 0;
+  String? _flashField;
+  final FocusNode _outlineFocus = FocusNode();
+  static const _panelTabs = ['properties', 'problems', 'rehearsal', 'source'];
 
   List<String> _flowRefs = const [];
   String? _flashId;
@@ -144,12 +155,38 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   @override
   void initState() {
     super.initState();
-    _drawerTab = _drawerTabs.contains(widget.initialDrawerTab)
-        ? widget.initialDrawerTab
-        : null;
+    if (_panelTabs.contains(widget.initialDrawerTab)) {
+      _panelTab = widget.initialDrawerTab!;
+      _panelOpen = true;
+    }
+    _loadPanelWidth();
     widget.restoreRequests?.addListener(_onRestoreRequest);
     _startController();
     unawaited(_loadFlowRefs());
+  }
+
+  static const _panelWidthKey = 'flow_context_panel_width';
+
+  Future<void> _loadPanelWidth() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final width = prefs.getDouble(_panelWidthKey);
+      if (!mounted || width == null) return;
+      setState(() => _panelWidth = width.clamp(320, 560));
+    } catch (_) {
+      // 测试里没初始化偏好时用默认宽度。
+    }
+  }
+
+  void _rememberPanelWidth(double width) {
+    final next = width.clamp(320, 560).toDouble();
+    setState(() => _panelWidth = next);
+    unawaited(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setDouble(_panelWidthKey, next);
+      } catch (_) {}
+    }());
   }
 
   /// 建一份绑定当前 peerId / name / scope 的 controller，并接好通知。
@@ -231,6 +268,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   @override
   void dispose() {
     widget.restoreRequests?.removeListener(_onRestoreRequest);
+    _outlineFocus.dispose();
     _composer.dispose();
     _flashTimer?.cancel();
     _controller.removeListener(_reportDirty);
@@ -408,6 +446,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   void _locate(FlowDiagnosticTarget target) {
     switch (target) {
       case NodeTarget(:final nodeId):
+        if (!_confirmLeave()) return;
         setState(() {
           // 祖先都展开，否则目标还折叠着看不见。
           for (final row in _rows()) {
@@ -417,9 +456,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           }
           _selectedId = nodeId;
           _flashId = nodeId;
+          _panelTab = 'properties';
+          _panelOpen = true;
+          _leaveArmed = false;
         });
         _flashTimer?.cancel();
-        _flashTimer = Timer(const Duration(milliseconds: 600), () {
+        _flashTimer = Timer(const Duration(milliseconds: 1500), () {
           if (mounted) setState(() => _flashId = null);
         });
         // 展开后等一帧，大纲重排完了再滚过去。
@@ -435,10 +477,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           }
         });
       case HeaderTarget():
-        // 头部字段的问题直接跳到头部表单（M5 已经做了）。
-        if (canEdit && _controller.caps.canEditHeader) {
-          openFlowHeaderForm(context, _controller)?.call();
-        }
+        _showFlowSettings();
       case GlobalTarget():
         break;
     }
@@ -503,6 +542,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   /// （删除除外）。
   Widget _outlineShortcuts(Widget child) {
     return Focus(
+      focusNode: _outlineFocus,
+      autofocus: true,
       child: CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): () =>
@@ -524,6 +565,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               control: true, shift: true): _shortcutRedo,
           const SingleActivator(LogicalKeyboardKey.keyZ,
               meta: true, shift: true): _shortcutRedo,
+          const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+              _moveSelection(up: true),
+          const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+              _moveSelection(up: false),
+          const SingleActivator(LogicalKeyboardKey.enter): _focusPanel,
+          const SingleActivator(LogicalKeyboardKey.escape): _onEscape,
         },
         child: child,
       ),
@@ -593,36 +640,58 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     await _controller.applySource(choice.yaml, checked);
   }
 
-  Future<void> _rowMenu(FlowOutlineRow row) async {
+  Future<void> _rowMenu(FlowOutlineRow row, {Offset? position}) async {
     final choice = await showFlowOutlineMenu(
       context,
       row: row,
       canRetype: _controller.caps.canRetype,
+      position: position,
     );
     if (choice == null || !mounted) return;
+    await _applyMenuChoice(row, choice);
+  }
+
+  Future<void> _applyMenuChoice(
+    FlowOutlineRow row,
+    FlowOutlineMenuChoice choice,
+  ) async {
     final step = _newStep;
-    await switch (choice.action) {
-      FlowOutlineMenuAction.insertChild => _controller.applyOps([
+    switch (choice.action) {
+      case FlowOutlineMenuAction.insertAfter:
+        _addAfter(row);
+      case FlowOutlineMenuAction.insertChild:
+        await _controller.applyOps([
           FlowOutlineOps.insertChild(row.node, step(), branch: choice.branch),
-        ]),
-      FlowOutlineMenuAction.moveIntoPrevious =>
-        _controller.applyOps([FlowOutlineOps.moveIntoPrevious(row)]),
-      FlowOutlineMenuAction.wrapWithPrevious => _controller.applyOps(
-          FlowOutlineOps.wrapWithPrevious(
-            row,
-            choice.kind!,
-            _controller.freshId(choice.kind!),
+        ]);
+      case FlowOutlineMenuAction.wrap:
+        await _controller.applyOps([
+          FlowEditOps.wrap(
+            nodeId: row.node.id,
+            kind: choice.kind!,
+            wrapperId: _controller.freshId(choice.kind!),
           ),
-        ),
-      // 改类型只发一个 retype：保留 id 和 desc / when / retry，主机搬子节点。
-      FlowOutlineMenuAction.retype =>
-        _controller.applyOps([FlowOutlineOps.retype(row, choice.kind!)]),
-      FlowOutlineMenuAction.moveToBranch => _controller.applyOps([
+        ]);
+      case FlowOutlineMenuAction.unwrap:
+        await _controller.applyOps([FlowEditOps.unwrap(row.node.id)]);
+      case FlowOutlineMenuAction.retype:
+        await _controller.applyOps([FlowOutlineOps.retype(row, choice.kind!)]);
+      case FlowOutlineMenuAction.delete:
+        await _delete(row);
+      case FlowOutlineMenuAction.moveIntoPrevious:
+        await _controller.applyOps([FlowOutlineOps.moveIntoPrevious(row)]);
+      case FlowOutlineMenuAction.wrapWithPrevious:
+        await _controller.applyOps(FlowOutlineOps.wrapWithPrevious(
+          row,
+          choice.kind!,
+          _controller.freshId(choice.kind!),
+        ));
+      case FlowOutlineMenuAction.moveToBranch:
+        await _controller.applyOps([
           FlowOutlineOps.moveToBranch(row, choice.branch!),
-        ]),
-      FlowOutlineMenuAction.outdent =>
-        _controller.applyOps([FlowOutlineOps.outdent(row)]),
-    };
+        ]);
+      case FlowOutlineMenuAction.outdent:
+        await _controller.applyOps([FlowOutlineOps.outdent(row)]);
+    }
   }
 
   Future<void> _delete(FlowOutlineRow row) async {
@@ -637,59 +706,111 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     await _controller.applyOps([FlowEditOps.delete(row.node.id)]);
   }
 
-  void _openInspector(FlowNode node) {
-    setState(() => _selectedId = node.id);
-    final schema = _controller.schema;
-    if (schema == null || _controller.busy) return;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheet) => FlowNodeInspector(
-        node: node,
-        schema: schema,
-        roles: peekRoles(_controller.yaml),
-        onPickAgent: _pickAgent,
-        peerId: widget.peerId,
-        tree: _controller.tree,
-        yaml: _controller.yaml,
-        flowRefs: _flowRefs,
-        onApply: (changes) {
-          Navigator.pop(sheet);
-          if (changes.isEmpty) return;
-          unawaited(_controller.applyOps([
-            for (final e in changes.entries)
-              FlowEditOps.set(node.id, e.key, e.value),
-          ]));
-        },
-        onDelete: () {
-          Navigator.pop(sheet);
-          unawaited(_controller.applyOps([FlowEditOps.delete(node.id)]));
-        },
-        onWrap: (kind) {
-          Navigator.pop(sheet);
-          unawaited(_controller.applyOps([
-            FlowEditOps.wrap(
-              nodeId: node.id,
-              kind: kind,
-              wrapperId: _controller.freshId(kind),
-            ),
-          ]));
-        },
-        onUnwrap: () {
-          Navigator.pop(sheet);
-          unawaited(_controller.applyOps([FlowEditOps.unwrap(node.id)]));
-        },
-        onAddAfter: () {
-          Navigator.pop(sheet);
-          final row = _rowFor(node.id);
-          if (row == null) return;
-          // 走大纲那一行：`if` 里要带上 branch，否则新节点会落进 `then`。
-          unawaited(_controller.applyOps([
-            FlowOutlineOps.insertAfter(row, _newStep()),
-          ]));
-        },
-      ),
-    );
+  bool _confirmLeave() {
+    if (!_inspectorInvalid) {
+      _leaveArmed = false;
+      return true;
+    }
+    if (!_leaveArmed) {
+      setState(() => _leaveArmed = true);
+      return false;
+    }
+    setState(() {
+      _discardNonce++;
+      _inspectorInvalid = false;
+      _leaveArmed = false;
+    });
+    return true;
+  }
+
+  void _selectNode(FlowNode node) {
+    final keys = HardwareKeyboard.instance.logicalKeysPressed;
+    final multi = keys.contains(LogicalKeyboardKey.controlLeft) ||
+        keys.contains(LogicalKeyboardKey.controlRight) ||
+        keys.contains(LogicalKeyboardKey.metaLeft) ||
+        keys.contains(LogicalKeyboardKey.metaRight);
+    if (multi && canTalk) {
+      _toggleSelected(node);
+      return;
+    }
+    if (node.id != _selectedId && !_confirmLeave()) return;
+    setState(() {
+      _selectedId = node.id;
+      _panelTab = 'properties';
+      _leaveArmed = false;
+      if (_overlay) _panelOpen = true;
+    });
+    _outlineFocus.requestFocus();
+  }
+
+  void _showFlowSettings() {
+    if (!_confirmLeave()) return;
+    setState(() {
+      _selectedId = null;
+      _panelTab = 'properties';
+      _panelOpen = true;
+      _leaveArmed = false;
+    });
+  }
+
+  void _moveSelection({required bool up}) {
+    final rows = _rows();
+    if (rows.isEmpty) return;
+    final index = rows.indexWhere((row) => row.node.id == _selectedId);
+    final next = index < 0
+        ? (up ? rows.length - 1 : 0)
+        : (index + (up ? -1 : 1)).clamp(0, rows.length - 1);
+    _selectNode(rows[next].node);
+  }
+
+  void _focusPanel() {
+    if (_selectedId == null && _selected.length < 2) return;
+    setState(() => _focusNonce++);
+  }
+
+  void _onEscape() {
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus != null && focus != _outlineFocus && focus.hasFocus) {
+      _outlineFocus.requestFocus();
+      return;
+    }
+    if (_selectedId != null || _selected.length >= 2) {
+      _showFlowSettings();
+      return;
+    }
+    if (_overlay && _panelOpen) {
+      setState(() => _panelOpen = false);
+    }
+  }
+
+  FlowNode? _nodeById(String id) {
+    FlowNode? found;
+    void walk(List<FlowNode> nodes) {
+      for (final node in nodes) {
+        if (node.id == id) {
+          found = node;
+          return;
+        }
+        walk(node.children);
+        if (found != null) return;
+      }
+    }
+
+    walk(_controller.tree);
+    return found;
+  }
+
+  void _onFieldChanged(
+    String nodeId,
+    String path,
+    Object? value, {
+    required bool immediate,
+  }) {
+    _controller.setField(nodeId, path, value, immediate: immediate);
+  }
+
+  void _onExecutorChanged(String nodeId, Map<String, Object?> ops) {
+    unawaited(_controller.setFields(nodeId, ops));
   }
 
   // ── 点选 + 说话 ───────────────────────────────────────────────────────────
@@ -888,7 +1009,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               const SizedBox(width: 8),
               OutlinedButton.icon(
                 key: const ValueKey('rehearse-button'),
-                onPressed: c.loading || c.busy || c.rehearsal.active
+                onPressed: c.loading || c.rehearsal.active
                     ? null
                     : () => _startRehearsal(c),
                 icon: const Icon(Icons.science_outlined, size: 18),
@@ -907,7 +1028,31 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                 onPressed: c.canRedo ? c.redo : null,
               ),
             ],
-            _moreMenu(l10n, c),
+            if (canEdit)
+              IconButton(
+                key: const ValueKey('diff-toggle'),
+                tooltip: _diffTooltip(l10n, c),
+                icon: Icon(
+                  Icons.difference_outlined,
+                  color: c.showDiff ? scheme.primary : null,
+                ),
+                onPressed: c.loading ? null : () => unawaited(c.toggleDiff()),
+              ),
+            if (canEdit)
+              compact
+                  ? IconButton(
+                      key: const ValueKey('header-open'),
+                      tooltip: l10n.flow_headerOpen,
+                      icon: const Icon(Icons.tune),
+                      onPressed: _showFlowSettings,
+                    )
+                  : TextButton.icon(
+                      key: const ValueKey('header-open'),
+                      onPressed: _showFlowSettings,
+                      icon: const Icon(Icons.tune, size: 18),
+                      label: Text(l10n.flow_headerOpen),
+                    ),
+            if (canEdit) _moreMenu(l10n, c),
           ],
         ),
       ),
@@ -927,17 +1072,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           value: 'history',
           enabled: canEdit && c.revision > 1,
           child: Text(l10n.flow_historyOpen),
-        ),
-        PopupMenuItem<String>(
-          key: const ValueKey('header-open'),
-          value: 'header',
-          enabled: canEdit && c.caps.canEditHeader,
-          child: Text(l10n.flow_headerOpen),
-        ),
-        PopupMenuItem<String>(
-          key: const ValueKey('diff-toggle'),
-          value: 'diff',
-          child: Text(l10n.flow_diffToggle),
         ),
         PopupMenuItem<String>(
           // 旧的「源码条」入口 key 保持不变，现在打开侧栏的源码页签。
@@ -963,33 +1097,40 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     switch (choice) {
       case 'history':
         unawaited(_openHistory());
-      case 'header':
-        openFlowHeaderForm(context, c)?.call();
-      case 'diff':
-        _openDrawer('diff');
-        if (!c.showDiff && !c.loading && !c.busy) unawaited(c.toggleDiff());
       case 'source':
-        _openDrawer('source');
+        _openPanel('source');
       case 'problems':
-        _openDrawer('problems');
+        _openPanel('problems');
       case 'rehearsal':
-        _openDrawer('rehearsal');
+        _openPanel('rehearsal');
     }
   }
 
-  void _openDrawer(String tab) {
+  String _diffTooltip(AppLocalizations l10n, FlowEditorController c) {
+    final diff = c.diff;
+    if (!c.showDiff || diff == null) return l10n.flow_diffToggle;
+    final count = diff.nodes.length + diff.header.length;
+    if (count == 0) return l10n.flow_diffNone;
+    return l10n.flow_diffSummary(count);
+  }
+
+  void _openPanel(String tab) {
     if (!mounted) return;
-    setState(() => _drawerTab = tab);
+    setState(() {
+      _panelOpen = true;
+      _panelTab = tab;
+    });
   }
 
   void _doSave(FlowEditorController c) {
-    if (c.errorCount > 0) _openDrawer('problems');
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (c.errorCount > 0) _openPanel('problems');
     unawaited(c.save());
   }
 
   void _startRehearsal(FlowEditorController c) {
     // 演练的图标 / 文案与「开始运行」显式区分；演练期间顶部一直挂着提示条。
-    _openDrawer('rehearsal');
+    _openPanel('rehearsal');
     unawaited(c.startRehearsal());
   }
 
@@ -1065,7 +1206,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                         _ => null,
                       };
                     },
-              onTapRow: (row) => _openInspector(row.node),
+              onTapRow: (row) => _selectNode(row.node),
+              onSecondaryTapRow: (row, position) =>
+                  unawaited(_rowMenu(row, position: position)),
               onToggleCollapse: _toggleCollapse,
               onAddAfter: _addAfter,
               onMoveUp: (row) => _move(row, up: true),
@@ -1079,7 +1222,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         else
           FlowNodeTree(
             nodes: rehearsal.view(c.tree),
-            onTapNode: canEdit ? _openInspector : null,
+            onTapNode: canEdit ? _selectNode : _showReadOnlyNode,
             onLongPressNode: canTalk ? _toggleSelected : null,
             selectedIds: _selected,
             badgeFor: diff == null
@@ -1096,24 +1239,60 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                     };
                   },
           ),
-        if (_reply.isNotEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: SelectableText(_reply.toString()),
+        if (diff != null && diff.removed.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              l10n.flow_diffRemoved(diff.removed.map((n) => n.id).join(', ')),
+              style: theme.textTheme.bodySmall?.copyWith(
+                decoration: TextDecoration.lineThrough,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+        if (diff != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              diff.isEmpty
+                  ? l10n.flow_diffNone
+                  : l10n.flow_diffSummary(
+                      diff.nodes.length + diff.header.length),
+              key: const ValueKey('diff-summary'),
+              style: theme.textTheme.labelMedium,
             ),
           ),
       ],
     );
-    final drawer = _drawerTab == null ? null : _sideDrawer(l10n, theme);
-    // 宽到能分成两栏才并排；窄一点的右栏把抽屉浮在树上，别把节点树压到
-    // 一百多像素（大纲行会横向溢出），树的滚动位置两种情况下都保留。
     return LayoutBuilder(
       builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final wide = width >= 900;
+        final showPanel = canEdit && _panelOpen;
+        if (_overlay != !wide) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _overlay == wide) setState(() => _overlay = !wide);
+          });
+        }
+        final panel = showPanel
+            ? FlowContextPanel(
+                tab: _panelTab,
+                onTab: _openPanel,
+                onClose: () => setState(() => _panelOpen = false),
+                problemCount: c.errorCount,
+                onDragWidth: wide
+                    ? (delta) => _rememberPanelWidth(_panelWidth + delta)
+                    : null,
+                properties: _propertiesPane(l10n),
+                problems: _problemsPage(l10n),
+                rehearsal: _rehearsalPage(l10n, theme),
+                source: _sourcePage(l10n, theme),
+              )
+            : null;
         final treeStack = Stack(
           children: [
             treePane,
-            if (drawer == null)
+            if (canEdit && !showPanel)
               Positioned.directional(
                 textDirection: Directionality.of(context),
                 end: 8,
@@ -1122,37 +1301,31 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                   key: const ValueKey('drawer-open'),
                   tooltip: l10n.flow_drawerOpen,
                   icon: const Icon(Icons.view_sidebar_outlined),
-                  onPressed: () => _openDrawer('problems'),
+                  onPressed: () => _openPanel('properties'),
                 ),
               ),
           ],
         );
-        if (constraints.maxWidth >= 760) {
+        if (wide) {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(child: treeStack),
-              if (drawer != null) ...[
-                VerticalDivider(
-                    width: 1, color: theme.colorScheme.outlineVariant),
-                SizedBox(width: 320, child: drawer),
-              ],
+              if (panel != null) SizedBox(width: _panelWidth, child: panel),
             ],
           );
         }
+        final overlayWidth = width < 600 ? width : (width * 0.85).clamp(0, 380).toDouble();
         return Stack(
           children: [
             Positioned.fill(child: treeStack),
-            if (drawer != null)
+            if (panel != null)
               Positioned(
                 right: 0,
                 top: 0,
                 bottom: 0,
-                width: constraints.maxWidth * 0.6,
-                child: Material(
-                  elevation: 4,
-                  child: drawer,
-                ),
+                width: overlayWidth,
+                child: Material(elevation: 4, child: panel),
               ),
           ],
         );
@@ -1160,81 +1333,165 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     );
   }
 
-  /// 右侧抽屉：问题 / 对比 / 演练 / 源码。切换页签不动左边的节点树。
-  Widget _sideDrawer(AppLocalizations l10n, ThemeData theme) {
+  Widget _propertiesPane(AppLocalizations l10n) {
     final c = _controller;
-    final tab = _drawerTab;
-    final index = tab == null || !_drawerTabs.contains(tab)
-        ? 0
-        : _drawerTabs.indexOf(tab);
+    if (_selected.length >= 2) return _multiSummary(l10n);
+    final selected = _selectedId == null ? null : _nodeById(_selectedId!);
+    final schema = c.schema;
+    if (selected == null || schema == null) {
+      return FlowHeaderForm(
+        controller: c,
+        readOnly: !c.caps.canEditHeader || c.rehearsal.active,
+        onPickAgent: _pickAgent,
+        tree: c.tree,
+      );
+    }
+    final problems = [
+      for (final d in c.diagnostics)
+        if (resolveDiagnostic(d, c.tree) case NodeTarget(:final nodeId))
+          if (nodeId == selected.id) d.message,
+    ];
+    return FlowNodeInspector(
+      key: ValueKey('inspector-${selected.id}'),
+      node: selected,
+      schema: schema,
+      row: _rowFor(selected.id),
+      canRetype: c.caps.canRetype,
+      readOnly: false,
+      rehearsalLocked: c.rehearsal.active,
+      roles: peekRoles(c.yaml),
+      onPickAgent: _pickAgent,
+      peerId: widget.peerId,
+      tree: c.tree,
+      yaml: c.yaml,
+      flowRefs: _flowRefs,
+      problems: problems,
+      rejections: {
+        for (final spec in FlowFieldCatalog.specsFor(selected.kind, schema))
+          if (c.rejection(selected.id, spec.path) case final reason?)
+            spec.path: reason,
+      },
+      flashField: _flashField,
+      showInvalidBanner: _leaveArmed,
+      focusNonce: _focusNonce,
+      discardNonce: _discardNonce,
+      onValidity: (invalid) {
+        if (_inspectorInvalid == invalid) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _inspectorInvalid = invalid);
+        });
+      },
+      onFieldChanged: (path, value, {required immediate}) =>
+          _onFieldChanged(selected.id, path, value, immediate: immediate),
+      onExecutorChanged: (ops) => _onExecutorChanged(selected.id, ops),
+      onDescChanged: (desc) =>
+          _onFieldChanged(selected.id, 'desc', desc, immediate: true),
+      onMenuChoice: (choice) {
+        final row = _rowFor(selected.id);
+        if (row == null) return;
+        unawaited(_applyMenuChoice(row, choice));
+      },
+    );
+  }
+
+  Widget _multiSummary(AppLocalizations l10n) {
+    final ids = _selected.toList();
+    final canWrap = _canWrapSelection();
     return Column(
+      key: const ValueKey('multi-summary'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
-          child: Row(
-            children: [
-              _drawerTabButton('drawer-tab-problems',
-                  l10n.flow_drawerProblemsCount(c.errorCount), index == 0),
-              _drawerTabButton(
-                  'drawer-tab-diff', l10n.flow_drawerDiff, index == 1),
-              _drawerTabButton('drawer-tab-rehearsal',
-                  l10n.flow_drawerRehearsal, index == 2),
-              _drawerTabButton(
-                  'drawer-tab-source', l10n.flow_drawerSource, index == 3),
-              IconButton(
-                key: const ValueKey('drawer-close'),
-                tooltip: l10n.flow_drawerClose,
-                icon: const Icon(Icons.close, size: 18),
-                onPressed: () => setState(() => _drawerTab = null),
-              ),
-            ],
-          ),
+        Row(
+          children: [
+            Expanded(child: Text(l10n.flow_multiSelectTitle(ids.length))),
+            TextButton(
+              onPressed: () => setState(_selected.clear),
+              child: Text(l10n.flow_multiSelectClear),
+            ),
+          ],
         ),
-        Divider(height: 1, color: theme.colorScheme.outlineVariant),
-        Expanded(
-          child: IndexedStack(
-            index: index,
-            children: [
-              _problemsPage(l10n),
-              _diffPage(l10n, theme),
-              _rehearsalPage(l10n, theme),
-              _sourcePage(l10n, theme),
-            ],
-          ),
+        Text(ids.join(' · ')),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          children: [
+            OutlinedButton(
+              onPressed: canWrap ? () => _wrapSelection('par') : null,
+              child: Text(l10n.flow_wrapPar),
+            ),
+            OutlinedButton(
+              onPressed: canWrap ? () => _wrapSelection('loop') : null,
+              child: Text(l10n.flow_wrapLoop),
+            ),
+          ],
         ),
+        const SizedBox(height: 12),
+        Text(l10n.flow_multiSelectHint),
       ],
     );
   }
 
-  Widget _drawerTabButton(String key, String label, bool selected) {
-    final scheme = Theme.of(context).colorScheme;
-    return Expanded(
-      child: InkWell(
-        key: ValueKey(key),
-        onTap: () => _openDrawer(_drawerTabs[
-            ['drawer-tab-problems', 'drawer-tab-diff', 'drawer-tab-rehearsal',
-                'drawer-tab-source']
-                .indexOf(key)]),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                width: selected ? 2 : 0,
-                color: selected ? scheme.primary : Colors.transparent,
-              ),
+  bool _canWrapSelection() {
+    final rows = [
+      for (final id in _selected)
+        if (_rowFor(id) case final row?) row,
+    ];
+    if (rows.length < 2 || rows.length != _selected.length) return false;
+    final parent = rows.first.parentId;
+    final branch = rows.first.branch;
+    if (rows.any((row) => row.parentId != parent || row.branch != branch)) {
+      return false;
+    }
+    final indices = [for (final row in rows) row.index]..sort();
+    for (var i = 1; i < indices.length; i++) {
+      if (indices[i] != indices[i - 1] + 1) return false;
+    }
+    return true;
+  }
+
+  void _wrapSelection(String kind) {
+    final rows = [
+      for (final id in _selected)
+        if (_rowFor(id) case final row?) row,
+    ]..sort((a, b) => a.index.compareTo(b.index));
+    if (rows.length < 2) return;
+    final wrapperId = _controller.freshId(kind);
+    final ops = <Map<String, dynamic>>[
+      FlowEditOps.wrap(
+        nodeId: rows.first.node.id,
+        kind: kind,
+        wrapperId: wrapperId,
+      ),
+      for (final row in rows.skip(1))
+        FlowEditOps.move(nodeId: row.node.id, parentId: wrapperId),
+    ];
+    unawaited(_controller.applyOps(ops));
+  }
+
+  void _showReadOnlyNode(FlowNode node) {
+    final schema = _controller.schema;
+    if (schema == null) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (sheet) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.5,
+        maxChildSize: 0.92,
+        builder: (context, scroll) => ListView(
+          controller: scroll,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          children: [
+            FlowNodeInspector(
+              node: node,
+              schema: schema,
+              readOnly: true,
+              yaml: _controller.yaml,
+              tree: _controller.tree,
             ),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              color: selected ? scheme.primary : scheme.onSurfaceVariant,
-            ),
-          ),
+          ],
         ),
       ),
     );
@@ -1250,47 +1507,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           tree: _controller.tree,
           onLocate: _locate,
         ),
-      ],
-    );
-  }
-
-  Widget _diffPage(AppLocalizations l10n, ThemeData theme) {
-    final c = _controller;
-    final diff = c.diff;
-    return ListView(
-      key: const ValueKey('drawer-diff-page'),
-      padding: const EdgeInsets.all(12),
-      children: [
-        OutlinedButton.icon(
-          key: const ValueKey('diff-toggle-inline'),
-          onPressed: c.loading || c.busy ? null : c.toggleDiff,
-          icon: const Icon(Icons.difference_outlined, size: 18),
-          label: Text(l10n.flow_diffToggle),
-        ),
-        const SizedBox(height: 12),
-        if (!c.showDiff)
-          Text(l10n.flow_drawerDiff, style: theme.textTheme.labelLarge)
-        else if (diff == null)
-          Text(l10n.flow_diffNone)
-        else ...[
-          Text(
-            diff.isEmpty
-                ? l10n.flow_diffNone
-                : l10n.flow_diffSummary(
-                    diff.nodes.length + diff.header.length),
-            style: theme.textTheme.labelLarge,
-          ),
-          if (diff.removed.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              l10n.flow_diffRemoved(diff.removed.map((n) => n.id).join(', ')),
-              style: theme.textTheme.bodySmall?.copyWith(
-                decoration: TextDecoration.lineThrough,
-                color: Colors.grey,
-              ),
-            ),
-          ],
-        ],
       ],
     );
   }
@@ -1357,7 +1573,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               validate: (text) => c.client.validate(widget.peerId, text),
               applyLabel: l10n.flow_sourceApply,
               onApply: (edited, checked) {
-                setState(() => _drawerTab = null);
+                setState(() => _panelOpen = false);
                 unawaited(c.applySource(edited, checked));
               },
             ),
@@ -1428,17 +1644,30 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_reply.isNotEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(_reply.toString()),
+                ),
+              ),
             if (_selected.isNotEmpty)
-              Wrap(
-                spacing: 6,
-                children: [
-                  for (final id in _selected)
-                    InputChip(
-                      key: ValueKey('sel-$id'),
-                      label: Text(id),
-                      onDeleted: () => setState(() => _selected.remove(id)),
-                    ),
-                ],
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final id in _selected)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: InputChip(
+                          key: ValueKey('sel-$id'),
+                          label: Text(id),
+                          onDeleted: () =>
+                              setState(() => _selected.remove(id)),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             Row(
               children: [

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../controllers/flow/flow_executor.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_field_schema.dart';
+import '../../utils/layout_utils.dart';
 
 /// 「跟随 agent 默认」这一项的值。用一个不会和真实模型 / 模式 id 撞上的哨兵。
 const String _kFollowDefault = '\u0000follow-agent-default';
@@ -90,15 +91,28 @@ class FlowFieldEditor extends StatefulWidget {
     required this.spec,
     required this.current,
     required this.onChanged,
+    this.onCommitted,
     this.refCandidates = const [],
     this.intInputNames = const [],
     this.flowRefChoices = const [],
     this.choices,
+    this.enabled = true,
+    this.errorText,
   });
 
   final FlowFieldSpec spec;
   final Object? current;
   final void Function(Object? value) onChanged;
+
+  /// 文本类字段的提交时机。为 null 时每次按键都 [onChanged]（检查器以外的旧用法）。
+  /// 非 null 时：按键走 `immediate: false`，失焦或单行 Enter 走 `immediate: true`。
+  final void Function(Object? value, {required bool immediate})? onCommitted;
+
+  /// false：控件禁用，并在下面显示 [errorText] 或「先选择执行者」。
+  final bool enabled;
+
+  /// 主机拒绝等原因。非空时标红，盖过说明文字。
+  final String? errorText;
 
   /// string / text 的「插入引用」候选。
   final List<String> refCandidates;
@@ -117,22 +131,79 @@ class FlowFieldEditor extends StatefulWidget {
 }
 
 class _FlowFieldEditorState extends State<FlowFieldEditor> {
-  late final TextEditingController _scalar;
-  late final TextEditingController _judge;
-  late final TextEditingController _ask;
+  late TextEditingController _scalar;
+  late TextEditingController _judge;
+  late TextEditingController _ask;
   late String _enumValue;
   bool? _boolean;
   bool _condIsJudge = false;
+  bool _condAlways = false;
   bool _manualChoice = false;
   late String _choiceValue;
   late List<TextEditingController> _list;
   late List<_Pair> _pairs;
   late List<_OutputRow> _outputs;
+  bool _durationRaw = false;
+  int _durationAmount = 30;
+  String _durationUnit = 's';
+  final FocusNode _scope = FocusNode(
+    canRequestFocus: false,
+    skipTraversal: true,
+    descendantsAreFocusable: true,
+  );
+  bool _reseedQueued = false;
+
+  bool get _focused => _scope.hasFocus;
 
   @override
   void initState() {
     super.initState();
+    _scope.addListener(_onScopeFocus);
     _seed();
+  }
+
+  @override
+  void didUpdateWidget(covariant FlowFieldEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_sameValue(oldWidget.current, widget.current)) return;
+    if (_focused) return;
+    _queueReseed();
+  }
+
+  void _queueReseed() {
+    if (_reseedQueued) return;
+    _reseedQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _reseedQueued = false;
+      if (!mounted || _focused) return;
+      final oldScalar = _scalar;
+      final oldJudge = _judge;
+      final oldAsk = _ask;
+      final oldList = List<TextEditingController>.of(_list);
+      final oldPairs = List<_Pair>.of(_pairs);
+      final oldOutputs = List<_OutputRow>.of(_outputs);
+      setState(_seed);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        oldScalar.dispose();
+        oldJudge.dispose();
+        oldAsk.dispose();
+        for (final c in oldList) {
+          c.dispose();
+        }
+        for (final p in oldPairs) {
+          p.dispose();
+        }
+        for (final row in oldOutputs) {
+          row.dispose();
+        }
+      });
+    });
+  }
+
+  bool _sameValue(Object? a, Object? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return a == b;
+    return a.toString() == b.toString();
   }
 
   /// 调用方换了节点 / 主机推来了新草稿时由**值派生的 key**触发重建，重新播种
@@ -159,24 +230,33 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       if (c is List)
         for (final item in c) TextEditingController(text: item.toString()),
     ];
-    if (_list.isEmpty && widget.spec.shape == FlowFieldShape.listOf) {
-      _list.add(TextEditingController());
-    }
     _pairs = [
-      if (c is Map)
+      if (c is Map && widget.spec.shape == FlowFieldShape.mapOf)
         for (final entry in c.entries)
           _Pair(entry.key.toString(), entry.value?.toString() ?? ''),
     ];
-    if (_pairs.isEmpty && widget.spec.shape == FlowFieldShape.mapOf) {
-      _pairs.add(_Pair('', ''));
-    }
     _outputs = [
-      if (c is Map)
+      if (c is Map && widget.spec.shape == FlowFieldShape.outputMap)
         for (final entry in c.entries) _OutputRow.from(entry.key, entry.value),
     ];
-    if (_outputs.isEmpty && widget.spec.shape == FlowFieldShape.outputMap) {
-      _outputs.add(_OutputRow(''));
+    _durationRaw = false;
+    _durationAmount = 0;
+    _durationUnit = 's';
+    if (widget.spec.shape == FlowFieldShape.duration) {
+      final raw = c is String ? c.trim() : '';
+      final parsed = _parseDuration(raw);
+      if (parsed == null && raw.isNotEmpty) {
+        _durationRaw = true;
+      } else if (parsed != null) {
+        _durationAmount = parsed.$1;
+        _durationUnit = parsed.$2;
+        _scalar.text = '$_durationAmount';
+      } else {
+        _scalar.text = '';
+      }
     }
+    _condAlways = widget.spec.path == 'when' &&
+        (c == null || (c is String && c.trim().isEmpty));
   }
 
   void _releaseControllers() {
@@ -196,11 +276,38 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
 
   @override
   void dispose() {
+    _scope.removeListener(_onScopeFocus);
+    _scope.dispose();
     _releaseControllers();
     super.dispose();
   }
 
-  void _emit() {
+  void _onScopeFocus() {
+    if (!mounted) return;
+    setState(() {});
+    if (!_scope.hasFocus && widget.onCommitted != null) {
+      _emit(immediate: true);
+    }
+  }
+
+  bool get _deferText =>
+      widget.onCommitted != null &&
+      switch (widget.spec.shape) {
+        FlowFieldShape.string ||
+        FlowFieldShape.text ||
+        FlowFieldShape.int ||
+        FlowFieldShape.intOrInput ||
+        FlowFieldShape.duration ||
+        FlowFieldShape.cond ||
+        FlowFieldShape.flowRef ||
+        FlowFieldShape.listOf ||
+        FlowFieldShape.mapOf ||
+        FlowFieldShape.outputMap =>
+          true,
+        _ => false,
+      };
+
+  void _emit({bool immediate = false}) {
     final shape = widget.spec.shape;
     Object? value;
     switch (shape) {
@@ -219,7 +326,9 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       case FlowFieldShape.enumOf:
         value = _enumValue.isEmpty ? null : _enumValue;
       case FlowFieldShape.cond:
-        if (_condIsJudge) {
+        if (_condAlways && widget.spec.path == 'when') {
+          value = null;
+        } else if (_condIsJudge) {
           final judge = _judge.text.trim();
           final ask = _ask.text.trim();
           value = (judge.isEmpty && ask.isEmpty)
@@ -250,6 +359,14 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         value = map.isEmpty ? null : map;
       case FlowFieldShape.flowRef:
         value = _scalar.text.trim().isEmpty ? null : _scalar.text.trim();
+      case FlowFieldShape.duration:
+        if (_durationRaw) {
+          value = _scalar.text.trim().isEmpty ? null : _scalar.text.trim();
+        } else if (_durationAmount <= 0) {
+          value = null;
+        } else {
+          value = '$_durationAmount$_durationUnit';
+        }
       case FlowFieldShape.modelRef:
       case FlowFieldShape.modeRef:
         if (_manualChoice) {
@@ -264,7 +381,17 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
           value = _choiceValue == _kFollowDefault ? null : _choiceValue;
         }
     }
-    widget.onChanged(value);
+    if (_deferText) {
+      widget.onCommitted!(value, immediate: immediate);
+    } else {
+      widget.onChanged(value);
+    }
+  }
+
+  static (int, String)? _parseDuration(String raw) {
+    final match = RegExp(r'^(\d+)\s*([smh])$').firstMatch(raw.trim());
+    if (match == null) return null;
+    return (int.parse(match.group(1)!), match.group(2)!);
   }
 
   static int? _numberOrNull(String raw) {
@@ -321,13 +448,41 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
             ),
             const SizedBox(height: 4),
             child,
-            if (emptyRequired)
+            if (widget.errorText != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  widget.errorText!,
+                  style:
+                      theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+                ),
+              )
+            else if (emptyRequired)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   l10n.flow_fieldRequired,
                   style:
                       theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+                ),
+              )
+            else if (_focused && spec.help(zh) != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  spec.help(zh)!,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              )
+            else if (_enumValue.isNotEmpty &&
+                spec.optionDetail(_enumValue, zh) != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  spec.optionDetail(_enumValue, zh)!,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
               ),
           ],
@@ -338,41 +493,48 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       border: const OutlineInputBorder(),
       suffixIcon: widget.refCandidates.isEmpty
           ? null
-          : IconButton(
-              key: ValueKey('ref:${spec.path}'),
+          : _choiceMenu(
+              buttonKey: 'ref:${spec.path}',
               tooltip: l10n.flow_refInsert,
-              icon: const Icon(Icons.data_object, size: 18),
-              onPressed: () => unawaited(_pickRef(context)),
+              icon: Icons.data_object,
+              items: widget.refCandidates,
+              itemKey: (item) => 'ref-item-$item',
+              onPick: (picked) => setState(() => _insertRef(picked)),
+              sheetTitle: l10n.flow_refInsert,
             ),
     );
 
-    return switch (spec.shape) {
-      // 长文本（task.prompt / plan.brief …）随内容自动长高，不再钉死五行。
+    final editor = switch (spec.shape) {
+      // 长文本（task.prompt / plan.brief …）随内容自动长高，最少四行。
       FlowFieldShape.text => wrap(TextField(
           key: ValueKey('f:${spec.path}'),
           controller: _scalar,
-          minLines: 3,
+          enabled: widget.enabled,
+          minLines: 4,
           maxLines: null,
           keyboardType: TextInputType.multiline,
           textInputAction: TextInputAction.newline,
           decoration: textDecoration,
-          onChanged: (_) => setState(_emit),
+          onChanged: (_) => setState(() => _emit()),
         )),
       // string 是 id / 短标量（task.uses、call.group、plan.who …），必须单行：
       // 放开多行会把换行原样发给主机，`agent:<id>\n` 就解析不出 Agent 了。
       FlowFieldShape.string => wrap(TextField(
           key: ValueKey('f:${spec.path}'),
           controller: _scalar,
+          enabled: widget.enabled,
           maxLines: 1,
+          textInputAction: TextInputAction.done,
           decoration: textDecoration,
-          onChanged: (_) => setState(_emit),
+          onChanged: (_) => setState(() => _emit()),
+          onEditingComplete: () => _emit(immediate: true),
         )),
       FlowFieldShape.int => wrap(TextField(
           key: ValueKey('f:${spec.path}'),
           controller: _scalar,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(isDense: true),
-          onChanged: (_) => setState(_emit),
+          onChanged: (_) => setState(() => _emit()),
         )),
       FlowFieldShape.intOrInput => wrap(Row(
           children: [
@@ -382,7 +544,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                 controller: _scalar,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(isDense: true),
-                onChanged: (_) => setState(_emit),
+                onChanged: (_) => setState(() => _emit()),
               ),
             ),
             if (widget.intInputNames.isNotEmpty)
@@ -402,34 +564,21 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
               ),
           ],
         )),
-      FlowFieldShape.boolean => wrap(DropdownButtonFormField<String>(
-          key: ValueKey('f:${spec.path}'),
-          initialValue: _boolean == null ? '' : _boolean.toString(),
-          isDense: true,
-          items: const [
-            DropdownMenuItem<String>(value: '', child: Text('—')),
-            DropdownMenuItem<String>(value: 'true', child: Text('true')),
-            DropdownMenuItem<String>(value: 'false', child: Text('false')),
-          ],
-          onChanged: (v) => setState(() {
-            _boolean = v == null || v.isEmpty ? null : v == 'true';
-            _emit();
-          }),
+      FlowFieldShape.boolean => wrap(Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Switch(
+            key: ValueKey('f:${spec.path}'),
+            value: _boolean ?? false,
+            onChanged: widget.enabled
+                ? (v) => setState(() {
+                      _boolean = v;
+                      _emit();
+                    })
+                : null,
+          ),
         )),
-      FlowFieldShape.enumOf => wrap(DropdownButtonFormField<String>(
-          key: ValueKey('f:${spec.path}'),
-          initialValue: _enumValue.isEmpty ? null : _enumValue,
-          isDense: true,
-          items: [
-            const DropdownMenuItem<String>(value: '', child: Text('—')),
-            for (final option in spec.options)
-              DropdownMenuItem<String>(value: option, child: Text(option)),
-          ],
-          onChanged: (v) => setState(() {
-            _enumValue = v ?? '';
-            _emit();
-          }),
-        )),
+      FlowFieldShape.enumOf => wrap(_enumControl(spec, zh)),
+      FlowFieldShape.duration => wrap(_durationControl(l10n)),
       FlowFieldShape.cond => wrap(_cond(zh, l10n)),
       FlowFieldShape.listOf => wrap(_listRows(l10n)),
       FlowFieldShape.mapOf => wrap(_pairRows(l10n)),
@@ -439,6 +588,141 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       FlowFieldShape.modeRef =>
         wrap(_choiceRow(context, l10n)),
     };
+
+    return Focus(
+      focusNode: _scope,
+      canRequestFocus: false,
+      skipTraversal: true,
+      child: IgnorePointer(
+        ignoring: !widget.enabled &&
+            spec.shape != FlowFieldShape.boolean &&
+            spec.shape != FlowFieldShape.modelRef &&
+            spec.shape != FlowFieldShape.modeRef,
+        child: editor,
+      ),
+    );
+  }
+
+  Widget _enumControl(FlowFieldSpec spec, bool zh) {
+    final includeDefault = spec.defaultValue != null;
+    final count = spec.options.length + (includeDefault ? 1 : 0);
+    if (count <= 3 && spec.options.length <= 3) {
+      final selected = <String>{
+        if (_enumValue.isEmpty && includeDefault)
+          ''
+        else if (_enumValue.isNotEmpty)
+          _enumValue,
+      };
+      return SegmentedButton<String>(
+        key: ValueKey('f:${spec.path}'),
+        emptySelectionAllowed: !includeDefault,
+        showSelectedIcon: false,
+        segments: [
+          if (includeDefault)
+            ButtonSegment(
+              value: '',
+              label: Text(_defaultLabel(spec, zh)),
+              tooltip: spec.defaultValue?.toString(),
+            ),
+          for (final option in spec.options)
+            ButtonSegment(
+              value: option,
+              label: Text(spec.optionLabel(option, zh)),
+              tooltip: option,
+            ),
+        ],
+        selected: selected,
+        onSelectionChanged: widget.enabled
+            ? (next) => setState(() {
+                  _enumValue = next.isEmpty ? '' : next.first;
+                  _emit();
+                })
+            : null,
+      );
+    }
+    return DropdownButtonFormField<String>(
+      key: ValueKey('f:${spec.path}'),
+      initialValue: _enumValue.isEmpty ? '' : _enumValue,
+      isDense: true,
+      items: [
+        DropdownMenuItem<String>(
+          value: '',
+          child: Text(includeDefault ? _defaultLabel(spec, zh) : '—'),
+        ),
+        for (final option in spec.options)
+          DropdownMenuItem<String>(
+            value: option,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(spec.optionLabel(option, zh)),
+                if (spec.optionDetail(option, zh) case final detail?)
+                  Text(detail, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+      ],
+      onChanged: widget.enabled
+          ? (v) => setState(() {
+                _enumValue = v ?? '';
+                _emit();
+              })
+          : null,
+    );
+  }
+
+  String _defaultLabel(FlowFieldSpec spec, bool zh) {
+    final raw = spec.defaultValue?.toString() ?? '';
+    final human = spec.optionLabel(raw, zh);
+    return zh ? '默认（$human）' : 'Default ($human)';
+  }
+
+  Widget _durationControl(AppLocalizations l10n) {
+    if (_durationRaw) {
+      return TextField(
+        key: ValueKey('f:${widget.spec.path}'),
+        controller: _scalar,
+        decoration: const InputDecoration(isDense: true),
+        onChanged: (_) => setState(() => _emit()),
+      );
+    }
+    String unitLabel(String unit) => switch (unit) {
+          'm' => l10n.flow_durationMinutes,
+          'h' => l10n.flow_durationHours,
+          _ => l10n.flow_durationSeconds,
+        };
+    return Row(
+      children: [
+        SizedBox(
+          width: 88,
+          child: TextField(
+            key: ValueKey('f:${widget.spec.path}'),
+            controller: _scalar,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(isDense: true),
+            onChanged: (text) => setState(() {
+              _durationAmount = int.tryParse(text.trim()) ?? 0;
+              _emit();
+            }),
+          ),
+        ),
+        const SizedBox(width: 8),
+        DropdownButton<String>(
+          value: _durationUnit,
+          items: [
+            for (final unit in ['s', 'm', 'h'])
+              DropdownMenuItem(value: unit, child: Text(unitLabel(unit))),
+          ],
+          onChanged: widget.enabled
+              ? (unit) => setState(() {
+                    _durationUnit = unit ?? 's';
+                    _emit();
+                  })
+              : null,
+        ),
+      ],
+    );
   }
 
   /// `call.flow`：优先从同 scope 的流程库里选，仍可手输（比如带 `@revision`）。
@@ -450,47 +734,24 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
             key: ValueKey('f:${widget.spec.path}'),
             controller: _scalar,
             decoration: const InputDecoration(isDense: true),
-            onChanged: (_) => setState(_emit),
+            onChanged: (_) => setState(() => _emit()),
           ),
         ),
         if (widget.flowRefChoices.isNotEmpty)
-          IconButton(
-            key: ValueKey('pick:${widget.spec.path}'),
+          _choiceMenu(
+            buttonKey: 'pick:${widget.spec.path}',
             tooltip: l10n.flow_fieldPickFlow,
-            icon: const Icon(Icons.account_tree_outlined, size: 18),
-            onPressed: () => unawaited(_pickFlowRef(context, l10n)),
+            icon: Icons.account_tree_outlined,
+            items: widget.flowRefChoices,
+            itemKey: (ref) => 'flow-ref-$ref',
+            onPick: (picked) => setState(() {
+              _scalar.text = picked;
+              _emit();
+            }),
+            sheetTitle: l10n.flow_fieldPickFlow,
           ),
       ],
     );
-  }
-
-  Future<void> _pickFlowRef(BuildContext context, AppLocalizations l10n) async {
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      builder: (sheet) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(l10n.flow_fieldPickFlow,
-                  style: Theme.of(context).textTheme.titleSmall),
-            ),
-            for (final ref in widget.flowRefChoices)
-              ListTile(
-                key: ValueKey('flow-ref-$ref'),
-                title: Text(ref),
-                onTap: () => Navigator.pop(sheet, ref),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (picked == null || !mounted) return;
-    setState(() {
-      _scalar.text = picked;
-      _emit();
-    });
   }
 
   /// `task.model` / `task.mode`：优先从选中 agent 的可用列表里选，仍可手输模板
@@ -537,7 +798,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
             controller: _scalar,
             decoration: const InputDecoration(
                 isDense: true, border: OutlineInputBorder()),
-            onChanged: (_) => setState(_emit),
+            onChanged: (_) => setState(() => _emit()),
           ),
           Align(
             alignment: Alignment.centerLeft,
@@ -606,7 +867,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
           isExpanded: true,
           items: items,
           // switchable == false：禁用，只展示当前值。
-          onChanged: choices.switchable
+          onChanged: choices.switchable && widget.enabled
               ? (v) => setState(() {
                     _choiceValue = v ?? _kFollowDefault;
                     _emit();
@@ -669,7 +930,10 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       case FlowFieldShape.outputMap:
         return _outputs.every((r) => r.key.text.trim().isEmpty);
       case FlowFieldShape.flowRef:
-        return _scalar.text.trim().isEmpty;
+      case FlowFieldShape.duration:
+        return _durationRaw
+            ? _scalar.text.trim().isEmpty
+            : _durationAmount <= 0 && _scalar.text.trim().isEmpty;
       case FlowFieldShape.modelRef:
       case FlowFieldShape.modeRef:
         return false; // 非必填：清成「跟随默认」也合法
@@ -677,6 +941,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
   }
 
   Future<void> _pickRef(BuildContext context) async {
+    if (LayoutUtils.isDesktopLayout(context)) return;
     final picked = await showModalBottomSheet<String>(
       context: context,
       builder: (sheet) => SafeArea(
@@ -697,15 +962,79 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     setState(() => _insertRef(picked));
   }
 
+  Widget _choiceMenu({
+    required String buttonKey,
+    required String tooltip,
+    required IconData icon,
+    required List<String> items,
+    required String Function(String item) itemKey,
+    required void Function(String item) onPick,
+    required String sheetTitle,
+  }) {
+    if (LayoutUtils.isDesktopLayout(context)) {
+      return _DesktopChoiceMenu(
+        buttonKey: buttonKey,
+        tooltip: tooltip,
+        icon: icon,
+        items: items,
+        itemKey: itemKey,
+        onPick: onPick,
+      );
+    }
+    return IconButton(
+      key: ValueKey(buttonKey),
+      tooltip: tooltip,
+      icon: Icon(icon, size: 18),
+      onPressed: () async {
+        final picked = await showModalBottomSheet<String>(
+          context: context,
+          builder: (sheet) => SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(sheetTitle,
+                      style: Theme.of(context).textTheme.titleSmall),
+                ),
+                for (final item in items)
+                  ListTile(
+                    key: ValueKey(itemKey(item)),
+                    title: Text(item),
+                    onTap: () => Navigator.pop(sheet, item),
+                  ),
+              ],
+            ),
+          ),
+        );
+        if (picked != null) onPick(picked);
+      },
+    );
+  }
+
   Widget _cond(bool zh, AppLocalizations l10n) {
     return Column(
       children: [
         Row(
           children: [
+            if (widget.spec.path == 'when') ...[
+              ChoiceChip(
+                label: Text(l10n.flow_alwaysRun),
+                selected: _condAlways,
+                onSelected: (_) => setState(() {
+                  _condAlways = true;
+                  _condIsJudge = false;
+                  _scalar.clear();
+                  _emit();
+                }),
+              ),
+              const SizedBox(width: 8),
+            ],
             ChoiceChip(
               label: Text(l10n.flow_fieldCondExpr),
-              selected: !_condIsJudge,
+              selected: !_condIsJudge && !_condAlways,
               onSelected: (_) => setState(() {
+                _condAlways = false;
                 _condIsJudge = false;
                 _emit();
               }),
@@ -715,6 +1044,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
               label: Text(l10n.flow_fieldCondJudge),
               selected: _condIsJudge,
               onSelected: (_) => setState(() {
+                _condAlways = false;
                 _condIsJudge = true;
                 _emit();
               }),
@@ -727,13 +1057,13 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
             controller: _judge,
             decoration: InputDecoration(
                 labelText: l10n.flow_fieldCondWho, isDense: true),
-            onChanged: (_) => setState(_emit),
+            onChanged: (_) => setState(() => _emit()),
           ),
           TextField(
             controller: _ask,
             decoration: InputDecoration(
                 labelText: l10n.flow_fieldCondAsk, isDense: true),
-            onChanged: (_) => setState(_emit),
+            onChanged: (_) => setState(() => _emit()),
           ),
         ] else
           TextField(
@@ -749,14 +1079,22 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                       onPressed: () => unawaited(_pickRef(context)),
                     ),
             ),
-            onChanged: (_) => setState(_emit),
+            onChanged: (_) => setState(() => _emit()),
           ),
       ],
     );
   }
 
   Widget _listRows(AppLocalizations l10n) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_list.isEmpty)
+            Text(
+              l10n.flow_listEmpty,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
           for (var i = 0; i < _list.length; i++)
             Row(
               children: [
@@ -766,7 +1104,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                     controller: _list[i],
                     decoration:
                         InputDecoration(labelText: '#${i + 1}', isDense: true),
-                    onChanged: (_) => setState(_emit),
+                    onChanged: (_) => setState(() => _emit()),
                   ),
                 ),
                 IconButton(
@@ -794,7 +1132,15 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       );
 
   Widget _pairRows(AppLocalizations l10n) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_pairs.isEmpty)
+            Text(
+              l10n.flow_listEmpty,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
           for (var i = 0; i < _pairs.length; i++)
             Row(
               children: [
@@ -804,7 +1150,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                     controller: _pairs[i].key,
                     decoration: InputDecoration(
                         labelText: l10n.flow_fieldKey, isDense: true),
-                    onChanged: (_) => setState(_emit),
+                    onChanged: (_) => setState(() => _emit()),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -814,7 +1160,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                     controller: _pairs[i].value,
                     decoration: InputDecoration(
                         labelText: l10n.flow_fieldValue, isDense: true),
-                    onChanged: (_) => setState(_emit),
+                    onChanged: (_) => setState(() => _emit()),
                   ),
                 ),
                 IconButton(
@@ -850,7 +1196,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
               row: _outputs[i],
               index: i,
               l10n: l10n,
-              onChanged: () => setState(_emit),
+              onChanged: () => setState(() => _emit()),
               onRemove: () => setState(() {
                 _outputs.removeAt(i).dispose();
                 _emit();
@@ -1024,6 +1370,74 @@ class _OutputRowTileState extends State<_OutputRowTile> {
           icon: const Icon(Icons.close, size: 16),
           onPressed: widget.onRemove,
         ),
+      ],
+    );
+  }
+}
+
+/// 桌面端锚在按钮上的选择菜单。多于 8 条时顶部带过滤框。
+class _DesktopChoiceMenu extends StatefulWidget {
+  const _DesktopChoiceMenu({
+    required this.buttonKey,
+    required this.tooltip,
+    required this.icon,
+    required this.items,
+    required this.itemKey,
+    required this.onPick,
+  });
+
+  final String buttonKey;
+  final String tooltip;
+  final IconData icon;
+  final List<String> items;
+  final String Function(String item) itemKey;
+  final void Function(String item) onPick;
+
+  @override
+  State<_DesktopChoiceMenu> createState() => _DesktopChoiceMenuState();
+}
+
+class _DesktopChoiceMenuState extends State<_DesktopChoiceMenu> {
+  String _filter = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filter.isEmpty
+        ? widget.items
+        : [
+            for (final item in widget.items)
+              if (item.toLowerCase().contains(_filter.toLowerCase())) item,
+          ];
+    return MenuAnchor(
+      builder: (context, controller, child) => IconButton(
+        key: ValueKey(widget.buttonKey),
+        tooltip: widget.tooltip,
+        icon: Icon(widget.icon, size: 18),
+        onPressed: () {
+          if (controller.isOpen) {
+            controller.close();
+          } else {
+            setState(() => _filter = '');
+            controller.open();
+          }
+        },
+      ),
+      menuChildren: [
+        if (widget.items.length > 8)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: TextField(
+              autofocus: true,
+              decoration: const InputDecoration(isDense: true),
+              onChanged: (text) => setState(() => _filter = text),
+            ),
+          ),
+        for (final item in filtered)
+          MenuItemButton(
+            key: ValueKey(widget.itemKey(item)),
+            onPressed: () => widget.onPick(item),
+            child: Text(item),
+          ),
       ],
     );
   }

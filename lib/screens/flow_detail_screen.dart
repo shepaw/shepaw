@@ -11,6 +11,7 @@ import '../peer/services/hub_flow.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/flow/flow_overview_pane.dart';
 import '../widgets/flow/flow_runs_pane.dart';
+import '../widgets/flow/flow_steps_pane.dart';
 import 'flow_design_screen.dart';
 
 /// 一个流程的容器：概览 / 编辑 / 运行三个明确的去处。
@@ -67,7 +68,7 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
   final ValueNotifier<int> _restoreRequests = ValueNotifier<int>(0);
 
   bool get _desktop => LayoutUtils.isDesktopLayout(context);
-  int get _runsIndex => _desktop ? 2 : 1;
+  int get _runsIndex => 2;
 
   @override
   void initState() {
@@ -198,6 +199,8 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
       ('detail-tab-overview', Icons.info_outline, l10n.flow_tabOverview),
       if (_desktop)
         ('detail-tab-edit', Icons.edit_outlined, l10n.flow_tabEdit),
+      if (!_desktop)
+        ('detail-tab-steps', Icons.account_tree_outlined, l10n.flow_tabSteps),
       ('detail-tab-runs', Icons.playlist_play, l10n.flow_tabRuns),
     ];
     return Material(
@@ -270,9 +273,17 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
       name: widget.flow.name,
       onOpenRun: widget.onOpenRun,
     );
+    final steps = FlowStepsPane(
+      client: widget.client,
+      peerId: widget.peerId,
+      name: widget.flow.name,
+      scope: widget.scope,
+      draftBanner:
+          _draft == null ? null : _draftBanner(AppLocalizations.of(context)),
+    );
     return _desktop
         ? [overview, _editPane ?? const SizedBox.shrink(), runs]
-        : [overview, runs];
+        : [overview, steps, runs];
   }
 
   Widget _draftBanner(AppLocalizations l10n) {

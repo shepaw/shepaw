@@ -18154,6 +18154,378 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'已用 {duration}'**
   String flow_runElapsed(String duration);
+
+  /// No description provided for @flow_panelProperties.
+  ///
+  /// In zh, this message translates to:
+  /// **'属性'**
+  String get flow_panelProperties;
+
+  /// No description provided for @flow_idLocked.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建后不可改'**
+  String get flow_idLocked;
+
+  /// No description provided for @flow_copied.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制'**
+  String get flow_copied;
+
+  /// No description provided for @flow_descPlaceholder.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加描述…'**
+  String get flow_descPlaceholder;
+
+  /// No description provided for @flow_nodeProblem.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 个问题：{message}'**
+  String flow_nodeProblem(int count, String message);
+
+  /// No description provided for @flow_locate.
+  ///
+  /// In zh, this message translates to:
+  /// **'定位'**
+  String get flow_locate;
+
+  /// No description provided for @flow_rehearsalReadOnly.
+  ///
+  /// In zh, this message translates to:
+  /// **'演练中，结束后可编辑'**
+  String get flow_rehearsalReadOnly;
+
+  /// No description provided for @flow_invalidPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'有 {count} 处输入无效，未生效'**
+  String flow_invalidPending(int count);
+
+  /// No description provided for @flow_ifBranchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'满足时走「是」分支，否则走「否」分支'**
+  String get flow_ifBranchHint;
+
+  /// No description provided for @flow_seqHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'顺序执行里面的步骤'**
+  String get flow_seqHint;
+
+  /// No description provided for @flow_groupWhat.
+  ///
+  /// In zh, this message translates to:
+  /// **'做什么'**
+  String get flow_groupWhat;
+
+  /// No description provided for @flow_groupWho.
+  ///
+  /// In zh, this message translates to:
+  /// **'谁来做'**
+  String get flow_groupWho;
+
+  /// No description provided for @flow_groupWhen.
+  ///
+  /// In zh, this message translates to:
+  /// **'什么时候执行'**
+  String get flow_groupWhen;
+
+  /// No description provided for @flow_groupOutput.
+  ///
+  /// In zh, this message translates to:
+  /// **'输出'**
+  String get flow_groupOutput;
+
+  /// No description provided for @flow_groupJoin.
+  ///
+  /// In zh, this message translates to:
+  /// **'怎么汇合'**
+  String get flow_groupJoin;
+
+  /// No description provided for @flow_groupUntil.
+  ///
+  /// In zh, this message translates to:
+  /// **'循环到什么时候'**
+  String get flow_groupUntil;
+
+  /// No description provided for @flow_groupCond.
+  ///
+  /// In zh, this message translates to:
+  /// **'判断条件'**
+  String get flow_groupCond;
+
+  /// No description provided for @flow_groupOver.
+  ///
+  /// In zh, this message translates to:
+  /// **'对哪些数据'**
+  String get flow_groupOver;
+
+  /// No description provided for @flow_groupAsk.
+  ///
+  /// In zh, this message translates to:
+  /// **'问谁'**
+  String get flow_groupAsk;
+
+  /// No description provided for @flow_groupShow.
+  ///
+  /// In zh, this message translates to:
+  /// **'给他看什么'**
+  String get flow_groupShow;
+
+  /// No description provided for @flow_groupOptions.
+  ///
+  /// In zh, this message translates to:
+  /// **'可选的回答'**
+  String get flow_groupOptions;
+
+  /// No description provided for @flow_groupVars.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置变量'**
+  String get flow_groupVars;
+
+  /// No description provided for @flow_groupFlow.
+  ///
+  /// In zh, this message translates to:
+  /// **'调用哪个流程'**
+  String get flow_groupFlow;
+
+  /// No description provided for @flow_groupWhere.
+  ///
+  /// In zh, this message translates to:
+  /// **'在哪执行'**
+  String get flow_groupWhere;
+
+  /// No description provided for @flow_groupPlanWho.
+  ///
+  /// In zh, this message translates to:
+  /// **'谁来规划'**
+  String get flow_groupPlanWho;
+
+  /// No description provided for @flow_groupBrief.
+  ///
+  /// In zh, this message translates to:
+  /// **'规划要求'**
+  String get flow_groupBrief;
+
+  /// No description provided for @flow_groupAdvanced.
+  ///
+  /// In zh, this message translates to:
+  /// **'高级'**
+  String get flow_groupAdvanced;
+
+  /// No description provided for @flow_kindNameTask.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务'**
+  String get flow_kindNameTask;
+
+  /// No description provided for @flow_kindNameSeq.
+  ///
+  /// In zh, this message translates to:
+  /// **'顺序'**
+  String get flow_kindNameSeq;
+
+  /// No description provided for @flow_kindNamePar.
+  ///
+  /// In zh, this message translates to:
+  /// **'并行'**
+  String get flow_kindNamePar;
+
+  /// No description provided for @flow_kindNameLoop.
+  ///
+  /// In zh, this message translates to:
+  /// **'循环'**
+  String get flow_kindNameLoop;
+
+  /// No description provided for @flow_kindNameIf.
+  ///
+  /// In zh, this message translates to:
+  /// **'条件'**
+  String get flow_kindNameIf;
+
+  /// No description provided for @flow_kindNameMap.
+  ///
+  /// In zh, this message translates to:
+  /// **'逐项'**
+  String get flow_kindNameMap;
+
+  /// No description provided for @flow_kindNameGate.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认'**
+  String get flow_kindNameGate;
+
+  /// No description provided for @flow_kindNameSet.
+  ///
+  /// In zh, this message translates to:
+  /// **'赋值'**
+  String get flow_kindNameSet;
+
+  /// No description provided for @flow_kindNameCall.
+  ///
+  /// In zh, this message translates to:
+  /// **'子流程'**
+  String get flow_kindNameCall;
+
+  /// No description provided for @flow_kindNamePlan.
+  ///
+  /// In zh, this message translates to:
+  /// **'规划'**
+  String get flow_kindNamePlan;
+
+  /// No description provided for @flow_pickExecutorFirst.
+  ///
+  /// In zh, this message translates to:
+  /// **'先选择执行者'**
+  String get flow_pickExecutorFirst;
+
+  /// No description provided for @flow_durationSeconds.
+  ///
+  /// In zh, this message translates to:
+  /// **'秒'**
+  String get flow_durationSeconds;
+
+  /// No description provided for @flow_durationMinutes.
+  ///
+  /// In zh, this message translates to:
+  /// **'分'**
+  String get flow_durationMinutes;
+
+  /// No description provided for @flow_durationHours.
+  ///
+  /// In zh, this message translates to:
+  /// **'时'**
+  String get flow_durationHours;
+
+  /// No description provided for @flow_listEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有条目'**
+  String get flow_listEmpty;
+
+  /// No description provided for @flow_alwaysRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'总是执行'**
+  String get flow_alwaysRun;
+
+  /// No description provided for @flow_menuAddThen.
+  ///
+  /// In zh, this message translates to:
+  /// **'加到「是」分支'**
+  String get flow_menuAddThen;
+
+  /// No description provided for @flow_menuAddElse.
+  ///
+  /// In zh, this message translates to:
+  /// **'加到「否」分支'**
+  String get flow_menuAddElse;
+
+  /// No description provided for @flow_menuAddInside.
+  ///
+  /// In zh, this message translates to:
+  /// **'加到里面'**
+  String get flow_menuAddInside;
+
+  /// No description provided for @flow_menuUnwrap.
+  ///
+  /// In zh, this message translates to:
+  /// **'拆开容器'**
+  String get flow_menuUnwrap;
+
+  /// No description provided for @flow_menuRetypeKind.
+  ///
+  /// In zh, this message translates to:
+  /// **'改成 {kind}'**
+  String flow_menuRetypeKind(String kind);
+
+  /// No description provided for @flow_multiSelectTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'已选 {count} 个步骤'**
+  String flow_multiSelectTitle(int count);
+
+  /// No description provided for @flow_multiSelectClear.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除'**
+  String get flow_multiSelectClear;
+
+  /// No description provided for @flow_multiSelectHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'在下方说话条里描述想怎么改，群主会针对这几步修改'**
+  String get flow_multiSelectHint;
+
+  /// No description provided for @flow_tabSteps.
+  ///
+  /// In zh, this message translates to:
+  /// **'步骤'**
+  String get flow_tabSteps;
+
+  /// No description provided for @flow_stepsReadOnly.
+  ///
+  /// In zh, this message translates to:
+  /// **'手机上只能查看，编辑请在电脑上进行'**
+  String get flow_stepsReadOnly;
+
+  /// No description provided for @flow_stepsSelected.
+  ///
+  /// In zh, this message translates to:
+  /// **'已选 {count} 步 · 完成'**
+  String flow_stepsSelected(int count);
+
+  /// No description provided for @flow_stepsSelect.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择'**
+  String get flow_stepsSelect;
+
+  /// No description provided for @flow_stepsDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成'**
+  String get flow_stepsDone;
+
+  /// No description provided for @flow_stepsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按或点「选择」可以挑出步骤，再对群主说要怎么改'**
+  String get flow_stepsHint;
+
+  /// No description provided for @flow_talkAboutStep.
+  ///
+  /// In zh, this message translates to:
+  /// **'就这一步跟群主说…'**
+  String get flow_talkAboutStep;
+
+  /// No description provided for @flow_runtimeInputs.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行时要填的参数'**
+  String get flow_runtimeInputs;
+
+  /// No description provided for @flow_noRuntimeInputs.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行时不需要填写参数'**
+  String get flow_noRuntimeInputs;
+
+  /// No description provided for @flow_runtimeOutputs.
+  ///
+  /// In zh, this message translates to:
+  /// **'结果输出'**
+  String get flow_runtimeOutputs;
+
+  /// No description provided for @flow_inputRequiredShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'必填'**
+  String get flow_inputRequiredShort;
 }
 
 class _AppLocalizationsDelegate

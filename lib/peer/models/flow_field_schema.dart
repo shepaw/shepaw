@@ -24,6 +24,10 @@ enum FlowFieldShape {
 
   /// `task.mode`：同上，走 `agent_modes_req` 拉到的模式列表。
   modeRef,
+
+  /// 时长（`30s` / `2m` / `1h`）。界面是数字 + 单位；读到无法解析的旧值时
+  /// 退回原样的文本框。
+  duration,
 }
 
 class FlowFieldSpec {
@@ -34,6 +38,12 @@ class FlowFieldSpec {
     required this.labelEn,
     this.options = const [],
     this.required = false,
+    this.group = 'advanced',
+    this.helpZh,
+    this.helpEn,
+    this.optionLabels = const {},
+    this.optionHelp = const {},
+    this.defaultValue,
   });
 
   /// 点分路径，如 `task.prompt`。
@@ -48,7 +58,43 @@ class FlowFieldSpec {
   /// 必填字段清空时不发 null，界面上标红（M1.5 之前发出去会触发解析失败）。
   final bool required;
 
+  /// 分组 id。界面按 kind 的分组表排序；表里没有的字段落到 `advanced`。
+  final String group;
+
+  /// 一行说明。获得焦点或值非法时才显示。
+  final String? helpZh;
+  final String? helpEn;
+
+  /// 枚举值 → 短的人话（分段按钮 / 下拉第一行）。
+  final Map<String, (String, String)> optionLabels;
+
+  /// 枚举值 → 稍长的说明（下拉第二行，或分段按钮选中后显示在下方）。
+  final Map<String, (String, String)> optionHelp;
+
+  /// 空着时的默认。用来画「默认（xxx）」和判断高级摘要里要不要列出。
+  final Object? defaultValue;
+
   String label(bool zh) => zh ? labelZh : labelEn;
+
+  String? help(bool zh) {
+    final text = zh ? helpZh : helpEn;
+    if (text == null || text.isEmpty) return null;
+    return text;
+  }
+
+  /// 枚举的短名。表里没有就退回原始值。
+  String optionLabel(String value, bool zh) {
+    final pair = optionLabels[value];
+    if (pair == null) return value;
+    return zh ? pair.$1 : pair.$2;
+  }
+
+  String? optionDetail(String value, bool zh) {
+    final pair = optionHelp[value];
+    if (pair == null) return null;
+    final text = zh ? pair.$1 : pair.$2;
+    return text.isEmpty ? null : text;
+  }
 }
 
 /// 主机 `set` 操作能不能吃这个值。编辑器标红的值一律不能发 —— 否则 M1.5 会
@@ -98,7 +144,8 @@ bool isFlowFieldValueValid(FlowFieldSpec spec, Object? value) {
         }),
     FlowFieldShape.flowRef ||
     FlowFieldShape.modelRef ||
-    FlowFieldShape.modeRef =>
+    FlowFieldShape.modeRef ||
+    FlowFieldShape.duration =>
       value is String && value.trim().isNotEmpty,
   };
 }

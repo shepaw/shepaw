@@ -16,6 +16,7 @@ class FlowNodeTree extends StatelessWidget {
     this.badgeFor,
     this.onLongPressNode,
     this.selectedIds = const {},
+    this.selectionMode = false,
   });
 
   final List<FlowNode> nodes;
@@ -36,6 +37,9 @@ class FlowNodeTree extends StatelessWidget {
   /// 已选中的节点 id。
   final Set<String> selectedIds;
 
+  /// 选择模式：每行左边一个复选框，点击由调用方切换选中。
+  final bool selectionMode;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -51,6 +55,8 @@ class FlowNodeTree extends StatelessWidget {
             badgeFor: badgeFor,
             onLongPressNode: onLongPressNode,
             selected: selectedIds.contains(nodes[i].id),
+            selectedIds: selectedIds,
+            selectionMode: selectionMode,
           ),
         ],
       ],
@@ -136,6 +142,7 @@ class FlowNodeCard extends StatelessWidget {
     this.onLongPressNode,
     this.selected = false,
     this.selectedIds = const {},
+    this.selectionMode = false,
   });
 
   final FlowNode node;
@@ -146,6 +153,7 @@ class FlowNodeCard extends StatelessWidget {
   final void Function(FlowNode node)? onLongPressNode;
   final bool selected;
   final Set<String> selectedIds;
+  final bool selectionMode;
 
   @override
   Widget build(BuildContext context) {
@@ -183,6 +191,14 @@ class FlowNodeCard extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  if (selectionMode)
+                    Checkbox(
+                      key: ValueKey('step-check-${node.id}'),
+                      value: selected,
+                      onChanged: onTapNode == null
+                          ? null
+                          : (_) => onTapNode!(node),
+                    ),
                   Expanded(
                     child: Text(
                       flowKindTitle(AppLocalizations.of(context), node),
@@ -286,6 +302,7 @@ class FlowNodeCard extends StatelessWidget {
                       : FlowNodeTree(
                           nodes: node.children,
                           onTapNode: onTapNode,
+                          selectionMode: selectionMode,
                           onOpenSession: onOpenSession,
                           onAnswerGate: onAnswerGate,
                           badgeFor: badgeFor,

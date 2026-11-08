@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../controllers/flow/flow_executor.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
 import '../../peer/services/hub_flow.dart';
@@ -93,6 +94,13 @@ class FlowOverviewPane extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          _RuntimeParams(
+            client: client,
+            peerId: peerId,
+            name: flow.name,
+            scope: scope,
+          ),
+          const SizedBox(height: 16),
           // 「开始运行」是这一页唯一的主按钮；演练用不同图标 + 明确写出
           // 「不会真调用 agent」，别再和运行混成一个播放图标。
           Wrap(
@@ -142,5 +150,80 @@ class FlowOverviewPane extends StatelessWidget {
     if (diff.inHours < 1) return l10n.flow_runsMinutesAgo(diff.inMinutes);
     if (diff.inDays < 1) return l10n.flow_runsHoursAgo(diff.inHours);
     return l10n.flow_runsDaysAgo(diff.inDays);
+  }
+}
+
+class _RuntimeParams extends StatefulWidget {
+  const _RuntimeParams({
+    required this.client,
+    required this.peerId,
+    required this.name,
+    required this.scope,
+  });
+
+  final HubFlow client;
+  final String peerId;
+  final String name;
+  final String scope;
+
+  @override
+  State<_RuntimeParams> createState() => _RuntimeParamsState();
+}
+
+class _RuntimeParamsState extends State<_RuntimeParams> {
+  List<FlowInputSpec> _inputs = const [];
+  Map<String, String> _outputs = const {};
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final got = await widget.client.get(
+      widget.peerId,
+      widget.name,
+      scope: widget.scope,
+    );
+    if (!mounted) return;
+    final yaml = got?.yaml ?? '';
+    setState(() {
+      _loaded = true;
+      _inputs = peekInputs(yaml);
+      _outputs = FlowHeaderPeek.outputs(yaml);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Column(
+      key: const ValueKey('runtime-params'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(l10n.flow_runtimeInputs, style: theme.textTheme.titleSmall),
+        const SizedBox(height: 4),
+        if (_inputs.isEmpty)
+          Text(l10n.flow_noRuntimeInputs,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ))
+        else
+          for (final input in _inputs)
+            Text(
+              '${input.name} · ${input.type}'
+              '${input.required ? ' · ${l10n.flow_inputRequiredShort}' : ''}',
+            ),
+        if (_outputs.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(l10n.flow_runtimeOutputs, style: theme.textTheme.titleSmall),
+          for (final name in _outputs.keys) Text(name),
+        ],
+      ],
+    );
   }
 }

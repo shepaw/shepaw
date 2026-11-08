@@ -30,6 +30,7 @@ class FlowOutlineTree extends StatefulWidget {
     this.collapsed = const {},
     this.badgeFor,
     this.onTapRow,
+    this.onSecondaryTapRow,
     this.onToggleCollapse,
     this.onAddAfter,
     this.onMoveUp,
@@ -58,6 +59,7 @@ class FlowOutlineTree extends StatefulWidget {
   final (String, Color)? Function(FlowOutlineRow row)? badgeFor;
 
   final void Function(FlowOutlineRow row)? onTapRow;
+  final void Function(FlowOutlineRow row, Offset position)? onSecondaryTapRow;
   final void Function(FlowOutlineRow row)? onToggleCollapse;
   final void Function(FlowOutlineRow row)? onAddAfter;
   final void Function(FlowOutlineRow row)? onMoveUp;
@@ -400,6 +402,9 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
       onDragStarted: () => _startDrag(row.node.id),
       onDragEnd: _endDrag,
       onTap: widget.onTapRow == null ? null : () => widget.onTapRow!(row),
+      onSecondaryTap: widget.onSecondaryTapRow == null
+          ? null
+          : (position) => widget.onSecondaryTapRow!(row, position),
       onToggleCollapse: widget.onToggleCollapse == null
           ? null
           : () => widget.onToggleCollapse!(row),
@@ -582,6 +587,7 @@ class _Row extends StatelessWidget {
     required this.onDragStarted,
     required this.onDragEnd,
     required this.onTap,
+    required this.onSecondaryTap,
     required this.onToggleCollapse,
     required this.onAddAfter,
     required this.onMoveUp,
@@ -605,6 +611,7 @@ class _Row extends StatelessWidget {
   final VoidCallback? onDragStarted;
   final VoidCallback? onDragEnd;
   final VoidCallback? onTap;
+  final void Function(Offset position)? onSecondaryTap;
   final VoidCallback? onToggleCollapse;
   final VoidCallback? onAddAfter;
   final VoidCallback? onMoveUp;
@@ -635,6 +642,9 @@ class _Row extends StatelessWidget {
           key: ValueKey('row-${node.id}'),
           borderRadius: BorderRadius.circular(10),
           onTap: onTap,
+          onSecondaryTapUp: onSecondaryTap == null
+              ? null
+              : (details) => onSecondaryTap!(details.globalPosition),
           onLongPress: onLongPress,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

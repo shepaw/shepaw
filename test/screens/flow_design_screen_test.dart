@@ -227,9 +227,8 @@ void main() {
     final promptField = find.byKey(const ValueKey('f:task.prompt'));
     expect(find.text('写'), findsWidgets);
     await tester.enterText(promptField, '认真写');
-    // 客户端补充字段让检查器变高了，应用按钮可能滚出屏幕。
-    await tester.ensureVisible(find.byKey(const ValueKey('inspector-apply')));
-    await tester.tap(find.byKey(const ValueKey('inspector-apply')));
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
     await _settle(tester);
 
     final edit = host.sent.firstWhere((f) => f['type'] == 'flow_edit_req');
@@ -262,7 +261,7 @@ void main() {
       client: host.client,
     )));
     await _settle(tester);
-    await _openMenu(tester, 'diff-toggle');
+    await tester.tap(find.byKey(const ValueKey('diff-toggle')));
     await _settle(tester);
     expect(find.text('1 处改动'), findsOneWidget);
     expect(find.text('有改动'), findsOneWidget);
@@ -370,8 +369,8 @@ void main() {
     await tester.tap(find.text('impl'));
     await _settle(tester);
     await tester.enterText(find.byKey(const ValueKey('f:task.prompt')), '认真写');
-    await tester.ensureVisible(find.byKey(const ValueKey('inspector-apply')));
-    await tester.tap(find.byKey(const ValueKey('inspector-apply')));
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
     await _settle(tester);
     final save = find.byKey(const ValueKey('save-button'));
     expect(tester.widget<FilledButton>(save).onPressed, isNotNull);

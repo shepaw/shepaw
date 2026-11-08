@@ -9985,4 +9985,200 @@ class AppLocalizationsZh extends AppLocalizations {
   String flow_runElapsed(String duration) {
     return '已用 $duration';
   }
+
+  @override
+  String get flow_panelProperties => '属性';
+
+  @override
+  String get flow_idLocked => '创建后不可改';
+
+  @override
+  String get flow_copied => '已复制';
+
+  @override
+  String get flow_descPlaceholder => '添加描述…';
+
+  @override
+  String flow_nodeProblem(int count, String message) {
+    return '$count 个问题：$message';
+  }
+
+  @override
+  String get flow_locate => '定位';
+
+  @override
+  String get flow_rehearsalReadOnly => '演练中，结束后可编辑';
+
+  @override
+  String flow_invalidPending(int count) {
+    return '有 $count 处输入无效，未生效';
+  }
+
+  @override
+  String get flow_ifBranchHint => '满足时走「是」分支，否则走「否」分支';
+
+  @override
+  String get flow_seqHint => '顺序执行里面的步骤';
+
+  @override
+  String get flow_groupWhat => '做什么';
+
+  @override
+  String get flow_groupWho => '谁来做';
+
+  @override
+  String get flow_groupWhen => '什么时候执行';
+
+  @override
+  String get flow_groupOutput => '输出';
+
+  @override
+  String get flow_groupJoin => '怎么汇合';
+
+  @override
+  String get flow_groupUntil => '循环到什么时候';
+
+  @override
+  String get flow_groupCond => '判断条件';
+
+  @override
+  String get flow_groupOver => '对哪些数据';
+
+  @override
+  String get flow_groupAsk => '问谁';
+
+  @override
+  String get flow_groupShow => '给他看什么';
+
+  @override
+  String get flow_groupOptions => '可选的回答';
+
+  @override
+  String get flow_groupVars => '设置变量';
+
+  @override
+  String get flow_groupFlow => '调用哪个流程';
+
+  @override
+  String get flow_groupWhere => '在哪执行';
+
+  @override
+  String get flow_groupPlanWho => '谁来规划';
+
+  @override
+  String get flow_groupBrief => '规划要求';
+
+  @override
+  String get flow_groupAdvanced => '高级';
+
+  @override
+  String get flow_kindNameTask => '任务';
+
+  @override
+  String get flow_kindNameSeq => '顺序';
+
+  @override
+  String get flow_kindNamePar => '并行';
+
+  @override
+  String get flow_kindNameLoop => '循环';
+
+  @override
+  String get flow_kindNameIf => '条件';
+
+  @override
+  String get flow_kindNameMap => '逐项';
+
+  @override
+  String get flow_kindNameGate => '确认';
+
+  @override
+  String get flow_kindNameSet => '赋值';
+
+  @override
+  String get flow_kindNameCall => '子流程';
+
+  @override
+  String get flow_kindNamePlan => '规划';
+
+  @override
+  String get flow_pickExecutorFirst => '先选择执行者';
+
+  @override
+  String get flow_durationSeconds => '秒';
+
+  @override
+  String get flow_durationMinutes => '分';
+
+  @override
+  String get flow_durationHours => '时';
+
+  @override
+  String get flow_listEmpty => '还没有条目';
+
+  @override
+  String get flow_alwaysRun => '总是执行';
+
+  @override
+  String get flow_menuAddThen => '加到「是」分支';
+
+  @override
+  String get flow_menuAddElse => '加到「否」分支';
+
+  @override
+  String get flow_menuAddInside => '加到里面';
+
+  @override
+  String get flow_menuUnwrap => '拆开容器';
+
+  @override
+  String flow_menuRetypeKind(String kind) {
+    return '改成 $kind';
+  }
+
+  @override
+  String flow_multiSelectTitle(int count) {
+    return '已选 $count 个步骤';
+  }
+
+  @override
+  String get flow_multiSelectClear => '清除';
+
+  @override
+  String get flow_multiSelectHint => '在下方说话条里描述想怎么改，群主会针对这几步修改';
+
+  @override
+  String get flow_tabSteps => '步骤';
+
+  @override
+  String get flow_stepsReadOnly => '手机上只能查看，编辑请在电脑上进行';
+
+  @override
+  String flow_stepsSelected(int count) {
+    return '已选 $count 步 · 完成';
+  }
+
+  @override
+  String get flow_stepsSelect => '选择';
+
+  @override
+  String get flow_stepsDone => '完成';
+
+  @override
+  String get flow_stepsHint => '长按或点「选择」可以挑出步骤，再对群主说要怎么改';
+
+  @override
+  String get flow_talkAboutStep => '就这一步跟群主说…';
+
+  @override
+  String get flow_runtimeInputs => '运行时要填的参数';
+
+  @override
+  String get flow_noRuntimeInputs => '运行时不需要填写参数';
+
+  @override
+  String get flow_runtimeOutputs => '结果输出';
+
+  @override
+  String get flow_inputRequiredShort => '必填';
 }

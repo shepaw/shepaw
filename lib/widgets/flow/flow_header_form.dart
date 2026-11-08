@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -5,34 +6,22 @@ import 'package:flutter/material.dart';
 import '../../controllers/flow/flow_editor_controller.dart';
 import '../../controllers/flow/flow_executor.dart';
 import '../../l10n/app_localizations.dart';
+import '../../peer/models/flow_models.dart';
 
-/// 定义头表单（方案 M5）：inputs / roles / limits / outputs / description。
-///
-/// 改动一律走主机的 `header` 操作（M1.5），App 只读不写 YAML。所以这台主机如果
-/// 不支持 `header`，入口根本不会出来（[FlowHostCaps.canEditHeader]）。
-void Function()? openFlowHeaderForm(
-  BuildContext context,
-  FlowEditorController controller,
-) {
-  return () => showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        builder: (sheet) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.8,
-            child: FlowHeaderForm(controller: controller),
-          ),
-        ),
-      );
-}
-
+/// 流程设置：嵌在属性面板里，改动直接 `setHeaders`，没有「应用」按钮。
 class FlowHeaderForm extends StatefulWidget {
-  const FlowHeaderForm({super.key, required this.controller});
+  const FlowHeaderForm({
+    super.key,
+    required this.controller,
+    this.readOnly = false,
+    this.onPickAgent,
+    this.tree = const [],
+  });
 
   final FlowEditorController controller;
+  final bool readOnly;
+  final Future<String?> Function()? onPickAgent;
+  final List<FlowNode> tree;
 
   @override
   State<FlowHeaderForm> createState() => _FlowHeaderFormState();
@@ -48,11 +37,11 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
 
   /// 打开时的原始头部映射。用来只发真正改过的字段，并保住表单没显示的键
   /// （roles.desc、inputs.default、limits 里的额外键、outputs 的非字符串值）。
-  late final String _rawDescription;
-  late final Map<String, dynamic> _rawLimits;
-  late final Map<String, dynamic> _rawInputs;
-  late final Map<String, dynamic> _rawRoles;
-  late final Map<String, dynamic> _rawOutputs;
+  late String _rawDescription;
+  late Map<String, dynamic> _rawLimits;
+  late Map<String, dynamic> _rawInputs;
+  late Map<String, dynamic> _rawRoles;
+  late Map<String, dynamic> _rawOutputs;
 
   @override
   void initState() {
@@ -85,8 +74,11 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     ];
   }
 
+  Timer? _debounce;
+
   @override
   void dispose() {
+    _debounce?.cancel();
     _description.dispose();
     _maxTasks.dispose();
     _timeout.dispose();
@@ -99,9 +91,17 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     super.dispose();
   }
 
-  /// 五个字段合成**一个**原子批次。以前五次 `setHeader(immediate:true)` 会拆成
-  /// 两个往返，切页面还会丢掉后四个。
+  void _schedule() {
+    if (widget.readOnly) return;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) unawaited(_apply());
+    });
+  }
+
+  /// 五个字段合成**一个**原子批次。
   Future<void> _apply() async {
+    if (widget.readOnly) return;
     final c = widget.controller;
     final next = <String, Object?>{};
 
@@ -148,17 +148,14 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
       next['outputs'] = encodedOutputs;
     }
 
-    if (next.isEmpty) {
-      Navigator.pop(context);
-      return;
-    }
+    if (next.isEmpty) return;
     final ok = await c.setHeaders(next);
-    if (!ok) {
-      // 批次被拒：留在表单上让用户改，别悄悄关掉。
-      return;
-    }
-    if (!mounted) return;
-    Navigator.pop(context);
+    if (!ok || !mounted) return;
+    _rawDescription = description;
+    _rawLimits = encodedLimits;
+    _rawInputs = encodedInputs;
+    _rawRoles = encodedRoles;
+    _rawOutputs = encodedOutputs;
   }
 
   bool _sameJson(Object? a, Object? b) => jsonEncode(a) == jsonEncode(b);
@@ -172,19 +169,29 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Text(l10n.flow_headerTitle,
               style: theme.textTheme.titleMedium),
         ),
-        Expanded(
-          child: ListView(
+        if (widget.readOnly)
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(l10n.flow_readOnlyHostHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _section(l10n.flow_headerBasics, [
                 TextField(
                   controller: _description,
+                  readOnly: widget.readOnly,
                   decoration: InputDecoration(
-                      labelText: l10n.flow_headerDescription, isDense: true),
+                      hintText: l10n.flow_descPlaceholder, isDense: true),
+                  onChanged: (_) => _schedule(),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -192,20 +199,24 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                     Expanded(
                       child: TextField(
                         controller: _maxTasks,
+                        readOnly: widget.readOnly,
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
                             labelText: l10n.flow_headerMaxTasks,
                             isDense: true),
+                        onChanged: (_) => _schedule(),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: TextField(
                         controller: _timeout,
+                        readOnly: widget.readOnly,
                         decoration: InputDecoration(
                             labelText: l10n.flow_headerTimeout,
                             hintText: '2h',
                             isDense: true),
+                        onChanged: (_) => _schedule(),
                       ),
                     ),
                   ],
@@ -231,24 +242,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                 _addRow(l10n.flow_headerAddOutput, () =>
                     setState(() => _outputs.add(_PairRow('', '')))),
               ]),
-              // 说明限制：定义版本不给改，主机也不接受。
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  l10n.flow_headerHint,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
-                ),
-              ),
             ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: FilledButton(
-            key: const ValueKey('header-apply'),
-            onPressed: _apply,
-            child: Text(l10n.flow_inspectorApply),
           ),
         ),
       ],
@@ -337,8 +331,12 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                           DropdownMenuItem<String>(
                               value: type, child: Text(type)),
                       ],
-                      onChanged: (v) =>
-                          setState(() => row.type = v ?? 'string'),
+                      onChanged: widget.readOnly
+                          ? null
+                          : (v) {
+                              setState(() => row.type = v ?? 'string');
+                              _schedule();
+                            },
                     ),
                   ),
                   IconButton(
@@ -354,7 +352,12 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                 children: [
                   Switch(
                     value: row.required,
-                    onChanged: (v) => setState(() => row.required = v),
+                    onChanged: widget.readOnly
+                        ? null
+                        : (v) {
+                            setState(() => row.required = v);
+                            _schedule();
+                          },
                   ),
                   Text(l10n.flow_headerInputRequired),
                   const SizedBox(width: 8),

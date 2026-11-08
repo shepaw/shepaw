@@ -81,6 +81,7 @@ class FlowEditorController extends ChangeNotifier {
     _generation++;
     _pending.clear();
     _rejected.clear();
+    _rejectReason.clear();
     return true;
   }
 
@@ -91,6 +92,7 @@ class FlowEditorController extends ChangeNotifier {
 
   final Map<FlowPendingKey, Object?> _pending = <FlowPendingKey, Object?>{};
   final Map<FlowPendingKey, Object?> _rejected = <FlowPendingKey, Object?>{};
+  final Map<FlowPendingKey, String> _rejectReason = <FlowPendingKey, String>{};
   List<Map<String, dynamic>>? _queuedOps;
 
   bool _disposed = false;
@@ -198,6 +200,7 @@ class FlowEditorController extends ChangeNotifier {
     _diagnostics = checked.diagnostics;
     _pending.clear();
     _rejected.clear();
+    _rejectReason.clear();
     _queuedOps = null;
     _diff = null;
     _history.clear();
@@ -235,6 +238,7 @@ class FlowEditorController extends ChangeNotifier {
     final key = (nodeId: nodeId, field: field);
     _pending[key] = value;
     _rejected.remove(key);
+    _rejectReason.remove(key);
     _notify();
     if (immediate) {
       unawaited(flush());
@@ -246,6 +250,27 @@ class FlowEditorController extends ChangeNotifier {
   void setHeader(String field, Object? value) =>
       setField('', field, value, immediate: true);
 
+  /// 一次改同一个节点上的多个字段，合成一批发出去。
+  ///
+  /// 换执行者会同时动 `role` / `agent` / `uses`，还可能清掉 model / mode。
+  /// 拆成多次 `setField(immediate: true)` 会变成多次往返，撤销也碎成几条。
+  Future<bool> setFields(String nodeId, Map<String, Object?> fields) {
+    for (final entry in fields.entries) {
+      final key = (nodeId: nodeId, field: entry.key);
+      _pending[key] = entry.value;
+      _rejected.remove(key);
+      _rejectReason.remove(key);
+    }
+    _notify();
+    _debounce?.cancel();
+    _debounce = null;
+    return flush();
+  }
+
+  /// 主机拒绝这个字段时的原因。没有被拒就返回 null。
+  String? rejection(String nodeId, String field) =>
+      _rejectReason[(nodeId: nodeId, field: field)];
+
   /// 一次改多个头部字段。头部表单用：五个字段要在一个原子批次里发，不能拆成
   /// 五次 `setHeader` 各自 `flush()`（会变成两个往返，切页面还会丢后四个）。
   Future<bool> setHeaders(Map<String, Object?> fields) {
@@ -253,6 +278,7 @@ class FlowEditorController extends ChangeNotifier {
       final key = (nodeId: '', field: entry.key);
       _pending[key] = entry.value;
       _rejected.remove(key);
+      _rejectReason.remove(key);
     }
     _notify();
     _debounce?.cancel();
@@ -338,6 +364,10 @@ class FlowEditorController extends ChangeNotifier {
       // 整批被拒：状态没动。只把**本批实际发出去的**字段标成 rejected；之前被拒、
       // 这次没发的字段要留着，否则一次无关的成功提交会把它们清掉。
       _rejected.addEntries(sent.entries);
+      final reason = result.error ?? '';
+      for (final key in sent.keys) {
+        if (reason.isNotEmpty) _rejectReason[key] = reason;
+      }
       _emit(FlowEditorNotice(FlowEditorNoticeKind.editRejected,
           raw: result.error));
       return false;
@@ -354,6 +384,7 @@ class FlowEditorController extends ChangeNotifier {
       if (_pending[entry.key] == entry.value) _pending.remove(entry.key);
     }
     _rejected.removeWhere((key, _) => !_pending.containsKey(key));
+    _rejectReason.removeWhere((key, _) => !_pending.containsKey(key));
     if (_showDiff) unawaited(_refreshDiff());
     // 关页面之后才到的回包也要落草稿，否则最后敲的字会丢。
     await _persistDraft();
@@ -441,6 +472,7 @@ class FlowEditorController extends ChangeNotifier {
     _resetCoalesce();
     _pending.clear();
     _rejected.clear();
+    _rejectReason.clear();
     _queuedOps = null;
     if (_showDiff) unawaited(_refreshDiff());
     await _persistDraft();
@@ -592,6 +624,7 @@ class FlowEditorController extends ChangeNotifier {
     _diagnostics = snapshot.diagnostics;
     _pending.clear();
     _rejected.clear();
+    _rejectReason.clear();
     _queuedOps = null;
     _generation++;
     _resetCoalesce();

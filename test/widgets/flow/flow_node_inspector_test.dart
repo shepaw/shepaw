@@ -78,11 +78,8 @@ Widget _inspector({
     roles: const [],
     choiceLoader: fake.load,
     onPickAgent: onPickAgent,
-    onApply: onApply,
-    onDelete: () {},
-    onWrap: (_) {},
-    onUnwrap: () {},
-    onAddAfter: () {},
+    onExecutorChanged: onApply,
+    onFieldChanged: (_, __, {required immediate}) {},
   ));
 }
 
@@ -113,10 +110,7 @@ void main() {
     expect(find.text('Old'), findsNothing);
     expect(find.textContaining('跟随 agent 默认'), findsWidgets);
 
-    // Apply 里要把 model 清成 null。
-    await tester.ensureVisible(find.byKey(const ValueKey('inspector-apply')));
-    await tester.tap(find.byKey(const ValueKey('inspector-apply')));
-    await _settle(tester);
+    // 换执行者立刻提交，model 清成 null，和执行者在同一批里。
     expect(applied, isNotNull);
     expect(applied!.containsKey('task.model'), isTrue);
     expect(applied!['task.model'], isNull);
@@ -149,9 +143,6 @@ void main() {
     // 模板值和具体 agent 无关，换 agent 不能把它清掉。
     expect(find.text('{{ inputs.model }}'), findsOneWidget);
 
-    await tester.ensureVisible(find.byKey(const ValueKey('inspector-apply')));
-    await tester.tap(find.byKey(const ValueKey('inspector-apply')));
-    await _settle(tester);
     expect(applied, isNotNull);
     expect(applied!.containsKey('task.model'), isFalse,
         reason: '值没变，不能发一条 set(null) 把模板清掉');
@@ -184,11 +175,7 @@ void main() {
       roles: const [],
       choiceLoader: load,
       onPickAgent: () async => 'agent-y',
-      onApply: (_) {},
-      onDelete: () {},
-      onWrap: (_) {},
-      onUnwrap: () {},
-      onAddAfter: () {},
+      onExecutorChanged: (_) {},
     )));
     await _settle(tester);
     expect(calls, 1);
@@ -297,11 +284,7 @@ void main() {
       peerId: 'p1',
       roles: const [],
       choiceLoader: fake.load,
-      onApply: (_) {},
-      onDelete: () {},
-      onWrap: (_) {},
-      onUnwrap: () {},
-      onAddAfter: () {},
+      onExecutorChanged: (_) {},
     )));
     await _settle(tester);
     await tester

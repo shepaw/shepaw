@@ -40,6 +40,8 @@ void main() {
         onChanged: (v) => value = v,
       ),
     );
+    await tester.tap(find.byKey(const ValueKey('add:gate.options')));
+    await tester.pump();
     await tester.enterText(
         find.byKey(const ValueKey('f:gate.options-0')), '通过');
     await tester.pump();
@@ -56,6 +58,8 @@ void main() {
         onChanged: (v) => value = v,
       ),
     );
+    await tester.tap(find.byKey(const ValueKey('add:set.vars')));
+    await tester.pump();
     await tester.enterText(find.byKey(const ValueKey('f:set.vars-k0')), 'n');
     await tester.enterText(
         find.byKey(const ValueKey('f:set.vars-v0')), '{{ inputs.goal }}');
@@ -75,9 +79,7 @@ void main() {
     );
     expect(value, 'unset'); // 没动过就不发
     await tester.tap(find.byKey(const ValueKey('f:plan.allow_empty')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('true').last);
-    await tester.pumpAndSettle();
+    await tester.pump();
     expect(value, true);
   });
 
@@ -91,6 +93,8 @@ void main() {
         onChanged: (v) => value = v,
       ),
     );
+    await tester.tap(find.byKey(const ValueKey('add:task.output')));
+    await tester.pump();
     await tester.enterText(
         find.byKey(const ValueKey('f:task.output-k0')), 'verdict');
     await tester.pump();
@@ -217,7 +221,7 @@ void main() {
     final prompt = find.byKey(const ValueKey('f:task.prompt'));
     expect(tester.widget<TextField>(prompt).maxLines, isNull,
         reason: '长文本不能限死行数');
-    expect(tester.widget<TextField>(prompt).minLines, 3);
+    expect(tester.widget<TextField>(prompt).minLines, 4);
     final before = tester.getSize(prompt).height;
     await tester.enterText(prompt, '一\n二\n三\n四\n五\n六');
     await tester.pump();

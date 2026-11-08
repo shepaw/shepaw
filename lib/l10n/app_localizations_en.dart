@@ -10390,4 +10390,203 @@ class AppLocalizationsEn extends AppLocalizations {
   String flow_runElapsed(String duration) {
     return 'Elapsed $duration';
   }
+
+  @override
+  String get flow_panelProperties => 'Properties';
+
+  @override
+  String get flow_idLocked => 'Cannot be changed after creation';
+
+  @override
+  String get flow_copied => 'Copied';
+
+  @override
+  String get flow_descPlaceholder => 'Add a description…';
+
+  @override
+  String flow_nodeProblem(int count, String message) {
+    return '$count problems: $message';
+  }
+
+  @override
+  String get flow_locate => 'Locate';
+
+  @override
+  String get flow_rehearsalReadOnly => 'Rehearsing. You can edit when it ends';
+
+  @override
+  String flow_invalidPending(int count) {
+    return '$count invalid entries were not applied';
+  }
+
+  @override
+  String get flow_ifBranchHint =>
+      'When it matches, take the Yes branch. Otherwise take No';
+
+  @override
+  String get flow_seqHint => 'Runs the inner steps in order';
+
+  @override
+  String get flow_groupWhat => 'What to do';
+
+  @override
+  String get flow_groupWho => 'Who does it';
+
+  @override
+  String get flow_groupWhen => 'When to run';
+
+  @override
+  String get flow_groupOutput => 'Output';
+
+  @override
+  String get flow_groupJoin => 'How to join';
+
+  @override
+  String get flow_groupUntil => 'When the loop stops';
+
+  @override
+  String get flow_groupCond => 'Condition';
+
+  @override
+  String get flow_groupOver => 'Which data';
+
+  @override
+  String get flow_groupAsk => 'Who to ask';
+
+  @override
+  String get flow_groupShow => 'What to show';
+
+  @override
+  String get flow_groupOptions => 'Allowed answers';
+
+  @override
+  String get flow_groupVars => 'Set variables';
+
+  @override
+  String get flow_groupFlow => 'Which flow';
+
+  @override
+  String get flow_groupWhere => 'Where it runs';
+
+  @override
+  String get flow_groupPlanWho => 'Who plans';
+
+  @override
+  String get flow_groupBrief => 'Planning brief';
+
+  @override
+  String get flow_groupAdvanced => 'Advanced';
+
+  @override
+  String get flow_kindNameTask => 'Task';
+
+  @override
+  String get flow_kindNameSeq => 'Sequence';
+
+  @override
+  String get flow_kindNamePar => 'Parallel';
+
+  @override
+  String get flow_kindNameLoop => 'Loop';
+
+  @override
+  String get flow_kindNameIf => 'Condition';
+
+  @override
+  String get flow_kindNameMap => 'Each item';
+
+  @override
+  String get flow_kindNameGate => 'Approval';
+
+  @override
+  String get flow_kindNameSet => 'Assign';
+
+  @override
+  String get flow_kindNameCall => 'Subflow';
+
+  @override
+  String get flow_kindNamePlan => 'Plan';
+
+  @override
+  String get flow_pickExecutorFirst => 'Choose an executor first';
+
+  @override
+  String get flow_durationSeconds => 'sec';
+
+  @override
+  String get flow_durationMinutes => 'min';
+
+  @override
+  String get flow_durationHours => 'hr';
+
+  @override
+  String get flow_listEmpty => 'Nothing here yet';
+
+  @override
+  String get flow_alwaysRun => 'Always run';
+
+  @override
+  String get flow_menuAddThen => 'Add to the Yes branch';
+
+  @override
+  String get flow_menuAddElse => 'Add to the No branch';
+
+  @override
+  String get flow_menuAddInside => 'Add inside';
+
+  @override
+  String get flow_menuUnwrap => 'Unwrap';
+
+  @override
+  String flow_menuRetypeKind(String kind) {
+    return 'Change to $kind';
+  }
+
+  @override
+  String flow_multiSelectTitle(int count) {
+    return '$count steps selected';
+  }
+
+  @override
+  String get flow_multiSelectClear => 'Clear';
+
+  @override
+  String get flow_multiSelectHint =>
+      'Describe the change below. The owner will edit these steps';
+
+  @override
+  String get flow_tabSteps => 'Steps';
+
+  @override
+  String get flow_stepsReadOnly => 'View only on a phone. Edit on a computer';
+
+  @override
+  String flow_stepsSelected(int count) {
+    return '$count selected · Done';
+  }
+
+  @override
+  String get flow_stepsSelect => 'Select';
+
+  @override
+  String get flow_stepsDone => 'Done';
+
+  @override
+  String get flow_stepsHint =>
+      'Long-press or tap Select to pick steps, then tell the owner what to change';
+
+  @override
+  String get flow_talkAboutStep => 'Talk to the owner about this step…';
+
+  @override
+  String get flow_runtimeInputs => 'Filled in when you run';
+
+  @override
+  String get flow_noRuntimeInputs => 'Nothing to fill in when you run';
+
+  @override
+  String get flow_runtimeOutputs => 'Outputs';
+
+  @override
+  String get flow_inputRequiredShort => 'Required';
 }

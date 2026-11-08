@@ -338,6 +338,7 @@ void main() {
     expect(find.byKey(const ValueKey('history-open')), findsOneWidget);
     expect(find.byKey(const ValueKey('header-open')), findsOneWidget);
     expect(find.byKey(const ValueKey('diff-toggle')), findsOneWidget);
+    // 流程设置和对比在工具条上，不在 ⋯ 菜单里。
     expect(find.byKey(const ValueKey('yaml-bar')), findsOneWidget);
     // 点弹层外的空白处收起菜单，后面的编辑操作才不会被遮住。
     await tester.tapAt(const Offset(2, 2));
@@ -348,8 +349,8 @@ void main() {
     await _settle(tester);
     await tester.enterText(
         find.byKey(const ValueKey('f:task.prompt')), '认真写');
-    await tester.ensureVisible(find.byKey(const ValueKey('inspector-apply')));
-    await tester.tap(find.byKey(const ValueKey('inspector-apply')));
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
     await _settle(tester);
     expect(find.text('● 未保存的改动'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('save-button')));
@@ -368,14 +369,11 @@ void main() {
     )));
     await _settle(tester);
 
-    // 关闭抽屉时，节点树独占首屏，没有诊断卡片。
+    // 面板默认展开：属性 / 问题 / 演练 / 源码，对比不再占页签。
     expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
-    expect(find.byKey(const ValueKey('drawer-problems-page')), findsNothing);
-
-    await tester.tap(find.byKey(const ValueKey('drawer-open')));
-    await _settle(tester);
+    expect(find.byKey(const ValueKey('drawer-tab-properties')), findsOneWidget);
     expect(find.byKey(const ValueKey('drawer-tab-problems')), findsOneWidget);
-    expect(find.byKey(const ValueKey('drawer-tab-diff')), findsOneWidget);
+    expect(find.byKey(const ValueKey('drawer-tab-diff')), findsNothing);
     expect(find.byKey(const ValueKey('drawer-tab-rehearsal')), findsOneWidget);
     expect(find.byKey(const ValueKey('drawer-tab-source')), findsOneWidget);
     expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
@@ -427,6 +425,7 @@ void main() {
     await _settle(tester);
 
     expect(find.byKey(const ValueKey('detail-tab-overview')), findsOneWidget);
+    expect(find.byKey(const ValueKey('detail-tab-steps')), findsOneWidget);
     expect(find.byKey(const ValueKey('detail-tab-runs')), findsOneWidget);
     expect(find.byKey(const ValueKey('detail-tab-edit')), findsNothing);
     expect(find.byType(FlowDesignScreen), findsNothing);

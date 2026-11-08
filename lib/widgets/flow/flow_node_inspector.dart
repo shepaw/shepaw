@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-import '../../controllers/flow/flow_edit_ops.dart';
 import '../../controllers/flow/flow_executor.dart';
 import '../../controllers/flow/flow_field_catalog.dart';
+import '../../controllers/flow/flow_outline.dart';
 import '../../controllers/flow/flow_references.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/remote_agent.dart';
@@ -17,7 +18,8 @@ import '../../service_locator.dart' show getIt;
 import '../../services/local_database_service.dart';
 import 'flow_executor_field.dart';
 import 'flow_field_editors.dart';
-import 'flow_node_tree.dart';
+import 'flow_inspector_header.dart';
+import 'flow_outline_menu.dart';
 
 const FlowChoiceBundle _manualOnlyBundle = FlowChoiceBundle(
   models: FlowModelChoices(allowManual: true),
@@ -214,21 +216,24 @@ Future<FlowChoiceBundle> defaultFlowChoiceLoader(
   );
 }
 
-/// 节点检查器：底部抽屉表单。
+
+/// 节点属性：嵌在右侧上下文面板里，改动直接交给控制器。
 ///
-/// 字段表由 [FlowFieldCatalog] 把主机 schema 和客户端补充表合并而来（标量 +
-/// 列表 / 映射 / 条件 / 结构化输出）。当前值取自节点的 `fields`，改动只产出
-/// `set` 操作，真正改 YAML 的是 Hub。
+/// 不再有「应用」按钮。下拉 / 开关立刻提交；文本在失焦、Enter 或控制器的
+/// 防抖里提交。非法值留在输入框里标红，不发给主机。
 class FlowNodeInspector extends StatefulWidget {
   const FlowNodeInspector({
     super.key,
     required this.node,
     required this.schema,
-    required this.onApply,
-    required this.onDelete,
-    required this.onWrap,
-    required this.onUnwrap,
-    required this.onAddAfter,
+    this.onFieldChanged,
+    this.onExecutorChanged,
+    this.onDescChanged,
+    this.onMenuChoice,
+    this.row,
+    this.canRetype = false,
+    this.readOnly = false,
+    this.rehearsalLocked = false,
     this.roles = const [],
     this.onPickAgent,
     this.tree = const [],
@@ -236,82 +241,78 @@ class FlowNodeInspector extends StatefulWidget {
     this.flowRefs = const [],
     this.peerId = '',
     this.choiceLoader,
+    this.problems = const [],
+    this.rejections = const {},
+    this.flashField,
+    this.showInvalidBanner = false,
+    this.focusNonce = 0,
+    this.discardNonce = 0,
+    this.onValidity,
   });
 
   final FlowNode node;
   final FlowSchema schema;
-
-  /// 改动的字段（点分路径 → 新值；null 表示清掉）。
-  final void Function(Map<String, Object?> changes) onApply;
-  final VoidCallback onDelete;
-
-  /// `par` / `loop`。
-  final void Function(String kind) onWrap;
-  final VoidCallback onUnwrap;
-  final VoidCallback onAddAfter;
-
+  final void Function(String path, Object? value, {required bool immediate})?
+      onFieldChanged;
+  final void Function(Map<String, Object?> ops)? onExecutorChanged;
+  final void Function(String? desc)? onDescChanged;
+  final void Function(FlowOutlineMenuChoice choice)? onMenuChoice;
+  final FlowOutlineRow? row;
+  final bool canRetype;
+  final bool readOnly;
+  final bool rehearsalLocked;
   final List<String> roles;
   final Future<String?> Function()? onPickAgent;
-
-  /// 当前节点树和草稿（生成「插入引用」候选和 int 输入列表）。
   final List<FlowNode> tree;
   final String yaml;
-
-  /// 同 scope 的流程库引用候选（`call.flow` 用）。
   final List<String> flowRefs;
-
-  /// 这个流程所在的主机 peer id：拉模型 / 模式列表时要发给它。
   final String peerId;
-
-  /// 拉候选的实现，测试里换成假的（默认走 [defaultFlowChoiceLoader]）。
   final FlowChoiceLoader? choiceLoader;
+  final List<String> problems;
+  final Map<String, String> rejections;
+  final String? flashField;
+  final bool showInvalidBanner;
+  final int focusNonce;
+  final int discardNonce;
+  final ValueChanged<bool>? onValidity;
 
   @override
-  State<FlowNodeInspector> createState() => _FlowNodeInspectorState();
+  State<FlowNodeInspector> createState() => FlowNodeInspectorState();
 }
 
-class _FlowNodeInspectorState extends State<FlowNodeInspector> {
-  late final List<FlowFieldSpec> _specs;
-  late final Map<String, Object?> _original;
-  final Map<String, Object?> _values = {};
-
-  /// 执行者的选中状态由检查器持有（[FlowExecutorField] 是无状态的展示）。
-  /// 为 null 表示用户没动过：那就一个字段都别发，免得把现有的清掉。
+class FlowNodeInspectorState extends State<FlowNodeInspector> {
+  final GlobalKey<FlowInspectorHeaderState> _headerKey = GlobalKey();
+  late List<FlowFieldSpec> _specs;
   late FlowExecutor _executor;
-  bool _executorDirty = false;
 
-  // 模型 / 模式下拉的异步候选。
   FlowModelChoices _modelChoices = FlowModelChoices.empty;
   FlowModelChoices _modeChoices = FlowModelChoices.empty;
   int _choicesToken = 0;
   int _choiceSeed = 0;
-  Object? _modelSeedValue;
-  Object? _modeSeedValue;
 
+  /// 换执行者后，节点对象还是旧的，模型 / 模式要先按本地清空来画。
+  Object? _modelSeed;
+  Object? _modeSeed;
+  bool _modelSeeded = false;
+  bool _modeSeeded = false;
+  final Set<String> _invalid = {};
+
+  bool get _locked => widget.readOnly || widget.rehearsalLocked;
   bool get _isTask => widget.node.kind == 'task';
+  bool get hasBlockingInvalid => _invalid.isNotEmpty;
+
+  void discardInvalid() {
+    if (_invalid.isEmpty) return;
+    setState(() => _invalid.clear());
+  }
+
+  void focusFirst() => _headerKey.currentState?.descFocus.requestFocus();
 
   @override
   void initState() {
     super.initState();
     _executor = FlowExecutor.of(widget.node.fields);
-    _executorDirty = false;
-    // `task.role` / `task.agent` / `task.uses` 都交给「谁来做」选择器，不再单独
-    // 出文本框（否则会和选择器在同一批里发出两个互相冲突的执行者）。
-    _specs = [
-      for (final spec
-          in FlowFieldCatalog.specsFor(widget.node.kind, widget.schema))
-        if (!_isTask ||
-            (spec.path != 'task.role' &&
-                spec.path != 'task.agent' &&
-                spec.path != 'task.uses'))
-          spec,
-    ];
-    for (final spec in _specs) {
-      _values[spec.path] = flowFieldValue(widget.node.fields, spec.path);
-    }
-    _original = Map<String, Object?>.from(_values);
-    _modelSeedValue = _original['task.model'];
-    _modeSeedValue = _original['task.mode'];
+    _specs = _collect(widget.node);
     if (_isTask) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _refreshChoices(_executor);
@@ -319,8 +320,45 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
     }
   }
 
-  /// 按当前执行者重新拉候选。缓存先显示，刷新结果随后覆盖；用 token 挡住
-  /// 换 agent 后迟到的旧回包。
+  @override
+  void didUpdateWidget(covariant FlowNodeInspector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.discardNonce != oldWidget.discardNonce) {
+      _invalid.clear();
+      widget.onValidity?.call(false);
+    }
+    if (widget.focusNonce != oldWidget.focusNonce) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) focusFirst();
+      });
+    }
+    if (oldWidget.node.id != widget.node.id) {
+      _executor = FlowExecutor.of(widget.node.fields);
+      _specs = _collect(widget.node);
+      _invalid.clear();
+      _choicesToken++;
+      if (_isTask) _refreshChoices(_executor);
+      return;
+    }
+    _specs = _collect(widget.node);
+    if (!_sameExecutor(FlowExecutor.of(widget.node.fields), _executor)) {
+      // 外部撤销把执行者改回去了，而用户没在改这个控件。
+      _executor = FlowExecutor.of(widget.node.fields);
+    }
+  }
+
+  List<FlowFieldSpec> _collect(FlowNode node) => [
+        for (final spec in FlowFieldCatalog.specsFor(node.kind, widget.schema))
+          if (!_isTask ||
+              (spec.path != 'task.role' &&
+                  spec.path != 'task.agent' &&
+                  spec.path != 'task.uses'))
+            spec,
+      ];
+
+  bool _sameExecutor(FlowExecutor a, FlowExecutor b) =>
+      a.mode == b.mode && a.value == b.value;
+
   void _refreshChoices(FlowExecutor executor) {
     final token = ++_choicesToken;
     final loader = widget.choiceLoader ?? defaultFlowChoiceLoader;
@@ -356,79 +394,70 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
     }());
   }
 
-  /// 换执行者：不同 agent 的模型 / 模式 id 不通用，清掉已选的具体值再重新拉。
-  ///
-  /// 模板值（`{{ inputs.model }}`）和具体 agent 无关，保留 —— 换 agent 不该
-  /// 把用户写的引用清掉，也不该在 Apply 时发一条 `set(null)`。
+  bool _isTemplateValue(Object? value) =>
+      value is String && value.trimLeft().startsWith('{{');
+
   void _onExecutorChanged(FlowExecutor executor) {
     final changed =
         executor.mode != _executor.mode || executor.value != _executor.value;
-    setState(() {
-      _executor = executor;
-      _executorDirty = true;
-    });
-    if (!changed || !_isTask) return;
+    final previousModel = _modelSeeded
+        ? _modelSeed
+        : flowFieldValue(widget.node.fields, 'task.model');
+    final previousMode = _modeSeeded
+        ? _modeSeed
+        : flowFieldValue(widget.node.fields, 'task.mode');
+    setState(() => _executor = executor);
+    if (!changed || !_isTask) {
+      widget.onExecutorChanged?.call(executor.ops());
+      return;
+    }
+    final ops = executor.ops();
     var cleared = false;
-    final keepModel = _isTemplateValue(_values['task.model']);
-    final keepMode = _isTemplateValue(_values['task.mode']);
-    if (!keepModel) {
-      if (_values['task.model'] != null) cleared = true;
-      _values['task.model'] = null;
-      _modelSeedValue = null;
+    if (!_isTemplateValue(previousModel)) {
+      ops['task.model'] = null;
+      cleared = previousModel != null;
+      _modelSeed = null;
+      _modelSeeded = true;
     } else {
-      _modelSeedValue = _values['task.model'];
+      _modelSeed = previousModel;
+      _modelSeeded = true;
     }
-    if (!keepMode) {
-      if (_values['task.mode'] != null) cleared = true;
-      _values['task.mode'] = null;
-      _modeSeedValue = null;
+    if (!_isTemplateValue(previousMode)) {
+      ops['task.mode'] = null;
+      cleared = cleared || previousMode != null;
+      _modeSeed = null;
+      _modeSeeded = true;
     } else {
-      _modeSeedValue = _values['task.mode'];
+      _modeSeed = previousMode;
+      _modeSeeded = true;
     }
-    // 换 agent 后旧列表立刻作废：不等异步结果回来，就不能再让用户看到
-    // 上一个 agent 的模型 / 模式（id 不通用，选了也会被主机拒）。
     setState(() {
       _modelChoices = const FlowModelChoices(loading: true);
       _modeChoices = const FlowModelChoices(loading: true);
       _choiceSeed++;
     });
     _refreshChoices(executor);
-    if (!cleared) return;
+    widget.onExecutorChanged?.call(ops);
+    if (!cleared || !mounted) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger != null) {
-      messenger.showSnackBar(SnackBar(
-        content: Text(AppLocalizations.of(context).flow_modelCleared),
-        duration: const Duration(seconds: 2),
-      ));
-    }
+    messenger?.showSnackBar(SnackBar(
+      content: Text(AppLocalizations.of(context).flow_modelCleared),
+      duration: const Duration(seconds: 2),
+    ));
   }
 
-  /// `{{ ... }}` 模板值：运行时才绑定，跟具体 agent 无关。
-  bool _isTemplateValue(Object? value) =>
-      value is String && value.trimLeft().startsWith('{{');
-
-  /// 和打开时不一样的字段。映射 / 列表按 JSON 比，不然内容相同也会被判成改动。
-  Map<String, Object?> _changes() {
-    final changes = <String, Object?>{};
-    if (_isTask && _executorDirty) {
-      changes.addAll(_executor.ops());
+  void _commit(FlowFieldSpec spec, Object? value, {required bool immediate}) {
+    if (_locked) return;
+    if (!isFlowFieldValueValid(spec, value)) {
+      setState(() => _invalid.add(spec.path));
+      widget.onValidity?.call(true);
+      return;
     }
-    for (final entry in _values.entries) {
-      final before = _original[entry.key];
-      if (_same(before, entry.value)) continue;
-      // 必填字段被清空：不发 null（主机解析会失败），界面上标红让用户填回去。
-      final spec = _specs.where((s) => s.path == entry.key).firstOrNull;
-      // 必填字段被清空、或编辑器标红的非法值：不发（主机解析会失败），界面上
-      // 标红让用户填回去。
-      if (spec == null || !isFlowFieldValueValid(spec, entry.value)) continue;
-      changes[entry.key] = entry.value;
-    }
-    return changes;
-  }
-
-  String _fingerprint(Object? value) {
-    if (value is Map || value is List) return jsonEncode(value);
-    return value?.toString() ?? '';
+    setState(() => _invalid.remove(spec.path));
+    widget.onValidity?.call(_invalid.isNotEmpty);
+    final before = flowFieldValue(widget.node.fields, spec.path);
+    if (_same(before, value)) return;
+    widget.onFieldChanged?.call(spec.path, value, immediate: immediate);
   }
 
   bool _same(Object? a, Object? b) {
@@ -439,41 +468,28 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
     return a.toString() == b.toString();
   }
 
-  Widget _fieldEditor(
-    FlowFieldSpec spec,
-    List<String> refCandidates,
-    List<String> intInputs,
-  ) {
-    final isModel = spec.shape == FlowFieldShape.modelRef;
-    final isMode = spec.shape == FlowFieldShape.modeRef;
-    // model / mode 的种子在换 agent 后会变（清空），并靠 _choiceSeed 换 key
-    // 强制重新播种；其余字段仍用打开时的值派生 key。
-    final current = isModel
-        ? _modelSeedValue
-        : (isMode ? _modeSeedValue : _original[spec.path]);
-    final key = ValueKey(
-        'field-${spec.path}-${isModel || isMode ? 'g$_choiceSeed-' : ''}${_fingerprint(_original[spec.path])}');
-    return FlowFieldEditor(
-      key: key,
-      spec: spec,
-      current: current,
-      refCandidates:
-          FlowReferences.supports(spec.path) ? refCandidates : const [],
-      intInputNames:
-          spec.shape == FlowFieldShape.intOrInput ? intInputs : const [],
-      flowRefChoices:
-          spec.shape == FlowFieldShape.flowRef ? widget.flowRefs : const [],
-      choices: isModel ? _modelChoices : (isMode ? _modeChoices : null),
-      onChanged: (value) => _values[spec.path] = value,
-    );
-  }
+  bool _immediate(FlowFieldSpec spec) => switch (spec.shape) {
+        FlowFieldShape.string ||
+        FlowFieldShape.text ||
+        FlowFieldShape.int ||
+        FlowFieldShape.intOrInput ||
+        FlowFieldShape.duration ||
+        FlowFieldShape.cond ||
+        FlowFieldShape.flowRef ||
+        FlowFieldShape.listOf ||
+        FlowFieldShape.mapOf ||
+        FlowFieldShape.outputMap =>
+          false,
+        _ => true,
+      };
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final node = widget.node;
-    final isContainer = FlowStepDefaults.isContainer(node.kind);
+    final zh = Localizations.localeOf(context).languageCode == 'zh';
     final refCandidates = FlowReferences.of(
       tree: widget.tree,
       currentNodeId: node.id,
@@ -483,74 +499,285 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
       for (final spec in peekInputs(widget.yaml))
         if (spec.type == 'int') spec.name,
     ];
+    final groups = FlowFieldCatalog.groupsFor(node.kind);
+    final byGroup = <String, List<FlowFieldSpec>>{};
+    for (final spec in _specs) {
+      final group = groups.contains(spec.group) ? spec.group : 'advanced';
+      byGroup.putIfAbsent(group, () => []).add(spec);
+    }
 
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 12,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 12,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(flowKindTitle(l10n, node),
-                  style: theme.textTheme.titleMedium),
-              const SizedBox(height: 8),
-              if (_isTask)
-                FlowExecutorField(
-                  node: node,
-                  current: _executor,
-                  roles: widget.roles,
-                  onPickAgent: widget.onPickAgent,
-                  onChanged: _onExecutorChanged,
-                ),
-              for (final spec in _specs)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: _fieldEditor(spec, refCandidates, intInputs),
-                ),
-              const SizedBox(height: 8),
-              FilledButton(
-                key: const ValueKey('inspector-apply'),
-                onPressed: () => widget.onApply(_changes()),
-                child: Text(l10n.flow_inspectorApply),
-              ),
-              const Divider(height: 24),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  OutlinedButton(
-                    onPressed: widget.onAddAfter,
-                    child: Text(l10n.flow_addAfter),
-                  ),
-                  OutlinedButton(
-                    onPressed: () => widget.onWrap('par'),
-                    child: Text(l10n.flow_wrapPar),
-                  ),
-                  OutlinedButton(
-                    onPressed: () => widget.onWrap('loop'),
-                    child: Text(l10n.flow_wrapLoop),
-                  ),
-                  if (isContainer)
-                    OutlinedButton(
-                      onPressed: widget.onUnwrap,
-                      child: Text(l10n.flow_unwrap),
-                    ),
-                  OutlinedButton(
-                    onPressed: widget.onDelete,
-                    child: Text(l10n.flow_inspectorDelete),
-                  ),
-                ],
-              ),
-            ],
+    final children = <Widget>[
+      if (widget.rehearsalLocked)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            l10n.flow_rehearsalReadOnly,
+            key: const ValueKey('inspector-rehearsal-lock'),
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.primary),
           ),
         ),
+      if (widget.showInvalidBanner)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            l10n.flow_invalidPending(_invalid.length),
+            key: const ValueKey('inspector-invalid-banner'),
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+          ),
+        ),
+      FlowInspectorHeader(
+        key: _headerKey,
+        node: node,
+        readOnly: _locked,
+        row: widget.row,
+        canRetype: widget.canRetype,
+        problems: widget.problems,
+        onDescCommitted: _locked ? null : widget.onDescChanged,
+        onMenuChoice: _locked ? null : widget.onMenuChoice,
+      ),
+      const SizedBox(height: 12),
+      if (widget.readOnly)
+        for (final group in groups)
+          if (byGroup[group]?.isNotEmpty ?? false)
+            _readOnlyGroup(group, byGroup[group]!, zh, l10n, theme)
+          else
+            const SizedBox.shrink()
+      else
+        for (final group in groups)
+          if (group == 'advanced')
+            _advanced(byGroup[group] ?? const [], refCandidates, intInputs, l10n, theme)
+          else if (byGroup[group]?.isNotEmpty ?? false || (_isTask && group == 'who'))
+            _group(
+              group,
+              byGroup[group] ?? const [],
+              refCandidates,
+              intInputs,
+              l10n,
+              theme,
+            ),
+      if (node.kind == 'if')
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(l10n.flow_ifBranchHint,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: scheme.onSurfaceVariant)),
+        ),
+      if (node.kind == 'seq')
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(l10n.flow_seqHint,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: scheme.onSurfaceVariant)),
+        ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
+  }
+
+  Widget _group(
+    String group,
+    List<FlowFieldSpec> specs,
+    List<String> refCandidates,
+    List<String> intInputs,
+    AppLocalizations l10n,
+    ThemeData theme,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            flowGroupTitle(l10n, group),
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_isTask && group == 'who')
+            FlowExecutorField(
+              node: widget.node,
+              current: _executor,
+              roles: widget.roles,
+              onPickAgent: _locked ? null : widget.onPickAgent,
+              onChanged: _locked ? (_) {} : _onExecutorChanged,
+            ),
+          for (final spec in specs) ...[
+            _fieldEditor(spec, refCandidates, intInputs),
+            const SizedBox(height: 12),
+          ],
+        ],
       ),
     );
+  }
+
+  Widget _advanced(
+    List<FlowFieldSpec> specs,
+    List<String> refCandidates,
+    List<String> intInputs,
+    AppLocalizations l10n,
+    ThemeData theme,
+  ) {
+    if (specs.isEmpty) return const SizedBox.shrink();
+    final summary = _advancedSummary(specs);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: ExpansionTile(
+        key: const ValueKey('inspector-advanced'),
+        tilePadding: EdgeInsets.zero,
+        title: Text(l10n.flow_groupAdvanced,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            )),
+        subtitle: summary.isEmpty
+            ? null
+            : Text(summary,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        children: [
+          for (final spec in specs) ...[
+            _fieldEditor(spec, refCandidates, intInputs),
+            const SizedBox(height: 12),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _advancedSummary(List<FlowFieldSpec> specs) {
+    final zh = Localizations.localeOf(context).languageCode == 'zh';
+    final parts = <String>[];
+    for (final spec in specs) {
+      final value = flowFieldValue(widget.node.fields, spec.path);
+      if (value == null) continue;
+      if (spec.defaultValue != null && value.toString() == spec.defaultValue.toString()) {
+        continue;
+      }
+      final shown = spec.shape == FlowFieldShape.enumOf && value is String
+          ? spec.optionLabel(value, zh)
+          : value.toString();
+      parts.add('${spec.label(zh)} $shown');
+    }
+    return parts.join(' · ');
+  }
+
+  Widget _fieldEditor(
+    FlowFieldSpec spec,
+    List<String> refCandidates,
+    List<String> intInputs,
+  ) {
+    final isModel = spec.shape == FlowFieldShape.modelRef;
+    final isMode = spec.shape == FlowFieldShape.modeRef;
+    final current = isModel && _modelSeeded
+        ? _modelSeed
+        : isMode && _modeSeeded
+            ? _modeSeed
+            : flowFieldValue(widget.node.fields, spec.path);
+    final executorMissing =
+        _isTask && _executor.mode == FlowExecutorMode.unset && (isModel || isMode);
+    final flashing = widget.flashField == spec.path;
+    final key = ValueKey(
+      '${widget.node.id}/${spec.path}${isModel || isMode ? '/$_choiceSeed' : ''}',
+    );
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      decoration: flashing
+          ? BoxDecoration(
+              color: Theme.of(context).colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(8),
+            )
+          : null,
+      padding: flashing ? const EdgeInsets.all(4) : EdgeInsets.zero,
+      child: FlowFieldEditor(
+        key: key,
+        spec: spec,
+        current: current,
+        enabled: !_locked && !executorMissing,
+        errorText: widget.rejections[spec.path] ??
+            (executorMissing
+                ? AppLocalizations.of(context).flow_pickExecutorFirst
+                : null),
+        refCandidates:
+            FlowReferences.supports(spec.path) ? refCandidates : const [],
+        intInputNames:
+            spec.shape == FlowFieldShape.intOrInput ? intInputs : const [],
+        flowRefChoices:
+            spec.shape == FlowFieldShape.flowRef ? widget.flowRefs : const [],
+        choices: isModel ? _modelChoices : (isMode ? _modeChoices : null),
+        onChanged: (value) => _commit(spec, value, immediate: _immediate(spec)),
+        onCommitted: (value, {required bool immediate}) =>
+            _commit(spec, value, immediate: immediate),
+      ),
+    );
+  }
+
+  Widget _readOnlyGroup(
+    String group,
+    List<FlowFieldSpec> specs,
+    bool zh,
+    AppLocalizations l10n,
+    ThemeData theme,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(flowGroupTitle(l10n, group),
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              )),
+          const SizedBox(height: 6),
+          for (final spec in specs)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _readOnlyValue(spec, zh, theme),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _readOnlyValue(FlowFieldSpec spec, bool zh, ThemeData theme) {
+    final value = flowFieldValue(widget.node.fields, spec.path);
+    final text = _display(spec, value, zh);
+    final long = spec.shape == FlowFieldShape.text && text.length > 80;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('${spec.label(zh)}：$text', style: theme.textTheme.bodyMedium),
+        if (long)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: text));
+              },
+              child: Text(AppLocalizations.of(context).flow_copied),
+            ),
+          ),
+      ],
+    );
+  }
+
+  String _display(FlowFieldSpec spec, Object? value, bool zh) {
+    if (value == null) {
+      if (spec.defaultValue != null) {
+        final raw = spec.defaultValue.toString();
+        final human = spec.shape == FlowFieldShape.enumOf
+            ? spec.optionLabel(raw, zh)
+            : raw;
+        return zh ? '默认（$human）' : 'Default ($human)';
+      }
+      return '—';
+    }
+    if (spec.shape == FlowFieldShape.enumOf && value is String) {
+      return spec.optionLabel(value, zh);
+    }
+    if (value is Map || value is List) return jsonEncode(value);
+    return value.toString();
   }
 }
