@@ -510,12 +510,14 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   }
 
   void _addAfter(FlowOutlineRow row) {
+    if (!_confirmHeaderLeave()) return;
     unawaited(_controller.applyOps([
       FlowOutlineOps.insertAfter(row, _newStep()),
     ]));
   }
 
   void _move(FlowOutlineRow row, {required bool up}) {
+    if (!_confirmHeaderLeave()) return;
     unawaited(_controller.applyOps([
       up ? FlowOutlineOps.moveUp(row) : FlowOutlineOps.moveDown(row),
     ]));
@@ -664,6 +666,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   }
 
   Future<void> _rowMenu(FlowOutlineRow row, {Offset? position}) async {
+    if (!_confirmHeaderLeave()) return;
     final choice = await showFlowOutlineMenu(
       context,
       row: row,
@@ -718,6 +721,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   }
 
   Future<void> _delete(FlowOutlineRow row) async {
+    if (!_confirmHeaderLeave()) return;
     final l10n = AppLocalizations.of(context);
     final ok = await showConfirmDialog(
       context,

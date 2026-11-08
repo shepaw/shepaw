@@ -121,6 +121,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     _rolesBlocked = false;
     _outputsBlocked = false;
     _limitsBlocked = false;
+    widget.onBlocked?.call(false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final row in previousInputs) {
         if (!_inputs.contains(row)) row.dispose();
