@@ -457,13 +457,16 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
             icon: const Icon(Icons.close, size: 16),
             onPressed: widget.readOnly
                 ? null
-                : () => setState(() {
+                : () {
+                    setState(() {
                       row.draft = false;
                       _roles.remove(row);
                       _outputs.remove(row);
-                      row.dispose();
-                      _schedule();
-                    }),
+                    });
+                    _schedule();
+                    WidgetsBinding.instance
+                        .addPostFrameCallback((_) => row.dispose());
+                  },
           ),
         ],
       );
@@ -512,12 +515,15 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                     icon: const Icon(Icons.close, size: 16),
                     onPressed: widget.readOnly
                         ? null
-                        : () => setState(() {
+                        : () {
+                            setState(() {
                               row.draft = false;
                               _inputs.remove(row);
-                              row.dispose();
-                              _schedule();
-                            }),
+                            });
+                            _schedule();
+                            WidgetsBinding.instance
+                                .addPostFrameCallback((_) => row.dispose());
+                          },
                   ),
                 ],
               ),

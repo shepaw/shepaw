@@ -1264,12 +1264,22 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           ),
       ],
     );
-    if (_selectedId != null && _nodeById(_selectedId!) == null) {
-      final stale = _selectedId;
+    final staleSelection =
+        _selectedId != null && _nodeById(_selectedId!) == null;
+    final staleTalk =
+        _selected.where((id) => _nodeById(id) == null).toList();
+    if (staleSelection || staleTalk.isNotEmpty) {
+      final staleId = _selectedId;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _selectedId == stale) {
-          setState(() => _selectedId = null);
-        }
+        if (!mounted) return;
+        setState(() {
+          if (staleId != null &&
+              _selectedId == staleId &&
+              _nodeById(staleId) == null) {
+            _selectedId = null;
+          }
+          _selected.removeWhere((id) => _nodeById(id) == null);
+        });
       });
     }
     return CallbackShortcuts(

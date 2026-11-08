@@ -1130,10 +1130,13 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, size: 16),
-                  onPressed: () => setState(() {
-                    _list.removeAt(i).dispose();
-                    _emit();
-                  }),
+                  onPressed: () {
+                    final removed = _list.removeAt(i);
+                    setState(() => _emit());
+                    // 这一帧输入框还指着控制器，等画完再丢掉。
+                    WidgetsBinding.instance
+                        .addPostFrameCallback((_) => removed.dispose());
+                  },
                 ),
               ],
             ),
@@ -1186,10 +1189,12 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, size: 16),
-                  onPressed: () => setState(() {
-                    _pairs.removeAt(i).dispose();
-                    _emit();
-                  }),
+                  onPressed: () {
+                    final removed = _pairs.removeAt(i);
+                    setState(() => _emit());
+                    WidgetsBinding.instance
+                        .addPostFrameCallback((_) => removed.dispose());
+                  },
                 ),
               ],
             ),
@@ -1218,10 +1223,12 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
               index: i,
               l10n: l10n,
               onChanged: () => setState(() => _emit()),
-              onRemove: () => setState(() {
-                _outputs.removeAt(i).dispose();
-                _emit();
-              }),
+              onRemove: () {
+                final removed = _outputs.removeAt(i);
+                setState(() => _emit());
+                WidgetsBinding.instance
+                    .addPostFrameCallback((_) => removed.dispose());
+              },
             ),
           Align(
             alignment: Alignment.centerLeft,

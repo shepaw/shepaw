@@ -46,6 +46,7 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
   final Set<String> _selected = {};
   final Set<String> _flash = {};
   final TextEditingController _composer = TextEditingController();
+  final FocusNode _talkFocus = FocusNode();
   final StringBuffer _reply = StringBuffer();
   bool _talking = false;
   int _loadGen = 0;
@@ -77,6 +78,7 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
   @override
   void dispose() {
     _flashTimer?.cancel();
+    _talkFocus.dispose();
     _composer.dispose();
     super.dispose();
   }
@@ -161,6 +163,9 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
                     ..clear()
                     ..add(node.id));
                   Navigator.pop(sheet);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _talkFocus.requestFocus();
+                  });
                 },
                 child: Text(l10n.flow_talkAboutStep),
               ),
@@ -351,6 +356,7 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
                 Expanded(
                   child: TextField(
                     key: const ValueKey('steps-talk-input'),
+                    focusNode: _talkFocus,
                     controller: _composer,
                     decoration: InputDecoration(
                       hintText: l10n.flow_talkHint,
