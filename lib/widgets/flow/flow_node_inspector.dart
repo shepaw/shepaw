@@ -820,6 +820,21 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     ];
   }
 
+  /// 这些输入框里可以写 `{{ }}`。名字、类型、时长不算。
+  bool _offersVarSuggest(FlowFieldSpec spec) {
+    if (FlowReferences.supports(spec.path)) return true;
+    switch (spec.shape) {
+      case FlowFieldShape.intOrInput:
+      case FlowFieldShape.mapOf:
+      case FlowFieldShape.listOf:
+      case FlowFieldShape.modelRef:
+      case FlowFieldShape.modeRef:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   Widget _fieldEditor(
     FlowFieldSpec spec,
     List<String> refCandidates,
@@ -860,7 +875,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
                 : null),
         refCandidates:
             FlowReferences.supports(spec.path) ? refCandidates : const [],
-        varRoots: FlowReferences.supports(spec.path) ? varRoots : const [],
+        varRoots: _offersVarSuggest(spec) ? varRoots : const [],
         intInputNames:
             spec.shape == FlowFieldShape.intOrInput ? intInputs : const [],
         flowRefChoices:

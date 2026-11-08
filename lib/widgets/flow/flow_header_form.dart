@@ -6,10 +6,12 @@ import 'package:flutter/material.dart';
 import '../../controllers/flow/flow_editor_controller.dart';
 import '../../controllers/flow/flow_executor.dart';
 import '../../controllers/flow/flow_names.dart';
+import '../../controllers/flow/flow_references.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
 import '../../screens/flow_start_screen.dart';
 import '../discard_changes_scope.dart';
+import 'flow_var_text_field.dart';
 
 /// 流程设置：嵌在属性面板里，改动直接 `setHeaders`，没有「应用」按钮。
 class FlowHeaderForm extends StatefulWidget {
@@ -383,6 +385,12 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    // 输出模板可以引用任意步骤和流程输入。空 id 表示「还没有当前步骤」，前面的步骤就是全部。
+    final outputRoots = FlowReferences.tree(
+      tree: widget.tree,
+      currentNodeId: '',
+      yaml: widget.controller.yaml,
+    );
     return Focus(
       focusNode: _formFocus,
       canRequestFocus: false,
@@ -494,7 +502,8 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                           ?.copyWith(color: scheme.error)),
                 for (final row in _outputs)
                   _pairRow(row, l10n.flow_headerOutputName,
-                      l10n.flow_headerOutputTemplate),
+                      l10n.flow_headerOutputTemplate,
+                      varRoots: outputRoots),
                 _addRow(l10n.flow_headerAddOutput, () => setState(
                     () => _outputs.add(_PairRow('', '', draft: true)))),
               ]),
@@ -536,7 +545,9 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     String keyLabel,
     String valueLabel, {
     Future<void> Function()? onDelete,
+    List<FlowVarNode> varRoots = const [],
   }) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: TextField(
@@ -551,8 +562,10 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: TextField(
+            child: FlowVarTextField(
+              fieldKey: ObjectKey(row.value),
               controller: row.value,
+              roots: varRoots,
               readOnly: widget.readOnly,
               decoration:
                   InputDecoration(labelText: valueLabel, isDense: true),

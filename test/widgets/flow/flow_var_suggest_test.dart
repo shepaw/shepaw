@@ -48,4 +48,82 @@ void main() {
     );
     expect(find.byKey(const ValueKey('var-opt-review')), findsOneWidget);
   });
+
+  testWidgets('条件表达式输入 {{ 也列出变量', (tester) async {
+    await _pumpSuggest(
+      tester,
+      const FlowFieldSpec(
+        path: 'when',
+        shape: FlowFieldShape.cond,
+        group: 'when',
+        labelZh: '何时',
+        labelEn: 'When',
+      ),
+      '',
+    );
+    await tester.enterText(find.byKey(const ValueKey('f:when')), '{{');
+    await tester.pump();
+    expect(find.byKey(const ValueKey('var-opt-prev')), findsOneWidget);
+  });
+
+  testWidgets('次数输入 {{ 也列出变量', (tester) async {
+    await _pumpSuggest(
+      tester,
+      const FlowFieldSpec(
+        path: 'loop.max',
+        shape: FlowFieldShape.intOrInput,
+        group: 'loop',
+        labelZh: '最多几轮',
+        labelEn: 'Max',
+      ),
+      '',
+    );
+    await tester.enterText(find.byKey(const ValueKey('f:loop.max')), '{{');
+    await tester.pump();
+    expect(find.byKey(const ValueKey('var-opt-prev')), findsOneWidget);
+  });
+
+  testWidgets('变量值输入 {{ 也列出变量', (tester) async {
+    await _pumpSuggest(
+      tester,
+      const FlowFieldSpec(
+        path: 'set.vars',
+        shape: FlowFieldShape.mapOf,
+        group: 'vars',
+        labelZh: '变量',
+        labelEn: 'Vars',
+      ),
+      {'goal': ''},
+    );
+    await tester.enterText(find.byKey(const ValueKey('f:set.vars-v0')), '{{');
+    await tester.pump();
+    expect(find.byKey(const ValueKey('var-opt-prev')), findsOneWidget);
+  });
+}
+
+Future<void> _pumpSuggest(
+  WidgetTester tester,
+  FlowFieldSpec spec,
+  Object? current,
+) {
+  const roots = [
+    FlowVarNode(
+      segment: 'prev',
+      hint: '上一轮',
+      children: [FlowVarNode(segment: 'review', hint: 'task')],
+    ),
+  ];
+  return tester.pumpWidget(MaterialApp(
+    locale: const Locale('zh'),
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: Scaffold(
+      body: FlowFieldEditor(
+        spec: spec,
+        current: current,
+        varRoots: roots,
+        onChanged: (_) {},
+      ),
+    ),
+  ));
 }

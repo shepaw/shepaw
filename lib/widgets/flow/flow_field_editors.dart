@@ -7,6 +7,7 @@ import '../../controllers/flow/flow_references.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_field_schema.dart';
 import '../../utils/layout_utils.dart';
+import 'flow_var_text_field.dart';
 
 /// 「跟随 agent 默认」这一项的值。用一个不会和真实模型 / 模式 id 撞上的哨兵。
 const String _kFollowDefault = '\u0000follow-agent-default';
@@ -157,8 +158,6 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     descendantsAreFocusable: true,
   );
   bool _reseedQueued = false;
-  FlowVarSuggest? _suggest;
-
   bool get _focused => _scope.hasFocus;
 
   @override
@@ -190,7 +189,6 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       final oldOutputs = List<_OutputRow>.of(_outputs);
       setState(_seed);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        oldScalar.removeListener(_syncSuggest);
         oldScalar.dispose();
         oldJudge.dispose();
         oldAsk.dispose();
@@ -221,7 +219,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     final c = widget.current;
     _scalar = TextEditingController(
       text: c is num ? c.toString() : (c is String ? c : ''),
-    )..addListener(_syncSuggest);
+    );
     final cond = c is Map ? c : null;
     _condIsJudge = cond != null && cond.containsKey('judge');
     _judge = TextEditingController(text: cond?['judge']?.toString() ?? '');
@@ -267,7 +265,6 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
   }
 
   void _releaseControllers() {
-    _scalar.removeListener(_syncSuggest);
     _scalar.dispose();
     _judge.dispose();
     _ask.dispose();
@@ -448,112 +445,6 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     return null;
   }
 
-  void _syncSuggest() {
-    if (!mounted) return;
-    final next = !FlowReferences.supports(widget.spec.path)
-        ? null
-        : FlowReferences.suggest(
-            text: _scalar.text,
-            cursor: _scalar.selection.extentOffset,
-            roots: widget.varRoots,
-          );
-    if (_sameSuggest(_suggest, next)) return;
-    setState(() => _suggest = next);
-  }
-
-  bool _sameSuggest(FlowVarSuggest? a, FlowVarSuggest? b) {
-    if (identical(a, b)) return true;
-    if (a == null || b == null) return a == null && b == null;
-    if (a.filter != b.filter ||
-        a.replaceFrom != b.replaceFrom ||
-        a.cursor != b.cursor ||
-        a.options.length != b.options.length) {
-      return false;
-    }
-    for (var i = 0; i < a.options.length; i++) {
-      if (a.options[i].segment != b.options[i].segment) return false;
-    }
-    return true;
-  }
-
-  /// 点一级变量。有下一级就补上「名字.」并留在列表里，叶子才补 `}}`。
-  void _pickVar(FlowVarNode node) {
-    final suggest = _suggest;
-    if (suggest == null) return;
-    final piece = node.hasChildren ? '${node.segment}.' : '${node.segment} }}';
-    final text = _scalar.text;
-    final from = suggest.replaceFrom.clamp(0, text.length);
-    final to = suggest.cursor.clamp(from, text.length);
-    final next = text.replaceRange(from, to, piece);
-    _scalar.value = TextEditingValue(
-      text: next,
-      selection: TextSelection.collapsed(offset: from + piece.length),
-    );
-    _emit();
-  }
-
-  Widget _varSuggestList(ThemeData theme, ColorScheme scheme) {
-    final suggest = _suggest;
-    if (suggest == null) return const SizedBox.shrink();
-    final matches = suggest.matches;
-    return Card(
-      key: const ValueKey('var-suggest'),
-      margin: const EdgeInsets.only(top: 4),
-      elevation: 2,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 220),
-        child: matches.isEmpty
-            ? const Padding(
-                padding: EdgeInsets.all(12),
-                child: Text('没有匹配的变量'),
-              )
-            : ListView(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                children: [
-                  for (final node in matches)
-                    InkWell(
-                      key: ValueKey('var-opt-${node.segment}'),
-                      onTapDown: (_) => _pickVar(node),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text.rich(
-                                TextSpan(
-                                  text: node.segment,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    fontFamily: 'monospace',
-                                  ),
-                                  children: [
-                                    if (node.hint.isNotEmpty)
-                                      TextSpan(
-                                        text: '  ${node.hint}',
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                          fontFamily: null,
-                                          color: scheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            if (node.hasChildren)
-                              Icon(Icons.chevron_right,
-                                  size: 18, color: scheme.onSurfaceVariant),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-      ),
-    );
-  }
-
   /// 插入引用到光标处。
   void _insertRef(String ref) {
     final at = _scalar.selection.baseOffset.clamp(0, _scalar.text.length);
@@ -651,40 +542,29 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
 
     final editor = switch (spec.shape) {
       // 长文本（task.prompt / plan.brief …）随内容自动长高，最少四行。
-      FlowFieldShape.text => wrap(Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              key: ValueKey('f:${spec.path}'),
-              controller: _scalar,
-              enabled: widget.enabled,
-              minLines: 4,
-              maxLines: null,
-              keyboardType: TextInputType.multiline,
-              textInputAction: TextInputAction.newline,
-              decoration: textDecoration,
-              onChanged: (_) => setState(() => _emit()),
-            ),
-            _varSuggestList(theme, scheme),
-          ],
+      FlowFieldShape.text => wrap(FlowVarTextField(
+          fieldKey: ValueKey('f:${spec.path}'),
+          controller: _scalar,
+          roots: widget.varRoots,
+          enabled: widget.enabled,
+          minLines: 4,
+          grow: true,
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
+          decoration: textDecoration,
+          onChanged: (_) => setState(() => _emit()),
         )),
       // string 是 id / 短标量（task.uses、call.group、plan.who …），必须单行：
       // 放开多行会把换行原样发给主机，`agent:<id>\n` 就解析不出 Agent 了。
-      FlowFieldShape.string => wrap(Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              key: ValueKey('f:${spec.path}'),
-              controller: _scalar,
-              enabled: widget.enabled,
-              maxLines: 1,
-              textInputAction: TextInputAction.done,
-              decoration: textDecoration,
-              onChanged: (_) => setState(() => _emit()),
-              onEditingComplete: () => _emit(immediate: true),
-            ),
-            _varSuggestList(theme, scheme),
-          ],
+      FlowFieldShape.string => wrap(FlowVarTextField(
+          fieldKey: ValueKey('f:${spec.path}'),
+          controller: _scalar,
+          roots: widget.varRoots,
+          enabled: widget.enabled,
+          textInputAction: TextInputAction.done,
+          decoration: textDecoration,
+          onChanged: (_) => setState(() => _emit()),
+          onEditingComplete: () => _emit(immediate: true),
         )),
       FlowFieldShape.int => wrap(TextField(
           key: ValueKey('f:${spec.path}'),
@@ -694,12 +574,14 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
           onChanged: (_) => setState(() => _emit()),
         )),
       FlowFieldShape.intOrInput => wrap(Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: TextField(
-                key: ValueKey('f:${spec.path}'),
+              child: FlowVarTextField(
+                fieldKey: ValueKey('f:${spec.path}'),
                 controller: _scalar,
-                keyboardType: TextInputType.number,
+                roots: widget.varRoots,
+                keyboardType: TextInputType.text,
                 decoration: const InputDecoration(isDense: true),
                 onChanged: (_) => setState(() => _emit()),
               ),
@@ -971,9 +853,10 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(
-            key: ValueKey('f:${widget.spec.path}'),
+          FlowVarTextField(
+            fieldKey: ValueKey('f:${widget.spec.path}'),
             controller: _scalar,
+            roots: widget.varRoots,
             decoration: const InputDecoration(
                 isDense: true, border: OutlineInputBorder()),
             onChanged: (_) => setState(() => _emit()),
@@ -1237,16 +1120,19 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                 labelText: l10n.flow_fieldCondWho, isDense: true),
             onChanged: (_) => setState(() => _emit()),
           ),
-          TextField(
+          FlowVarTextField(
+            fieldKey: ValueKey('f:${widget.spec.path}-ask'),
             controller: _ask,
+            roots: widget.varRoots,
             decoration: InputDecoration(
                 labelText: l10n.flow_fieldCondAsk, isDense: true),
             onChanged: (_) => setState(() => _emit()),
           ),
         ] else
-          TextField(
-            key: ValueKey('f:${widget.spec.path}'),
+          FlowVarTextField(
+            fieldKey: ValueKey('f:${widget.spec.path}'),
             controller: _scalar,
+            roots: widget.varRoots,
             decoration: InputDecoration(
               isDense: true,
               suffixIcon: widget.refCandidates.isEmpty
@@ -1277,9 +1163,10 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
             Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    key: ValueKey('f:${widget.spec.path}-$i'),
+                  child: FlowVarTextField(
+                    fieldKey: ValueKey('f:${widget.spec.path}-$i'),
                     controller: _list[i],
+                    roots: widget.varRoots,
                     decoration:
                         InputDecoration(labelText: '#${i + 1}', isDense: true),
                     onChanged: (_) => setState(() => _emit()),
@@ -1336,9 +1223,10 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: TextField(
-                    key: ValueKey('f:${widget.spec.path}-v$i'),
+                  child: FlowVarTextField(
+                    fieldKey: ValueKey('f:${widget.spec.path}-v$i'),
                     controller: _pairs[i].value,
+                    roots: widget.varRoots,
                     decoration: InputDecoration(
                         labelText: l10n.flow_fieldValue, isDense: true),
                     onChanged: (_) => setState(() => _emit()),
