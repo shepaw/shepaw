@@ -9071,6 +9071,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_runsTab => '运行记录';
 
   @override
+  String get flow_runPickHint => '从左侧选一条运行记录';
+
+  @override
   String get flow_runsEmpty => '还没有运行过';
 
   @override

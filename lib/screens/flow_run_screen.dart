@@ -76,6 +76,7 @@ class FlowRunScreen extends StatefulWidget {
     this.onOpenSession,
     this.onDeleted,
     this.onClose,
+    this.embedded = false,
   });
 
   final String peerId;
@@ -94,6 +95,9 @@ class FlowRunScreen extends StatefulWidget {
 
   /// 嵌在工作流右侧时，返回关掉这一层，而不是 pop 整个工作流。
   final VoidCallback? onClose;
+
+  /// 作为工作流右侧的当前记录。没有返回按钮，换一条记录就换这一页。
+  final bool embedded;
 
   @override
   State<FlowRunScreen> createState() => _FlowRunScreenState();
@@ -292,6 +296,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       widget.onClose!();
       return;
     }
+    if (widget.embedded) return;
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
@@ -563,7 +568,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     final run = _run;
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading: widget.onClose == null,
+        automaticallyImplyLeading: !widget.embedded && widget.onClose == null,
         leading: widget.onClose == null
             ? null
             : BackButton(onPressed: widget.onClose),

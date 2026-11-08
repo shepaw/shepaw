@@ -17,6 +17,25 @@ import 'package:shepaw/screens/flow_workspace_screen.dart';
 import 'package:shepaw/storage/pouch_session.dart';
 
 void main() {
+  testWidgets('拖流程库和编辑区之间的分割线会改变两边宽度', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    final pane = find.byKey(const ValueKey('flow-library-pane'));
+    final before = tester.getSize(pane).width;
+    await tester.drag(
+      find.byKey(const ValueKey('flow-library-splitter')),
+      const Offset(80, 0),
+    );
+    await _settle(tester);
+    expect(tester.getSize(pane).width, greaterThan(before + 40));
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('lists the library and starts a run with the flow name',
       (tester) async {
     final harness = _Harness();

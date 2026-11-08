@@ -5103,6 +5103,7 @@
   "flow_historyOpen": "History",
   "flow_runsTitle": "Recent runs",
   "flow_runsTab": "Runs",
+  "flow_runPickHint": "Pick a run on the left",
   "flow_runsEmpty": "No runs yet",
   "flow_runsUnknownTime": "time unknown",
   "flow_runsJustNow": "just now",

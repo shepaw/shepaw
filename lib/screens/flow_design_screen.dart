@@ -2271,6 +2271,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           revision: _controller.revision,
           onPickAgent: _pickAgent,
           preview: true,
+          embedded: true,
           onDismiss: _closeRight,
         ),
       _RightView.properties => const SizedBox.shrink(),

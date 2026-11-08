@@ -29,10 +29,17 @@ class FlowContextPanel extends StatelessWidget {
 
 /// 流程树和属性栏中间的分割线。向左拖，属性栏变宽。
 class FlowPaneSplitter extends StatefulWidget {
-  const FlowPaneSplitter({super.key, required this.onDrag});
+  const FlowPaneSplitter({
+    super.key,
+    required this.onDrag,
+    this.handleKey,
+  });
 
   /// 水平位移。向右为正，调用方据此缩小右侧属性栏。
   final ValueChanged<double> onDrag;
+
+  /// 拖动手柄的键。同一页有多条分割线时分开，避免测试和命中叠在一起。
+  final Key? handleKey;
 
   @override
   State<FlowPaneSplitter> createState() => _FlowPaneSplitterState();
@@ -52,7 +59,7 @@ class _FlowPaneSplitterState extends State<FlowPaneSplitter> {
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
-        key: const ValueKey('flow-pane-splitter'),
+        key: widget.handleKey ?? const ValueKey('flow-pane-splitter'),
         behavior: HitTestBehavior.opaque,
         onHorizontalDragUpdate: (details) => widget.onDrag(details.delta.dx),
         child: ColoredBox(

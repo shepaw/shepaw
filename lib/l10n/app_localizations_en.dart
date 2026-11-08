@@ -9430,6 +9430,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_runsTab => 'Runs';
 
   @override
+  String get flow_runPickHint => 'Pick a run on the left';
+
+  @override
   String get flow_runsEmpty => 'No runs yet';
 
   @override

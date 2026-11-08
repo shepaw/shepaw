@@ -86,6 +86,7 @@ class FlowStartScreen extends StatefulWidget {
     this.preview = false,
     this.onSubmit,
     this.onDismiss,
+    this.embedded = false,
   });
 
   final String flowName;
@@ -122,6 +123,9 @@ class FlowStartScreen extends StatefulWidget {
   /// 嵌在工作流右侧时不走路由：提交和返回都回调给外层。
   final ValueChanged<FlowStartPlan>? onSubmit;
   final VoidCallback? onDismiss;
+
+  /// 作为工作流右侧的当前页。没有返回按钮，点左侧流程就换走。
+  final bool embedded;
 
   @override
   State<FlowStartScreen> createState() => _FlowStartScreenState();
@@ -213,8 +217,9 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
     final scheme = theme.colorScheme;
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading: widget.onDismiss == null,
-        leading: widget.onDismiss == null
+        automaticallyImplyLeading:
+            !widget.embedded && widget.onDismiss == null,
+        leading: widget.embedded || widget.onDismiss == null
             ? null
             : BackButton(onPressed: _dismiss),
         title: Text(l10n.flow_startTitle(widget.flowName)),

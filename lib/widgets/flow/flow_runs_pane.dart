@@ -21,6 +21,7 @@ class FlowRunsPane extends StatefulWidget {
     this.scope = '',
     this.name = '',
     this.onOpenRun,
+    this.selectedRunId,
     this.limit,
     this.showHeader = true,
   });
@@ -33,6 +34,9 @@ class FlowRunsPane extends StatefulWidget {
   final String name;
 
   final void Function(String runId, String title)? onOpenRun;
+
+  /// 右侧正在看的那条。点另一条直接换过去，不用先返回。
+  final String? selectedRunId;
 
   /// 只显示最近 N 条（概览页用）。
   final int? limit;
@@ -198,6 +202,7 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
     final needsAction = run.group == FlowRunGroup.attention;
     return ListTile(
       key: ValueKey('run-${run.runId}'),
+      selected: widget.selectedRunId == run.runId,
       leading: Icon(
         needsAction
             ? Icons.report_problem_outlined

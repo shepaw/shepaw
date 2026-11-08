@@ -5534,6 +5534,7 @@
   "flow_historyOpen": "历史",
   "flow_runsTitle": "最近运行",
   "flow_runsTab": "运行记录",
+  "flow_runPickHint": "从左侧选一条运行记录",
   "flow_runsEmpty": "还没有运行过",
   "flow_runsUnknownTime": "时间未知",
   "flow_runsJustNow": "刚刚",

@@ -228,18 +228,13 @@ class _FlowNewFlowFormState extends State<FlowNewFlowForm> {
           children: [
             SizedBox(
               height: kToolbarHeight,
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: l10n.common_back,
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: _cancel,
-                  ),
-                  Expanded(
-                    child: Text(l10n.flow_newTitle,
-                        style: theme.textTheme.titleMedium),
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(l10n.flow_newTitle,
+                      style: theme.textTheme.titleMedium),
+                ),
               ),
             ),
             const Divider(height: 1),

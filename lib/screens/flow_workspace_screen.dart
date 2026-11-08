@@ -16,6 +16,7 @@ import '../peer/services/hub_flow.dart';
 import '../peer/services/peer_agent_ids.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
+import '../widgets/flow/flow_context_panel.dart';
 import '../widgets/flow/flow_history_sheet.dart';
 import '../widgets/flow/flow_new_flow_dialog.dart';
 import '../widgets/flow/flow_runs_pane.dart';
@@ -61,7 +62,12 @@ class FlowWorkspaceScreen extends StatefulWidget {
 }
 
 class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
-  static const double _listPaneWidth = 300;
+  static const double _defaultListPaneWidth = 300;
+  static const double _minListPaneWidth = 220;
+  static const double _minDetailWidth = 480;
+  static const double _splitterWidth = 9;
+
+  double _listPaneWidth = _defaultListPaneWidth;
 
   late final HubFlow _client = widget.client ?? HubFlow();
   final TextEditingController _search = TextEditingController();
@@ -82,6 +88,10 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   bool _editorDirty = false;
   FlowEditorController? _editor;
   bool _showRuns = false;
+
+  /// 运行记录右侧正在看的一条。和流程库的选中一样，点另一条就换内容。
+  String? _viewingRunId;
+  String? _viewingRunTitle;
 
   /// 手机上的整页属性有没有开。ModalRoute 会把同一次系统返回通知给所有
   /// PopEntry，外层 PopScope 得靠它让设计页先关整页，不能连详情一起退掉。
@@ -171,6 +181,27 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   bool _wideFor(BoxConstraints constraints) =>
       LayoutUtils.isDesktopLayout(context) && constraints.maxWidth >= 720;
 
+  /// 列表宽度。窗口变窄时把右边编辑区留够，不让分割线把一边挤没。
+  double _fitListWidth(double total) {
+    final maxList = total - _minDetailWidth - _splitterWidth;
+    final hi = maxList < _minListPaneWidth ? _minListPaneWidth : maxList;
+    final width = _listPaneWidth < _minListPaneWidth
+        ? _minListPaneWidth
+        : (_listPaneWidth > hi ? hi : _listPaneWidth);
+    return width;
+  }
+
+  void _dragList(double dx, double total) {
+    final maxList = total - _minDetailWidth - _splitterWidth;
+    final hi = maxList < _minListPaneWidth ? _minListPaneWidth : maxList;
+    final next = _listPaneWidth + dx;
+    final width = next < _minListPaneWidth
+        ? _minListPaneWidth
+        : (next > hi ? hi : next);
+    if (width == _listPaneWidth) return;
+    setState(() => _listPaneWidth = width);
+  }
+
   List<FlowSummary> _visible() {
     final flows = _flows;
     if (flows == null) return const [];
@@ -196,20 +227,43 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   }
 
   void _select(FlowSummary flow) {
-    if (_selectedName == flow.name) return;
+    final same = _selectedName == flow.name;
+    // 新建 / 开跑 / 历史盖在右侧时，点一条流程就回到它的编辑页，不用先按返回。
+    if (same && _pane == null && !_showRuns) return;
     unawaited(() async {
-      if (!await _guardDirty()) return;
+      if (!same && !await _guardDirty()) return;
       if (!mounted) return;
+      _dropPane();
       setState(() {
-        _detailToken++;
-        _selectedName = flow.name;
+        _showRuns = false;
+        _viewingRunId = null;
+        _viewingRunTitle = null;
+        if (!same) {
+          _detailToken++;
+          _selectedName = flow.name;
+        }
       });
     }());
+  }
+
+  /// 清掉右侧盖层，并让正在等结果的新建 / 开跑 / 历史结束。
+  void _dropPane() {
+    final done = _paneDone;
+    _pane = null;
+    _paneDone = null;
+    if (done != null && !done.isCompleted) done.complete(null);
   }
 
   void _closeDetail() => unawaited(_closeDetailGuarded());
 
   Future<void> _closeDetailGuarded() async {
+    if (_showRuns && _viewingRunId != null) {
+      setState(() {
+        _viewingRunId = null;
+        _viewingRunTitle = null;
+      });
+      return;
+    }
     if (!await _guardDirty()) return;
     if (!mounted) return;
     setState(() => _selectedName = null);
@@ -238,12 +292,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     return done.future.then((value) => value as T?);
   }
 
-  void _closePane() {
-    final done = _paneDone;
-    _paneDone = null;
-    setState(() => _pane = null);
-    if (done != null && !done.isCompleted) done.complete(null);
-  }
+  void _closePane() => setState(_dropPane);
 
   Future<T?> _showCover<T>(
       Widget Function(void Function(T? result) finish) build) {
@@ -415,17 +464,15 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
           onPickAgent: _pickAgent,
           onSubmit: finish,
           onDismiss: () => finish(null),
+          embedded: true,
         ));
   }
 
   void _showRun(String runId, String title) {
     setState(() {
-      _pane = FlowRunScreen(
-        peerId: _host,
-        runId: runId,
-        title: title,
-        onClose: _closePane,
-      );
+      _showRuns = true;
+      _viewingRunId = runId;
+      _viewingRunTitle = title;
     });
   }
 
@@ -660,7 +707,6 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
           name: flow.name,
           latest: flow.latest,
           onChosen: finish,
-          onClose: () => finish(null),
         ));
     if (choice == null || !mounted) return;
     await _drafts.save(
@@ -687,7 +733,10 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
         final wide = _wideFor(constraints);
         _wide = wide;
         final showingNarrowDetail = !wide &&
-            (_selectedName != null || _pane != null || _cover != null);
+            (_selectedName != null ||
+                _pane != null ||
+                _cover != null ||
+                (_showRuns && _viewingRunId != null));
         final hideOuterAppBar = widget.embedded && wide;
         // 只有真的要自己处理时才拦返回：窄屏详情（先退回列表）或编辑区
         // 有未保存改动。列表态且干净就放行，别无条件吃掉 iOS 侧滑 / 原生 pop。
@@ -736,15 +785,18 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                                 ? Row(
                                     children: [
                                       SizedBox(
-                                        width: _listPaneWidth,
+                                        key: const ValueKey(
+                                            'flow-library-pane'),
+                                        width: _fitListWidth(
+                                            constraints.maxWidth),
                                         child: _buildListPane(l10n,
                                             showHeader: hideOuterAppBar),
                                       ),
-                                      VerticalDivider(
-                                        width: 1,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .outlineVariant,
+                                      FlowPaneSplitter(
+                                        handleKey: const ValueKey(
+                                            'flow-library-splitter'),
+                                        onDrag: (dx) => _dragList(
+                                            dx, constraints.maxWidth),
                                       ),
                                       Expanded(
                                           child: _buildDetail(l10n,
@@ -757,7 +809,10 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                           ),
                           if (_pane != null)
                             Positioned(
-                              left: wide ? _listPaneWidth + 1 : 0,
+                              left: wide
+                                  ? _fitListWidth(constraints.maxWidth) +
+                                      _splitterWidth
+                                  : 0,
                               right: 0,
                               top: 0,
                               bottom: 0,
@@ -768,7 +823,10 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                             ),
                           if (_cover != null)
                             Positioned(
-                              left: wide ? _listPaneWidth + 1 : 0,
+                              left: wide
+                                  ? _fitListWidth(constraints.maxWidth) +
+                                      _splitterWidth
+                                  : 0,
                               right: 0,
                               top: 0,
                               bottom: 0,
@@ -841,14 +899,20 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                 key: const ValueKey('tab-flows'),
                 label: Text(l10n.flow_libraryTitle),
                 selected: !_showRuns,
-                onSelected: (_) => setState(() => _showRuns = false),
+                onSelected: (_) {
+                  _dropPane();
+                  setState(() => _showRuns = false);
+                },
               ),
               const SizedBox(width: 8),
               ChoiceChip(
                 key: const ValueKey('tab-runs'),
                 label: Text(l10n.flow_runsTab),
                 selected: _showRuns,
-                onSelected: (_) => setState(() => _showRuns = true),
+                onSelected: (_) {
+                  _dropPane();
+                  setState(() => _showRuns = true);
+                },
               ),
             ],
           ),
@@ -860,6 +924,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
               peerId: _host,
               scope: widget.scope,
               onOpenRun: _openRun,
+              selectedRunId: _viewingRunId,
             ),
           )
         else ...[
@@ -943,6 +1008,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   void _openRun(String runId, String title) => _showRun(runId, title);
 
   Widget _buildDetail(AppLocalizations l10n, {required bool showHeader}) {
+    if (_showRuns) return _buildRunDetail(l10n);
     final name = _selectedName;
     if (name == null) {
       final scheme = Theme.of(context).colorScheme;
@@ -995,6 +1061,37 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
           setState(() => _selectedName = newName);
           unawaited(_load());
         };
+      },
+    );
+  }
+
+  /// 运行记录的右侧。没有返回层，点左边另一条就换这一页。
+  Widget _buildRunDetail(AppLocalizations l10n) {
+    final id = _viewingRunId;
+    if (id == null) {
+      final scheme = Theme.of(context).colorScheme;
+      return Center(
+        child: Text(
+          l10n.flow_runPickHint,
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+      );
+    }
+    return FlowRunScreen(
+      key: ValueKey('flow-run-$id-$_host'),
+      peerId: _host,
+      runId: id,
+      title: _viewingRunTitle,
+      embedded: true,
+      onDeleted: () {
+        if (!mounted) return;
+        setState(() {
+          _viewingRunId = null;
+          _viewingRunTitle = null;
+        });
       },
     );
   }

@@ -16469,6 +16469,12 @@ abstract class AppLocalizations {
   /// **'运行记录'**
   String get flow_runsTab;
 
+  /// No description provided for @flow_runPickHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'从左侧选一条运行记录'**
+  String get flow_runPickHint;
+
   /// No description provided for @flow_runsEmpty.
   ///
   /// In zh, this message translates to:
