@@ -828,7 +828,14 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
           if (mounted) setState(() {});
         });
       },
-      onControllerReady: (controller) => _editor = controller,
+      onControllerReady: (controller) {
+        _editor = controller;
+        controller?.onRenamed = (newName) {
+          if (!mounted || _selectedName == newName) return;
+          setState(() => _selectedName = newName);
+          unawaited(_load());
+        };
+      },
     );
   }
 }

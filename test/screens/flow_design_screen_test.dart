@@ -457,10 +457,10 @@ void main() {
     await _settle(tester);
     await tester.enterText(find.byKey(const ValueKey('f:task.prompt')), '');
     await _settle(tester);
-    await tester.tap(find.byKey(const ValueKey('header-open')));
+    await tester.tap(find.byKey(const ValueKey('flow-title')));
     await _settle(tester);
     expect(find.byKey(const ValueKey('f:task.prompt')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('header-open')));
+    await tester.tap(find.byKey(const ValueKey('flow-title')));
     await _settle(tester);
     expect(find.byKey(const ValueKey('f:task.prompt')), findsNothing);
     expect(find.text('流程设置'), findsWidgets);

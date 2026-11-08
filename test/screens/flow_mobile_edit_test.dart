@@ -267,8 +267,8 @@ void main() {
     final edit = host.sent.firstWhere((f) => f['type'] == 'flow_edit_req');
     expect((edit['ops'] as List).first['op'], 'insert');
 
-    // 工具条上的「流程设置」在手机上同样打开整页。
-    await tester.tap(find.byKey(const ValueKey('header-open')));
+    // 点顶部的流程卡片打开流程设置整页。
+    await tester.tap(find.byKey(const ValueKey('flow-title')));
     await _settle(tester);
     expect(find.byKey(const ValueKey('phone-properties-page')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());

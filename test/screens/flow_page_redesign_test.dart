@@ -331,9 +331,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('design-more')));
     await _settleMenu(tester);
     expect(find.byKey(const ValueKey('history-open')), findsOneWidget);
-    expect(find.byKey(const ValueKey('header-open')), findsOneWidget);
+    expect(find.byKey(const ValueKey('header-open')), findsNothing);
+    expect(find.byKey(const ValueKey('flow-title')), findsOneWidget);
     expect(find.byKey(const ValueKey('diff-toggle')), findsOneWidget);
-    // 流程设置和对比在工具条上，不在 ⋯ 菜单里。
+    // 流程设置在工具条标题上，对比也在工具条上，都不在 ⋯ 菜单里。
     expect(find.byKey(const ValueKey('yaml-bar')), findsOneWidget);
     // 点弹层外的空白处收起菜单，后面的编辑操作才不会被遮住。
     await tester.tapAt(const Offset(2, 2));

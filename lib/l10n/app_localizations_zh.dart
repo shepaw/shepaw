@@ -8981,6 +8981,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_headerTitle => '流程设置';
 
   @override
+  String get flow_renameTitle => '修改流程名';
+
+  @override
+  String get flow_renameAction => '改名';
+
+  @override
+  String get flow_renameLeftover => '新名字已经存上，但原来的那份没能删掉';
+
+  @override
   String get flow_headerBasics => '基本信息';
 
   @override

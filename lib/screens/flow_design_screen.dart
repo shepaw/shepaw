@@ -402,6 +402,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       FlowEditorNoticeKind.editRejected => notice.raw ?? l10n.flow_editFailed,
       FlowEditorNoticeKind.saveRejected => notice.raw ?? l10n.flow_saveFailed,
       FlowEditorNoticeKind.nameTaken => l10n.flow_newNameTaken,
+      FlowEditorNoticeKind.nameInvalid => switch (notice.raw) {
+          'reserved' => l10n.flow_newNameReserved,
+          _ => l10n.flow_newNameInvalid,
+        },
+      FlowEditorNoticeKind.renameLeftover =>
+        notice.raw ?? l10n.flow_renameLeftover,
       FlowEditorNoticeKind.hasProblems => l10n.flow_hasProblems(notice.count),
       FlowEditorNoticeKind.saved => l10n.flow_saved(notice.count),
       FlowEditorNoticeKind.sourceInvalid => l10n.flow_hasProblems(notice.count),
@@ -1331,8 +1337,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     );
   }
 
-  /// 工具条分层：左边流程名 + 保存状态文字，主区只有 保存 / 演练 / 撤销 /
-  /// 重做，低频操作全收进 `⋯`。窄宽度进一步收成 保存 + `⋯`。
+  /// 工具条：左边是可点的流程名，点它打开流程设置。主区是 保存 / 演练 /
+  /// 撤销 / 重做，低频操作收进 `⋯`。
   Widget _toolbar(
     BuildContext context,
     AppLocalizations l10n,
@@ -1343,7 +1349,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         final theme = Theme.of(context);
         final scheme = theme.colorScheme;
         // 用真实可用宽度，不用窗口宽度：工作台右栏可能只有四五百像素。
-        final compact = constraints.maxWidth < 600;
+        final width = constraints.maxWidth;
+        final compact = width < 600;
         final statusText = c.saving
         ? l10n.flow_toolbarSaving
         : c.errorCount > 0
@@ -1351,38 +1358,57 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             : c.dirty
                 ? l10n.flow_toolbarUnsaved
                 : l10n.flow_toolbarSaved(c.revision);
+        // 侧栏打开时，标题占满左侧步骤栏（和下面的卡片一样宽），
+        // 操作按钮放到右侧设置栏那一列，中间留出和分割线一样的空隙。
+        final split = canEdit && _panelOpen && !_phoneMode && width >= 900;
+        final panelWidth = split ? _fitPanelWidth(width) : 0.0;
+        final actions = _toolbarActions(l10n, c, compact);
     return Material(
       color: scheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(widget.name,
-                      style: theme.textTheme.labelLarge,
-                      overflow: TextOverflow.ellipsis),
-                  Text(
-                    statusText,
-                    key: const ValueKey('save-status'),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: c.dirty || c.errorCount > 0
-                          ? scheme.error
-                          : scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  // 独立打开设计页（不在工作台里）时保留一个纯版本号标签：
-                  // 保存状态文字是「已保存第 N 版」，这个短标签便于核对版本。
-                  if (!widget.embedded && c.revision > 0)
-                    Text(l10n.flow_revisionLabel(c.revision),
-                        key: const ValueKey('revision-label'),
-                        style: theme.textTheme.labelSmall),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: _flowTitle(l10n, theme, scheme, statusText, c),
               ),
             ),
+            if (split) ...[
+              const SizedBox(width: 9),
+              SizedBox(
+                width: panelWidth,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: actions,
+                  ),
+                ),
+              ),
+            ] else
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: actions,
+              ),
+          ],
+        ),
+      ),
+      );
+    },
+  );
+  }
+
+  Widget _toolbarActions(
+    AppLocalizations l10n,
+    FlowEditorController c,
+    bool compact,
+  ) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
             if (canEdit)
               FilledButton.icon(
                 key: const ValueKey('save-button'),
@@ -1426,31 +1452,86 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                 tooltip: _diffTooltip(l10n, c),
                 icon: Icon(
                   Icons.difference_outlined,
-                  color: c.showDiff ? scheme.primary : null,
+                  color: c.showDiff ? Theme.of(context).colorScheme.primary : null,
                 ),
                 onPressed: c.loading ? null : () => unawaited(c.toggleDiff()),
               ),
-            if (canEdit)
-              compact
-                  ? IconButton(
-                      key: const ValueKey('header-open'),
-                      tooltip: l10n.flow_headerOpen,
-                      icon: const Icon(Icons.tune),
-                      onPressed: _showFlowSettings,
-                    )
-                  : TextButton.icon(
-                      key: const ValueKey('header-open'),
-                      onPressed: _showFlowSettings,
-                      icon: const Icon(Icons.tune, size: 18),
-                      label: Text(l10n.flow_headerOpen),
-                    ),
             if (canEdit) _moreMenu(l10n, c, compact),
+      ],
+    );
+  }
+
+  /// 工具条上的流程名。颜色、下划线和设置图标说明它可以点，点开流程设置。
+  Widget _flowTitle(
+    AppLocalizations l10n,
+    ThemeData theme,
+    ColorScheme scheme,
+    String statusText,
+    FlowEditorController c,
+  ) {
+    final active = canEdit &&
+        _selectedId == null &&
+        _selected.length < 2 &&
+        (_panelOpen || (_phoneMode && _pageOpen));
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                widget.name,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: canEdit ? scheme.primary : scheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                  decoration:
+                      canEdit ? TextDecoration.underline : TextDecoration.none,
+                  decorationColor: scheme.primary,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (canEdit) ...[
+              const SizedBox(width: 4),
+              Icon(Icons.tune, size: 16, color: scheme.primary),
+            ],
           ],
         ),
+        Text(
+          statusText,
+          key: const ValueKey('save-status'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: c.dirty || c.errorCount > 0
+                ? scheme.error
+                : scheme.onSurfaceVariant,
+          ),
+        ),
+        if (!widget.embedded && c.revision > 0)
+          Text(l10n.flow_revisionLabel(c.revision),
+              key: const ValueKey('revision-label'),
+              style: theme.textTheme.labelSmall),
+      ],
+    );
+    if (!canEdit) return title;
+    return Tooltip(
+      message: l10n.flow_headerOpen,
+      child: InkWell(
+        key: const ValueKey('flow-title'),
+        borderRadius: BorderRadius.circular(8),
+        onTap: _showFlowSettings,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: active ? scheme.primaryContainer : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: title,
+        ),
       ),
-      );
-    },
-  );
+    );
   }
 
   Widget _moreMenu(AppLocalizations l10n, FlowEditorController c, bool compact) {

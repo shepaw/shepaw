@@ -489,6 +489,61 @@ void main() {
     expect(harness.notices.last.kind, FlowEditorNoticeKind.saveRejected);
   });
 
+  test('改名：改 flow 头、存成新名字、删掉旧的', () async {
+    final harness = _Harness()
+      ..listReply = {
+        'type': 'flow_list_resp',
+        'success': true,
+        'flows': [
+          {'name': 'dev', 'latest': 3},
+        ],
+      };
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+    String? renamed;
+    c.onRenamed = (name) => renamed = name;
+
+    expect(await c.rename('review-loop'), isTrue);
+    expect(c.name, 'review-loop');
+    expect(renamed, 'review-loop');
+    final edit = harness.sent.lastWhere((f) => f['type'] == 'flow_edit_req');
+    expect(edit['ops'], [
+      {'op': 'header', 'field': 'flow', 'value': 'review-loop'},
+    ]);
+    final save = harness.sent.lastWhere((f) => f['type'] == 'flow_save_req');
+    expect(save['name'], 'review-loop');
+    expect(save['create_only'], isTrue);
+    expect(save['yaml'], contains('flow: review-loop'));
+    final deleted =
+        harness.sent.lastWhere((f) => f['type'] == 'flow_delete_req');
+    expect(deleted['name'], 'dev');
+  });
+
+  test('改名撞名或名字不合法：不写也不删', () async {
+    final harness = _Harness()
+      ..listReply = {
+        'type': 'flow_list_resp',
+        'success': true,
+        'flows': [
+          {'name': 'dev', 'latest': 3},
+          {'name': 'taken', 'latest': 1},
+        ],
+      };
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    expect(await c.rename('dev'), isTrue);
+    expect(await c.rename('中文标题'), isFalse);
+    expect(harness.notices.last.kind, FlowEditorNoticeKind.nameInvalid);
+    expect(await c.rename('taken'), isFalse);
+    expect(harness.notices.last.kind, FlowEditorNoticeKind.nameTaken);
+    expect(harness.sent.where((f) => f['type'] == 'flow_save_req'), isEmpty);
+    expect(harness.sent.where((f) => f['type'] == 'flow_delete_req'), isEmpty);
+    expect(c.name, 'dev');
+  });
+
   test('另存为撞名：一个写请求都不发', () async {
     final harness = _Harness()
       ..listReply = {
@@ -655,11 +710,15 @@ class _Harness {
                   }
                 : {
                     // `type` 放最后：_validate 里也有 type，spread 会盖掉它。
-                    ..._validate('flow: dev\nsteps: []\n# edited\n'),
+                    ..._validate(_editedYaml(frame)),
                     'type': 'flow_edit_resp',
                     'success': true,
                     'valid': true,
                   },
+            'flow_delete_req' => {
+                'type': 'flow_delete_resp',
+                'success': true,
+              },
             _ => null,
           };
           if (reply != null) {
@@ -677,6 +736,19 @@ class _Harness {
           return true;
         },
       );
+
+  /// 普通编辑仍回固定 YAML。改 `flow` 头时把新名字写回去，好核对存盘内容。
+  String _editedYaml(Map<String, dynamic> frame) {
+    final ops = frame['ops'];
+    if (ops is List) {
+      for (final op in ops) {
+        if (op is Map && op['op'] == 'header' && op['field'] == 'flow') {
+          return 'flow: ${op['value']}\nsteps: []\n';
+        }
+      }
+    }
+    return 'flow: dev\nsteps: []\n# edited\n';
+  }
 
   Map<String, dynamic> _validate(String yaml) {
     // 主机在 YAML 语法错时会回空 yaml 加空诊断：拿它当草稿会把流程清空。

@@ -28,27 +28,42 @@ class FlowContextPanel extends StatelessWidget {
 }
 
 /// 流程树和属性栏中间的分割线。向左拖，属性栏变宽。
-class FlowPaneSplitter extends StatelessWidget {
+class FlowPaneSplitter extends StatefulWidget {
   const FlowPaneSplitter({super.key, required this.onDrag});
 
   /// 水平位移。向右为正，调用方据此缩小右侧属性栏。
   final ValueChanged<double> onDrag;
 
   @override
+  State<FlowPaneSplitter> createState() => _FlowPaneSplitterState();
+}
+
+class _FlowPaneSplitterState extends State<FlowPaneSplitter> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
-    final line = Theme.of(context).colorScheme.outlineVariant;
+    final scheme = Theme.of(context).colorScheme;
+    // 浅色整条缝，中间再加一条稍清楚的线，方便找着拖。
+    final track = scheme.outlineVariant.withValues(alpha: _hover ? 0.45 : 0.22);
+    final line = scheme.outlineVariant.withValues(alpha: _hover ? 0.85 : 0.45);
     return MouseRegion(
       cursor: SystemMouseCursors.resizeColumn,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
         key: const ValueKey('flow-pane-splitter'),
         behavior: HitTestBehavior.opaque,
-        onHorizontalDragUpdate: (details) => onDrag(details.delta.dx),
-        child: SizedBox(
-          width: 9,
-          child: Center(
-            child: ColoredBox(
-              color: line,
-              child: const SizedBox(width: 1),
+        onHorizontalDragUpdate: (details) => widget.onDrag(details.delta.dx),
+        child: ColoredBox(
+          color: track,
+          child: SizedBox(
+            width: 9,
+            child: Center(
+              child: ColoredBox(
+                color: line,
+                child: const SizedBox(width: 1),
+              ),
             ),
           ),
         ),

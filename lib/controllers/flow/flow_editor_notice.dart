@@ -15,6 +15,12 @@ enum FlowEditorNoticeKind {
   /// 另存为的名字库里已经有了（老主机不认 create_only 时靠客户端挡住）。
   nameTaken,
 
+  /// 改名时名字不合法。[FlowEditorNotice.raw] 是 [FlowNameProblem] 的名字。
+  nameInvalid,
+
+  /// 新名字已经写上，原来的那份没删掉。
+  renameLeftover,
+
   /// 还有 error 级诊断，不让保存。
   hasProblems,
 

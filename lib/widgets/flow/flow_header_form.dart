@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_editor_controller.dart';
 import '../../controllers/flow/flow_executor.dart';
+import '../../controllers/flow/flow_names.dart';
 import '../../controllers/flow/flow_references.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
@@ -61,6 +62,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
   bool _outputsBlocked = false;
   bool _limitsBlocked = false;
   bool _formFocused = false;
+  bool _renaming = false;
 
   /// 表单里任何一个输入框有焦点时，不拿主机回包覆盖正在打的字。
   final FocusNode _formFocus = FocusNode(
@@ -87,6 +89,72 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     // 只有真正从输入框离开才提交。焦点节点挂上时也会通知一次「没有焦点」，
     // 那一次不能把表单里的旧值再发一遍。
     if (wasFocused && !focused) _flushNow();
+  }
+
+  /// 流程名是库里的名字，不能只改定义头。对话框里校验，确认后交给控制器换名。
+  Future<void> _rename() async {
+    if (widget.readOnly || _renaming) return;
+    final l10n = AppLocalizations.of(context);
+    final current = widget.controller.name;
+    final field = TextEditingController(text: current);
+    final formKey = GlobalKey<FormState>();
+    final next = await showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(l10n.flow_renameTitle),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            key: const ValueKey('flow-rename-name'),
+            controller: field,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: l10n.flow_newName,
+              hintText: l10n.flow_newNameHint,
+            ),
+            validator: (value) {
+              final problem = FlowNameRules.check(value?.trim() ?? '');
+              return switch (problem) {
+                null => null,
+                FlowNameProblem.reserved => l10n.flow_newNameReserved,
+                FlowNameProblem.empty ||
+                FlowNameProblem.invalid =>
+                  l10n.flow_newNameInvalid,
+              };
+            },
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.pop(dialog, field.text.trim());
+              }
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            key: const ValueKey('flow-rename-go'),
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.pop(dialog, field.text.trim());
+              }
+            },
+            child: Text(l10n.flow_renameAction),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (next == null || next == current || !mounted) return;
+    setState(() => _renaming = true);
+    try {
+      await widget.controller.rename(next);
+    } finally {
+      if (mounted) setState(() => _renaming = false);
+    }
   }
 
   void _onController() {
@@ -321,13 +389,27 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
               style: theme.textTheme.titleMedium),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            widget.controller.name,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontFamily: 'monospace',
-              color: scheme.onSurfaceVariant,
-            ),
+          padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.controller.name,
+                  key: const ValueKey('flow-name'),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontFamily: 'monospace',
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (!widget.readOnly)
+                TextButton.icon(
+                  key: const ValueKey('flow-rename'),
+                  onPressed: _renaming ? null : _rename,
+                  icon: const Icon(Icons.edit_outlined, size: 16),
+                  label: Text(l10n.flow_renameAction),
+                ),
+            ],
           ),
         ),
         if (widget.readOnly)

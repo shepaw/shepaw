@@ -44,7 +44,9 @@ class FlowEditorController extends ChangeNotifier {
   static const Duration _coalesceWindow = Duration(seconds: 2);
 
   final String peerId;
-  final String name;
+
+  /// 库里的名字。改名成功后换成新名字，之后的保存都写到新名字上。
+  String name;
   final String scope;
   final Duration stepInterval;
 
@@ -125,6 +127,9 @@ class FlowEditorController extends ChangeNotifier {
 
   /// 界面挂上它来出提示。
   void Function(FlowEditorNotice notice)? onNotice;
+
+  /// 改名已经落盘。工作台靠它把当前选中切到新名字。
+  void Function(String newName)? onRenamed;
 
   FlowSchema? _schema;
   String _baseYaml = '';
@@ -566,6 +571,103 @@ class FlowEditorController extends ChangeNotifier {
     _emit(FlowEditorNotice(FlowEditorNoticeKind.saved, count: _revision));
     _notify();
     await _clearDraft();
+    return true;
+  }
+
+  /// 改名：把当前定义的 `flow:` 改成新名字，存成新的一份，再删掉原来的。
+  ///
+  /// 只改头不换库里的名字，列表和定义会对不上，所以两步一起做。
+  /// 成功后 [name] 换成新名字，并调用 [onRenamed]。
+  Future<bool> rename(String newName) async {
+    final next = newName.trim();
+    if (next == name) return true;
+    final problem = FlowNameRules.check(next);
+    if (problem != null) {
+      _emit(FlowEditorNotice(FlowEditorNoticeKind.nameInvalid,
+          raw: problem.name));
+      return false;
+    }
+    if (errorCount > 0) {
+      _emit(FlowEditorNotice(FlowEditorNoticeKind.hasProblems,
+          count: errorCount));
+      return false;
+    }
+    if (!await flush()) return false;
+    if (_disposed) return false;
+    if (hasRejected) {
+      _emit(const FlowEditorNotice(FlowEditorNoticeKind.editRejected,
+          raw: '有字段被主机拒绝，改好再保存'));
+      return false;
+    }
+    final availability =
+        await FlowNameGuard.check(_client, peerId, next, scope: scope);
+    if (_disposed) return false;
+    if (availability == FlowNameAvailability.taken) {
+      _emit(const FlowEditorNotice(FlowEditorNoticeKind.nameTaken));
+      return false;
+    }
+    if (availability == FlowNameAvailability.unavailable) {
+      _emit(const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply));
+      return false;
+    }
+    final edited = await _client.edit(peerId, _yaml, [
+      FlowEditOps.header('flow', next),
+    ]);
+    if (_disposed) return false;
+    final renamed = edited.result;
+    if (renamed == null || !renamed.ok || renamed.yaml.trim().isEmpty) {
+      _emit(edited.reachable
+          ? FlowEditorNotice(FlowEditorNoticeKind.editRejected,
+              raw: edited.error)
+          : const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply));
+      return false;
+    }
+    _saving = true;
+    _notify();
+    final saved = await _client.save(
+      peerId,
+      next,
+      renamed.yaml,
+      scope: scope,
+      createOnly: true,
+    );
+    _saving = false;
+    if (_disposed) return false;
+    if (!saved.ok) {
+      _emit(saved.reachable
+          ? FlowEditorNotice(FlowEditorNoticeKind.saveRejected,
+              raw: saved.error)
+          : const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply));
+      _notify();
+      return false;
+    }
+    final old = name;
+    final removed = await _client.delete(peerId, old, scope: scope);
+    if (_disposed) return false;
+    await _clearDraft();
+    name = next;
+    _yaml = renamed.yaml;
+    _baseYaml = renamed.yaml;
+    _tree = renamed.tree;
+    _diagnostics = renamed.diagnostics;
+    final flow = saved.data['flow'];
+    final latest = flow is Map ? (flow['latest'] as num?)?.toInt() : null;
+    _revision = latest ?? 1;
+    _history.clear();
+    _diff = null;
+    _showDiff = false;
+    _resetCoalesce();
+    _pending.clear();
+    _rejected.clear();
+    _rejectReason.clear();
+    _notify();
+    if (!removed.ok) {
+      _emit(removed.reachable
+          ? FlowEditorNotice(FlowEditorNoticeKind.renameLeftover,
+              raw: removed.error)
+          : const FlowEditorNotice(FlowEditorNoticeKind.renameLeftover));
+    }
+    onRenamed?.call(next);
     return true;
   }
 

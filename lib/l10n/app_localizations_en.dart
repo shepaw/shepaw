@@ -9339,6 +9339,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_headerTitle => 'Flow settings';
 
   @override
+  String get flow_renameTitle => 'Rename flow';
+
+  @override
+  String get flow_renameAction => 'Rename';
+
+  @override
+  String get flow_renameLeftover =>
+      'The new name is saved, but the old copy could not be deleted';
+
+  @override
   String get flow_headerBasics => 'Basics';
 
   @override

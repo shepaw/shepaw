@@ -16289,6 +16289,24 @@ abstract class AppLocalizations {
   /// **'流程设置'**
   String get flow_headerTitle;
 
+  /// No description provided for @flow_renameTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改流程名'**
+  String get flow_renameTitle;
+
+  /// No description provided for @flow_renameAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'改名'**
+  String get flow_renameAction;
+
+  /// No description provided for @flow_renameLeftover.
+  ///
+  /// In zh, this message translates to:
+  /// **'新名字已经存上，但原来的那份没能删掉'**
+  String get flow_renameLeftover;
+
   /// No description provided for @flow_headerBasics.
   ///
   /// In zh, this message translates to:
