@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_executor.dart';
@@ -21,6 +23,7 @@ class FlowOverviewPane extends StatelessWidget {
     required this.onOpenRun,
     this.onRehearse,
     this.draftBanner,
+    this.draftYaml,
   });
 
   final FlowSummary flow;
@@ -36,6 +39,9 @@ class FlowOverviewPane extends StatelessWidget {
 
   /// 上次没保存的草稿：横幅放在概览顶部，不再进页面时弹窗拦着。
   final Widget? draftBanner;
+
+  /// 有草稿时，运行参数按这份来显示，而不是已保存的那一版。
+  final String? draftYaml;
 
   @override
   Widget build(BuildContext context) {
@@ -99,6 +105,7 @@ class FlowOverviewPane extends StatelessWidget {
             peerId: peerId,
             name: flow.name,
             scope: scope,
+            draftYaml: draftYaml,
           ),
           const SizedBox(height: 16),
           // 「开始运行」是这一页唯一的主按钮；演练用不同图标 + 明确写出
@@ -159,12 +166,14 @@ class _RuntimeParams extends StatefulWidget {
     required this.peerId,
     required this.name,
     required this.scope,
+    this.draftYaml,
   });
 
   final HubFlow client;
   final String peerId;
   final String name;
   final String scope;
+  final String? draftYaml;
 
   @override
   State<_RuntimeParams> createState() => _RuntimeParamsState();
@@ -174,25 +183,43 @@ class _RuntimeParamsState extends State<_RuntimeParams> {
   List<FlowInputSpec> _inputs = const [];
   Map<String, String> _outputs = const {};
   bool _loaded = false;
+  int _gen = 0;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(covariant _RuntimeParams oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.draftYaml != widget.draftYaml ||
+        oldWidget.name != widget.name ||
+        oldWidget.peerId != widget.peerId ||
+        oldWidget.scope != widget.scope) {
+      unawaited(_load());
+    }
   }
 
   Future<void> _load() async {
-    final got = await widget.client.get(
-      widget.peerId,
-      widget.name,
-      scope: widget.scope,
-    );
-    if (!mounted) return;
-    final yaml = got?.yaml ?? '';
+    final gen = ++_gen;
+    var yaml = widget.draftYaml;
+    if (yaml == null || yaml.isEmpty) {
+      final got = await widget.client.get(
+        widget.peerId,
+        widget.name,
+        scope: widget.scope,
+      );
+      if (!mounted || gen != _gen) return;
+      yaml = got?.yaml ?? '';
+    }
+    if (!mounted || gen != _gen) return;
+    final text = yaml ?? '';
     setState(() {
       _loaded = true;
-      _inputs = peekInputs(yaml);
-      _outputs = FlowHeaderPeek.outputs(yaml);
+      _inputs = peekInputs(text);
+      _outputs = FlowHeaderPeek.outputs(text);
     });
   }
 

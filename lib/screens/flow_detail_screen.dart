@@ -265,6 +265,7 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
       onOpenRun: widget.onOpenRun,
       draftBanner:
           _draft == null ? null : _draftBanner(AppLocalizations.of(context)),
+      draftYaml: _draft?.yaml,
     );
     final runs = FlowRunsPane(
       client: widget.client,

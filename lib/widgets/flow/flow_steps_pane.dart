@@ -99,20 +99,26 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
     final schema = await widget.client.schema(widget.peerId);
     if (!mounted || gen != _loadGen) return;
     final draft = widget.draftYaml;
-    final yaml = (draft != null && draft.isNotEmpty)
-        ? draft
-        : (await widget.client.get(
-            widget.peerId,
-            widget.name,
-            scope: widget.scope,
-          ))
-            ?.yaml;
-    if (yaml == null) {
-      if (mounted && gen == _loadGen) setState(() => _loading = false);
-      return;
-    }
-    final checked = await widget.client.validate(widget.peerId, yaml);
+    var yaml = (draft != null && draft.isNotEmpty) ? draft : null;
+    var checked =
+        yaml == null ? null : await widget.client.validate(widget.peerId, yaml);
     if (!mounted || gen != _loadGen) return;
+    // 草稿校验失败时退回已保存的定义，别让步骤页变成空白。
+    if (checked == null) {
+      yaml = (await widget.client.get(
+        widget.peerId,
+        widget.name,
+        scope: widget.scope,
+      ))
+          ?.yaml;
+      if (!mounted || gen != _loadGen) return;
+      if (yaml == null) {
+        setState(() => _loading = false);
+        return;
+      }
+      checked = await widget.client.validate(widget.peerId, yaml);
+      if (!mounted || gen != _loadGen) return;
+    }
     setState(() {
       _loading = false;
       _schema = schema;
