@@ -24,6 +24,8 @@ class FlowRunsPane extends StatefulWidget {
     this.selectedRunId,
     this.limit,
     this.showHeader = true,
+    this.onClose,
+    this.executionHistory = false,
   });
 
   final HubFlow client;
@@ -41,6 +43,12 @@ class FlowRunsPane extends StatefulWidget {
   /// 只显示最近 N 条（概览页用）。
   final int? limit;
   final bool showHeader;
+
+  /// 嵌在右侧时的返回。运行记录栏不传。
+  final VoidCallback? onClose;
+
+  /// 某个流程的执行历史：标题用「执行历史」，每一行优先展示开跑时填的标题。
+  final bool executionHistory;
 
   @override
   State<FlowRunsPane> createState() => _FlowRunsPaneState();
@@ -96,17 +104,32 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final runs = _runs;
+    final heading = widget.executionHistory
+        ? l10n.flow_listExecutions
+        : l10n.flow_runsTitle;
     return Column(
+      key: widget.executionHistory
+          ? const ValueKey('flow-executions-page')
+          : null,
       children: [
         if (widget.showHeader)
           Row(
             children: [
-              const SizedBox(width: 12),
+              if (widget.onClose != null)
+                IconButton(
+                  tooltip: l10n.common_back,
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: widget.onClose,
+                )
+              else
+                const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  l10n.flow_runsTitle,
-                  style: theme.textTheme.labelLarge
-                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  heading,
+                  style: widget.executionHistory
+                      ? theme.textTheme.titleMedium
+                      : theme.textTheme.labelLarge
+                          ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
               ),
               IconButton(
@@ -116,6 +139,18 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
                 onPressed: () => unawaited(_load()),
               ),
             ],
+          ),
+        if (widget.executionHistory && widget.name.isNotEmpty)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                widget.name,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
           ),
         Expanded(
           child: _loading
@@ -200,6 +235,18 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
     ColorScheme scheme,
   ) {
     final needsAction = run.group == FlowRunGroup.attention;
+    final titled = run.inputTitle.trim();
+    final headline = titled.isNotEmpty
+        ? titled
+        : widget.executionHistory
+            ? l10n.flow_executionsUntitled
+            : (run.flow.isEmpty ? run.runId : run.flow);
+    final when = '${run.status} · ${_when(run.startedMs, l10n)}';
+    // 运行记录栏混着多个流程：有标题时把流程名留在副标题，免得只剩一句话不知道是谁的。
+    final showFlow = !widget.executionHistory &&
+        titled.isNotEmpty &&
+        widget.name.isEmpty &&
+        run.flow.isNotEmpty;
     return ListTile(
       key: ValueKey('run-${run.runId}'),
       selected: widget.selectedRunId == run.runId,
@@ -216,11 +263,11 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
                 : scheme.onSurfaceVariant,
       ),
       title: Text(
-        run.flow.isEmpty ? run.runId : run.flow,
+        headline,
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        '${run.status} · ${_when(run.startedMs, l10n)}',
+        showFlow ? '${run.flow} · $when' : when,
         style: theme.textTheme.bodySmall?.copyWith(
           color: scheme.onSurfaceVariant,
         ),
@@ -232,7 +279,9 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
           ? null
           : () => widget.onOpenRun!(
                 run.runId,
-                run.flow.isEmpty ? run.runId : run.flow,
+                titled.isNotEmpty
+                    ? titled
+                    : (run.flow.isEmpty ? run.runId : run.flow),
               ),
     );
   }

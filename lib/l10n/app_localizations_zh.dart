@@ -9897,6 +9897,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_listHistory => '查看历史';
 
   @override
+  String get flow_listExecutions => '执行历史';
+
+  @override
+  String get flow_executionsUntitled => '未填写标题';
+
+  @override
   String get flow_listDelete => '删除流程';
 
   @override

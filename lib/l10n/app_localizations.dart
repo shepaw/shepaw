@@ -17999,6 +17999,18 @@ abstract class AppLocalizations {
   /// **'查看历史'**
   String get flow_listHistory;
 
+  /// No description provided for @flow_listExecutions.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行历史'**
+  String get flow_listExecutions;
+
+  /// No description provided for @flow_executionsUntitled.
+  ///
+  /// In zh, this message translates to:
+  /// **'未填写标题'**
+  String get flow_executionsUntitled;
+
   /// No description provided for @flow_listDelete.
   ///
   /// In zh, this message translates to:

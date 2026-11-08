@@ -716,6 +716,7 @@ class FlowRunSummary {
     this.groupId,
     this.startedMs = 0,
     this.tasksUsed = 0,
+    this.inputTitle = '',
   });
 
   final String runId;
@@ -726,6 +727,11 @@ class FlowRunSummary {
   final String? groupId;
   final int startedMs;
   final int tasksUsed;
+
+  /// 用户开跑时填的那句话（`flow_run_list_resp.input_title`）。
+  /// 主机从 `inputs.title` / `goal` / `task` 里取，没有就用第一个非空字符串。
+  /// 旧主机不带这个字段，这里就是空串。
+  final String inputTitle;
 
   bool get isRunning => status == 'running';
 
@@ -764,6 +770,7 @@ class FlowRunSummary {
             groupId: item['group_id'] as String?,
             startedMs: (item['started_ms'] as num?)?.toInt() ?? 0,
             tasksUsed: (item['tasks_used'] as num?)?.toInt() ?? 0,
+            inputTitle: (item['input_title'] as String?)?.trim() ?? '',
           ),
     ];
   }

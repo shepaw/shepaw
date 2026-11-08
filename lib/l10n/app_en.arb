@@ -5563,6 +5563,8 @@
   "flow_listStart": "Start run",
   "flow_listCopy": "Duplicate",
   "flow_listHistory": "View history",
+  "flow_listExecutions": "Execution history",
+  "flow_executionsUntitled": "Untitled",
   "flow_listDelete": "Delete flow",
   "flow_deleteFailed": "Could not delete the flow",
   "flow_deleteConfirmTitle": "Delete this flow?",

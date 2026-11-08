@@ -6001,6 +6001,8 @@
   "flow_listStart": "开始运行",
   "flow_listCopy": "复制",
   "flow_listHistory": "查看历史",
+  "flow_listExecutions": "执行历史",
+  "flow_executionsUntitled": "未填写标题",
   "flow_listDelete": "删除流程",
   "flow_deleteFailed": "删除失败",
   "flow_deleteConfirmTitle": "删除这个流程？",

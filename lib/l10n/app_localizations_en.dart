@@ -10300,6 +10300,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_listHistory => 'View history';
 
   @override
+  String get flow_listExecutions => 'Execution history';
+
+  @override
+  String get flow_executionsUntitled => 'Untitled';
+
+  @override
   String get flow_listDelete => 'Delete flow';
 
   @override

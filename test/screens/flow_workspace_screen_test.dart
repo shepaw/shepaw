@@ -364,6 +364,55 @@ steps:
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('执行历史按开跑时填的标题列出这个流程的运行', (tester) async {
+    final harness = _Harness()
+      ..runs = [
+        {
+          'run_id': 'run_goal',
+          'flow': 'dev',
+          'status': 'succeeded',
+          'started_ms': 1700000000000,
+          'input_title': '修好登录页',
+        },
+        {
+          'run_id': 'run_old',
+          'flow': 'dev',
+          'status': 'failed',
+          'started_ms': 1600000000000,
+        },
+        {
+          'run_id': 'run_other',
+          'flow': 'other',
+          'status': 'succeeded',
+          'started_ms': 1500000000000,
+          'input_title': '别的流程',
+        },
+      ];
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byKey(const ValueKey('flow-more-dev')));
+    await _settleMenu(tester);
+    expect(find.text('执行历史'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('flow-executions-dev')));
+    await _settleMenu(tester);
+
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsOneWidget);
+    expect(find.text('修好登录页'), findsOneWidget);
+    expect(find.text('未填写标题'), findsOneWidget);
+    expect(find.text('别的流程'), findsNothing);
+    expect(
+      harness.sent.any((frame) =>
+          frame['type'] == 'flow_run_list_req' && frame['name'] == 'dev'),
+      isTrue,
+    );
+
+    await tester.tap(find.text('修好登录页'));
+    await _settle(tester);
+    expect(find.text('修好登录页'), findsWidgets);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('tapping a flow opens the editor directly', (tester) async {
     tester.view.physicalSize = const Size(2400, 1800);
     tester.view.devicePixelRatio = 2.0;
@@ -801,6 +850,9 @@ class _Harness {
   /// 让 `flow_list_resp` 整体失败（例如库里有一个坏掉的 meta.json）。
   bool listFails = false;
 
+  /// `flow_run_list_resp` 的运行。null 用一条默认的 `dev` / `run_1`。
+  List<Map<String, dynamic>>? runs;
+
   final StreamController<PeerControlEvent> bus =
       StreamController<PeerControlEvent>.broadcast();
   final List<Map<String, dynamic>> sent = [];
@@ -822,21 +874,32 @@ class _Harness {
                     'success': true,
                     'flows': flows,
                   },
-            'flow_run_list_req' => {
-                'type': 'flow_run_list_resp',
-                'success': true,
-                'runs': [
-                  {
-                    'run_id': 'run_1',
-                    'flow': 'dev',
-                    'status': 'succeeded',
-                    'scope': 'lib',
-                    'revision': 2,
-                    'started_ms': 1700000000000,
-                    'tasks_used': 3,
-                  },
-                ],
-              },
+            'flow_run_list_req' => () {
+                final requested = (frame['name'] as String?) ?? '';
+                final all = runs ??
+                    [
+                      {
+                        'run_id': 'run_1',
+                        'flow': 'dev',
+                        'status': 'succeeded',
+                        'scope': 'lib',
+                        'revision': 2,
+                        'started_ms': 1700000000000,
+                        'tasks_used': 3,
+                      },
+                    ];
+                final shown = requested.isEmpty
+                    ? all
+                    : [
+                        for (final run in all)
+                          if (run['flow'] == requested) run,
+                      ];
+                return {
+                  'type': 'flow_run_list_resp',
+                  'success': true,
+                  'runs': shown,
+                };
+              }(),
             'flow_save_req' => {
                 'type': 'flow_save_resp',
                 'success': true,

@@ -97,7 +97,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   /// PopEntry，外层 PopScope 得靠它让设计页先关整页，不能连详情一起退掉。
   final ValueNotifier<bool> _detailPageOpen = ValueNotifier<bool>(false);
 
-  /// 新建 / 开跑 / 运行记录 / 版本历史。盖在右侧详情上，流程库留在左边。
+  /// 新建 / 开跑 / 执行历史 / 版本历史。盖在右侧详情上，流程库留在左边。
   Widget? _pane;
   Completer<Object?>? _paneDone;
 
@@ -720,6 +720,23 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     _select(flow);
   }
 
+  /// 列表行 `⋯` 里的「执行历史」：只看这个流程开过的运行，
+  /// 每一行用开跑时填的标题来辨认。点一条就打开那次运行。
+  void _showExecutions(FlowSummary flow) {
+    unawaited(_showPane<void>((finish) => FlowRunsPane(
+          client: _client,
+          peerId: _host,
+          scope: widget.scope,
+          name: flow.name,
+          executionHistory: true,
+          onClose: () => finish(null),
+          onOpenRun: (runId, title) {
+            finish(null);
+            _showRun(runId, title);
+          },
+        )));
+  }
+
   void _snack(String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
@@ -959,6 +976,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                           needsApproval: flow.lastRunNeedsApproval,
                           onTap: () => _select(flow),
                           onStart: () => unawaited(_start(flow)),
+                          onExecutions: () => _showExecutions(flow),
                           onDuplicate: () => _duplicate(flow),
                           onDelete: () => unawaited(_deleteFlow(flow)),
                           onHistory: () => unawaited(_showHistory(flow)),
