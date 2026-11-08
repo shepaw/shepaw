@@ -43,6 +43,7 @@ class _FakeHost {
   final sentPeers = <String>[];
   late final HubFlow client;
   String editedPrompt = '写';
+  bool dropNode = false;
 
   Map<String, dynamic>? _reply(Map<String, dynamic> frame) {
     switch (frame['type']) {
@@ -99,6 +100,21 @@ class _FakeHost {
           'diagnostics': [],
         };
       case 'flow_edit_req':
+        final deleted = dropNode &&
+            frame['ops'] is List &&
+            (frame['ops'] as List).any(
+              (op) => op is Map && op['op'] == 'delete',
+            );
+        if (deleted) {
+          return {
+            'type': 'flow_edit_resp',
+            'success': true,
+            'valid': true,
+            'yaml': 'steps: []\n',
+            'tree': <Map<String, dynamic>>[],
+            'diagnostics': [],
+          };
+        }
         return {
           'type': 'flow_edit_resp',
           'success': true,
@@ -383,6 +399,96 @@ void main() {
     expect(host.sentPeers[saveIdx], 'p2', reason: '保存必须发往新主机');
     expect(
         host.sentPeers.sublist(beforeSwitch).every((p) => p == 'p2'), isTrue);
+    await tester.pumpWidget(const SizedBox());
+    await host.bus.close();
+  });
+
+  testWidgets('undo puts the previous prompt back', (tester) async {
+    final host = _FakeHost();
+    await tester.pumpWidget(_app(FlowDesignScreen(
+      peerId: 'p1',
+      name: 'dev',
+      client: host.client,
+    )));
+    await _settle(tester);
+    await tester.tap(find.text('impl'));
+    await _settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('f:task.prompt')), '认真写');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('undo')));
+    await _settle(tester);
+    expect(find.text('写'), findsWidgets);
+    await tester.pumpWidget(const SizedBox());
+    await host.bus.close();
+  });
+
+  testWidgets('an invalid prompt stays until the second leave', (tester) async {
+    final host = _FakeHost();
+    await tester.pumpWidget(_app(FlowDesignScreen(
+      peerId: 'p1',
+      name: 'dev',
+      client: host.client,
+    )));
+    await _settle(tester);
+    await tester.tap(find.text('impl'));
+    await _settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('f:task.prompt')), '');
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('header-open')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('f:task.prompt')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('header-open')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('f:task.prompt')), findsNothing);
+    expect(find.text('流程设置'), findsWidgets);
+    await tester.pumpWidget(const SizedBox());
+    await host.bus.close();
+  });
+
+  testWidgets('deleting the selected node falls back to flow settings',
+      (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final host = _FakeHost()..dropNode = true;
+    await tester.pumpWidget(_app(FlowDesignScreen(
+      peerId: 'p1',
+      name: 'dev',
+      client: host.client,
+    )));
+    await _settle(tester);
+    await tester.tap(find.text('impl'));
+    await _settle(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('del-impl')));
+    await tester.tap(find.byKey(const ValueKey('del-impl')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.widgetWithText(TextButton, '删除这一步'));
+    await _settle(tester);
+    expect(find.text('impl'), findsNothing);
+    expect(find.text('流程设置'), findsWidgets);
+    expect(find.byType(BottomSheet), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await host.bus.close();
+  });
+
+  testWidgets('a 700-wide page keeps the tree and overlays the panel',
+      (tester) async {
+    tester.view.physicalSize = const Size(700, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final host = _FakeHost();
+    await tester.pumpWidget(_app(FlowDesignScreen(
+      peerId: 'p1',
+      name: 'dev',
+      client: host.client,
+    )));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
+    expect(find.byKey(const ValueKey('drawer-close')), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
     await tester.pumpWidget(const SizedBox());
     await host.bus.close();
   });

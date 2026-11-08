@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_edit_ops.dart';
@@ -190,41 +192,7 @@ Future<FlowOutlineMenuChoice?> showFlowOutlineMenu(
     canRetype: canRetype,
   );
   if (LayoutUtils.isDesktopLayout(context)) {
-    final overlay = Navigator.of(context).overlay?.context.findRenderObject();
-    final box = context.findRenderObject();
-    var origin = position ?? Offset.zero;
-    if (position == null && box is RenderBox && box.hasSize) {
-      origin = box.localToGlobal(Offset.zero);
-    }
-    var left = origin.dx;
-    var top = origin.dy;
-    if (overlay is RenderBox) {
-      final local = overlay.globalToLocal(origin);
-      left = local.dx;
-      top = local.dy;
-    }
-    return showMenu<FlowOutlineMenuChoice>(
-      context: context,
-      position: RelativeRect.fromLTRB(left, top, left + 1, top + 1),
-      items: [
-        for (final entry in entries)
-          if (entry.divider)
-            const PopupMenuDivider()
-          else if (entry.choice != null)
-            PopupMenuItem<FlowOutlineMenuChoice>(
-              key: ValueKey('outline-menu-${entry.choice!.action.name}-${entry.choice!.kind ?? entry.choice!.branch ?? ''}'),
-              value: entry.choice,
-              child: Text(
-                entry.shortcut == null
-                    ? entry.label
-                    : '${entry.label}  ${entry.shortcut}',
-                style: entry.danger
-                    ? TextStyle(color: Theme.of(context).colorScheme.error)
-                    : null,
-              ),
-            ),
-      ],
-    );
+    return _showMenuAnchor(context, entries, position);
   }
   return showModalBottomSheet<FlowOutlineMenuChoice>(
     context: context,
@@ -233,6 +201,73 @@ Future<FlowOutlineMenuChoice?> showFlowOutlineMenu(
     useSafeArea: true,
     builder: (sheetContext) => _Sheet(entries: entries),
   );
+}
+
+/// 桌面菜单锚在按钮或右键位置。用 MenuAnchor，不再走底部弹层。
+Future<FlowOutlineMenuChoice?> _showMenuAnchor(
+  BuildContext context,
+  List<FlowOutlineMenuEntry> entries,
+  Offset? position,
+) async {
+  final overlay = Overlay.maybeOf(context);
+  final overlayBox = overlay?.context.findRenderObject();
+  if (overlay == null || overlayBox is! RenderBox) return null;
+  final box = context.findRenderObject();
+  var global = position;
+  if (global == null && box is RenderBox && box.hasSize) {
+    global = box.localToGlobal(Offset.zero);
+  }
+  final local = overlayBox.globalToLocal(global ?? Offset.zero);
+  final picked = <FlowOutlineMenuChoice?>[null];
+  final completer = Completer<FlowOutlineMenuChoice?>();
+  final controller = MenuController();
+  late OverlayEntry entry;
+  void finish() {
+    if (completer.isCompleted) return;
+    entry.remove();
+    completer.complete(picked[0]);
+  }
+
+  entry = OverlayEntry(
+    builder: (overlayContext) {
+      return Positioned(
+        left: local.dx,
+        top: local.dy,
+        child: MenuAnchor(
+          controller: controller,
+          onClose: finish,
+          menuChildren: [
+            for (final item in entries)
+              if (item.divider)
+                const Divider(height: 8)
+              else if (item.choice != null)
+                MenuItemButton(
+                  key: ValueKey(
+                    'outline-menu-${item.choice!.action.name}-${item.choice!.kind ?? item.choice!.branch ?? ''}',
+                  ),
+                  onPressed: () => picked[0] = item.choice,
+                  child: Text(
+                    item.shortcut == null
+                        ? item.label
+                        : '${item.label}  ${item.shortcut}',
+                    style: item.danger
+                        ? TextStyle(
+                            color: Theme.of(overlayContext).colorScheme.error,
+                          )
+                        : null,
+                  ),
+                ),
+          ],
+          child: const SizedBox(width: 1, height: 1),
+        ),
+      );
+    },
+  );
+  overlay.insert(entry);
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!completer.isCompleted && !controller.isOpen) controller.open();
+  });
+  return completer.future;
 }
 
 class _Sheet extends StatelessWidget {

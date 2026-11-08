@@ -169,6 +169,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     widget.restoreRequests?.addListener(_onRestoreRequest);
     _startController();
     unawaited(_loadFlowRefs());
+    unawaited(_loadAgents());
   }
 
   static const _panelWidthKey = 'flow_context_panel_width';
@@ -922,17 +923,34 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   /// 只列这个流程所在主机的 peer agent；写入时用 Hub id，而不是本机行 id。
   /// 老行是 `peeragent_<peer>_<remote>`，得先剥成 remote id，否则 `task.agent`
   /// 会存一个主机不认的值，模型列表也拉不对。
-  Future<String?> _pickAgent() async {
-    if (_agents.isEmpty) {
-      final epoch = _hostEpoch;
-      final peerId = widget.peerId;
+  Future<void> _loadAgents() async {
+    if (_agents.isNotEmpty) return;
+    final epoch = _hostEpoch;
+    final peerId = widget.peerId;
+    try {
       final all = await LocalDatabaseService().getAllRemoteAgents();
-      if (!mounted || epoch != _hostEpoch || peerId != widget.peerId) {
-        return null;
-      }
-      setState(() => _agents =
-          all.where((a) => a.isPeerAgent && a.sourcePeerId == peerId).toList());
+      if (!mounted || epoch != _hostEpoch || peerId != widget.peerId) return;
+      setState(() => _agents = all
+          .where((a) => a.isPeerAgent && a.sourcePeerId == peerId)
+          .toList());
+    } catch (_) {
+      // 测试里没有本机库。名字对不上就继续显示 id。
     }
+  }
+
+  String? _agentLabel(String id) {
+    for (final agent in _agents) {
+      if (hubAgentIdOf(agent) == id || agent.id == id) {
+        final name = agent.name.trim();
+        if (name.isNotEmpty) return name;
+      }
+    }
+    return null;
+  }
+
+  Future<String?> _pickAgent() async {
+    await _loadAgents();
+    if (!mounted) return null;
     final l10n = AppLocalizations.of(context);
     final picked = await showJadeSlipAgentPicker(
       context,
@@ -1476,6 +1494,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         controller: c,
         readOnly: !c.caps.canEditHeader || c.rehearsal.active,
         onPickAgent: _pickAgent,
+        agentLabel: _agentLabel,
         tree: c.tree,
         onBlocked: (blocked) {
           _headerBlocked = blocked;

@@ -18,6 +18,7 @@ class FlowHeaderForm extends StatefulWidget {
     required this.controller,
     this.readOnly = false,
     this.onPickAgent,
+    this.agentLabel,
     this.tree = const [],
     this.onBlocked,
   });
@@ -25,6 +26,9 @@ class FlowHeaderForm extends StatefulWidget {
   final FlowEditorController controller;
   final bool readOnly;
   final Future<String?> Function()? onPickAgent;
+
+  /// 把存下来的 Hub agent id 换成界面上的名字。没有就显示 id。
+  final String? Function(String id)? agentLabel;
   final List<FlowNode> tree;
 
   /// 名称或运行限制还不合法，这一组没有提交。保存和演练要停下来。
@@ -489,6 +493,13 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
         ],
       );
 
+  String _agentName(String id) {
+    if (id.isEmpty) return '';
+    final label = widget.agentLabel?.call(id)?.trim();
+    if (label == null || label.isEmpty) return id;
+    return label;
+  }
+
   Map<String, List<String>> get _inputUsers =>
       FlowHeaderUsage.inputs(widget.tree);
 
@@ -669,11 +680,12 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     final name = row.key.text.trim();
     final users = _roleUsers[name] ?? const <String>[];
     final agent = row.agentDefault?.trim() ?? '';
+    final agentName = _agentName(agent);
     final summary = name.isEmpty
         ? l10n.flow_headerAddRole
-        : agent.isEmpty
+        : agentName.isEmpty
             ? name
-            : '$name · $agent';
+            : '$name · $agentName';
     return Card(
       color: _roleNameBad(row)
           ? Theme.of(context).colorScheme.errorContainer
@@ -748,9 +760,9 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                                   _schedule();
                                 },
                           child: Text(
-                            agent.isEmpty
+                            agentName.isEmpty
                                 ? l10n.flow_headerRoleDefault
-                                : agent,
+                                : agentName,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),

@@ -9035,9 +9035,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_headerAddOutput => '加一个输出';
 
   @override
-  String get flow_headerHint => '版本号由主机管理；改动会存成草稿，保存后才成为新一版。';
-
-  @override
   String get flow_headerOpen => '流程设置';
 
   @override

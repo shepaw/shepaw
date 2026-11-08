@@ -9393,10 +9393,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_headerAddOutput => 'Add an output';
 
   @override
-  String get flow_headerHint =>
-      'The version is managed by the host; edits stay as a draft until you save.';
-
-  @override
   String get flow_headerOpen => 'Flow settings';
 
   @override

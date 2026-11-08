@@ -16397,12 +16397,6 @@ abstract class AppLocalizations {
   /// **'加一个输出'**
   String get flow_headerAddOutput;
 
-  /// No description provided for @flow_headerHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'版本号由主机管理；改动会存成草稿，保存后才成为新一版。'**
-  String get flow_headerHint;
-
   /// No description provided for @flow_headerOpen.
   ///
   /// In zh, this message translates to:

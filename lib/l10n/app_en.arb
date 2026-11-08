@@ -5091,7 +5091,6 @@
   "flow_headerOutputName": "Output name",
   "flow_headerOutputTemplate": "Template",
   "flow_headerAddOutput": "Add an output",
-  "flow_headerHint": "The version is managed by the host; edits stay as a draft until you save.",
   "flow_headerOpen": "Flow settings",
   "flow_refInsert": "Insert reference",
   "flow_historyTitle": "Revision history",
