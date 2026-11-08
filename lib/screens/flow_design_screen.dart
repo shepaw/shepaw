@@ -116,6 +116,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   /// 流程设置里有还没能提交的名称或运行限制。
   bool _headerBlocked = false;
+
+  /// 第一次点走流程设置时先留在表单上，再点一次才丢掉没提交的名称。
+  bool _headerLeaveArmed = false;
   int _focusNonce = 0;
   int _discardNonce = 0;
   String? _flashField;
@@ -519,7 +522,24 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   }
 
   /// 拖放落点：发一个 move（撤销走编辑器快照），落下后选中并滚到被拖节点。
+  /// 正在改流程设置、而且这一组还没能提交时，先别切走。再点一次才丢掉。
+  bool _confirmHeaderLeave() {
+    if (_selectedId != null) return true;
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (!_headerBlocked) {
+      _headerLeaveArmed = false;
+      return true;
+    }
+    if (!_headerLeaveArmed) {
+      setState(() => _headerLeaveArmed = true);
+      return false;
+    }
+    _headerLeaveArmed = false;
+    return true;
+  }
+
   void _onDrop(String dragId, FlowDropTarget target) {
+    if (!_confirmHeaderLeave()) return;
     unawaited(_controller.applyOps(FlowOutlineOps.moveTo(target)));
     setState(() => _selectedId = dragId);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -736,6 +756,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       _toggleSelected(node);
       return;
     }
+    if (!_confirmHeaderLeave()) return;
     if (node.id != _selectedId && !_confirmLeave()) return;
     setState(() {
       _selectedId = node.id;
@@ -1387,7 +1408,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         readOnly: !c.caps.canEditHeader || c.rehearsal.active,
         onPickAgent: _pickAgent,
         tree: c.tree,
-        onBlocked: (blocked) => _headerBlocked = blocked,
+        onBlocked: (blocked) {
+          _headerBlocked = blocked;
+          if (!blocked) _headerLeaveArmed = false;
+        },
       );
     }
     final problems = [
