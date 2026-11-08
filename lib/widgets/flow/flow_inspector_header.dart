@@ -97,18 +97,20 @@ class FlowInspectorHeaderState extends State<FlowInspectorHeader> {
               ),
             ),
             if (widget.row != null && widget.onMenuChoice != null)
-              IconButton(
-                key: const ValueKey('inspector-menu'),
-                tooltip: l10n.flow_outlineMenu,
-                icon: const Icon(Icons.more_horiz),
-                onPressed: () async {
-                  final choice = await showFlowOutlineMenu(
-                    context,
-                    row: widget.row!,
-                    canRetype: widget.canRetype,
-                  );
-                  if (choice != null) widget.onMenuChoice!(choice);
-                },
+              Builder(
+                builder: (buttonContext) => IconButton(
+                  key: const ValueKey('inspector-menu'),
+                  tooltip: l10n.flow_outlineMenu,
+                  icon: const Icon(Icons.more_horiz),
+                  onPressed: () async {
+                    final choice = await showFlowOutlineMenu(
+                      buttonContext,
+                      row: widget.row!,
+                      canRetype: widget.canRetype,
+                    );
+                    if (choice != null) widget.onMenuChoice!(choice);
+                  },
+                ),
               ),
           ],
         ),

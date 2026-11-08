@@ -375,11 +375,8 @@ void main() {
     await _settle(tester);
     expect(find.byKey(const ValueKey('drawer-properties-page')), findsOneWidget);
     expect(find.byKey(const ValueKey('f:task.prompt')), findsOneWidget);
-    expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('drawer-close')));
-    await _settle(tester);
-    expect(find.byKey(const ValueKey('drawer-properties-page')), findsNothing);
+    expect(find.text('属性'), findsNothing);
+    expect(find.byKey(const ValueKey('drawer-close')), findsNothing);
     expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('design-more')));

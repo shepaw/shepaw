@@ -206,6 +206,26 @@ Widget _app(Widget home) => MaterialApp(
       home: home,
     );
 
+/// 菜单应贴着按钮：水平范围盖住按钮，垂直方向挨着按钮。
+void _expectMenuBeside(WidgetTester tester, Finder button, Finder item) {
+  final buttonRect = tester.getRect(button);
+  final materials = find.ancestor(of: item, matching: find.byType(Material));
+  var menu = tester.getRect(materials.first);
+  final count = materials.evaluate().length;
+  for (var i = 1; i < count; i++) {
+    final rect = tester.getRect(materials.at(i));
+    if (rect.height > menu.height) menu = rect;
+  }
+  expect(menu.right, greaterThan(buttonRect.left - 24));
+  expect(menu.left, lessThan(buttonRect.right + 24));
+  final verticalGap = menu.top > buttonRect.bottom
+      ? menu.top - buttonRect.bottom
+      : buttonRect.top > menu.bottom
+          ? buttonRect.top - menu.bottom
+          : 0.0;
+  expect(verticalGap, lessThan(24));
+}
+
 Future<void> _settle(WidgetTester tester) async {
   for (var i = 0; i < 6; i++) {
     await tester.pump(const Duration(milliseconds: 30));
@@ -491,7 +511,8 @@ void main() {
     expect(find.byKey(const ValueKey('drawer-close')), findsNothing);
     await tester.tap(find.text('impl'));
     await _settle(tester);
-    expect(find.byKey(const ValueKey('drawer-close')), findsOneWidget);
+    expect(find.byKey(const ValueKey('drawer-close')), findsNothing);
+    expect(find.text('属性'), findsNothing);
     expect(find.byKey(const ValueKey('f:task.prompt')), findsOneWidget);
     expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
     expect(find.byType(BottomSheet), findsNothing);
@@ -521,6 +542,88 @@ void main() {
     await tester.tap(find.text('缺提示词'));
     await _settle(tester);
     expect(find.byKey(const ValueKey('f:task.prompt')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await host.bus.close();
+  });
+
+  testWidgets('outline and inspector menus open beside the button and apply',
+      (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final host = _FakeHost();
+    await tester.pumpWidget(_app(FlowDesignScreen(
+      peerId: 'p1',
+      name: 'dev',
+      client: host.client,
+    )));
+    await _settle(tester);
+
+    await tester.tap(find.byKey(const ValueKey('menu-impl')));
+    await _settle(tester);
+    _expectMenuBeside(
+      tester,
+      find.byKey(const ValueKey('menu-impl')),
+      find.byKey(const ValueKey('outline-menu-insertAfter-')),
+    );
+    await tester.tap(find.byKey(const ValueKey('outline-menu-insertAfter-')));
+    await _settle(tester);
+    expect(
+      host.sent.any((frame) {
+        if (frame['type'] != 'flow_edit_req') return false;
+        final ops = frame['ops'];
+        return ops is List && ops.any((op) => op is Map && op['op'] == 'insert');
+      }),
+      isTrue,
+    );
+
+    await tester.tap(find.text('impl'));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('inspector-menu')));
+    await _settle(tester);
+    _expectMenuBeside(
+      tester,
+      find.byKey(const ValueKey('inspector-menu')),
+      find.byKey(const ValueKey('outline-menu-insertAfter-')),
+    );
+    await tester.tap(find.byKey(const ValueKey('outline-menu-wrap-par')));
+    await _settle(tester);
+    expect(
+      host.sent.any((frame) {
+        if (frame['type'] != 'flow_edit_req') return false;
+        final ops = frame['ops'];
+        return ops is List && ops.any((op) => op is Map && op['op'] == 'wrap');
+      }),
+      isTrue,
+    );
+    await tester.pumpWidget(const SizedBox());
+    await host.bus.close();
+  });
+
+  testWidgets('dragging the divider resizes the tree and the properties pane',
+      (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final host = _FakeHost();
+    await tester.pumpWidget(_app(FlowDesignScreen(
+      peerId: 'p1',
+      name: 'dev',
+      client: host.client,
+    )));
+    await _settle(tester);
+    await tester.tap(find.text('impl'));
+    await _settle(tester);
+
+    final pane = find.byKey(const ValueKey('flow-properties-pane'));
+    final before = tester.getSize(pane).width;
+    await tester.drag(
+      find.byKey(const ValueKey('flow-pane-splitter')),
+      const Offset(-80, 0),
+    );
+    await _settle(tester);
+    expect(tester.getSize(pane).width, greaterThan(before + 40));
+    expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     await host.bus.close();
   });

@@ -66,8 +66,8 @@ class FlowOutlineTree extends StatefulWidget {
   final void Function(FlowOutlineRow row)? onMoveDown;
   final void Function(FlowOutlineRow row)? onDelete;
 
-  /// 「⋯」菜单：加子步骤 / 缩进 / 改类型。
-  final void Function(FlowOutlineRow row)? onMenu;
+  /// 「⋯」菜单。第二个参数是按钮自己的 context，菜单要锚在按钮上。
+  final void Function(FlowOutlineRow row, BuildContext anchor)? onMenu;
 
   /// 长按多选（群流程的「点选 + 说话」）。
   final void Function(FlowOutlineRow row)? onLongPressRow;
@@ -414,7 +414,9 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
       onMoveDown:
           widget.onMoveDown == null ? null : () => widget.onMoveDown!(row),
       onDelete: widget.onDelete == null ? null : () => widget.onDelete!(row),
-      onMenu: widget.onMenu == null ? null : () => widget.onMenu!(row),
+      onMenu: widget.onMenu == null
+          ? null
+          : (anchor) => widget.onMenu!(row, anchor),
       onLongPress: widget.onLongPressRow == null
           ? null
           : () => widget.onLongPressRow!(row),
@@ -617,7 +619,7 @@ class _Row extends StatelessWidget {
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
   final VoidCallback? onDelete;
-  final VoidCallback? onMenu;
+  final void Function(BuildContext anchor)? onMenu;
   final VoidCallback? onLongPress;
 
   @override
@@ -732,11 +734,15 @@ class _Row extends StatelessWidget {
                     icon: const Icon(Icons.add, size: 18),
                     onPressed: onAddAfter,
                   ),
-                  IconButton(
-                    key: ValueKey('menu-${node.id}'),
-                    tooltip: l10n.flow_outlineMenu,
-                    icon: const Icon(Icons.more_horiz, size: 18),
-                    onPressed: onMenu,
+                  Builder(
+                    builder: (buttonContext) => IconButton(
+                      key: ValueKey('menu-${node.id}'),
+                      tooltip: l10n.flow_outlineMenu,
+                      icon: const Icon(Icons.more_horiz, size: 18),
+                      onPressed: onMenu == null
+                          ? null
+                          : () => onMenu!(buttonContext),
+                    ),
                   ),
                   IconButton(
                     key: ValueKey('del-${node.id}'),

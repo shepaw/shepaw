@@ -172,14 +172,24 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       final prefs = await SharedPreferences.getInstance();
       final width = prefs.getDouble(_panelWidthKey);
       if (!mounted || width == null) return;
-      setState(() => _panelWidth = width.clamp(320, 560));
+      setState(() => _panelWidth = width);
     } catch (_) {
       // 测试里没初始化偏好时用默认宽度。
     }
   }
 
+  /// 属性栏宽度。布局时再按可用空间夹到两边都还剩得下。
+  double _fitPanelWidth(double available) {
+    const minPanel = 280.0;
+    const minTree = 280.0;
+    const splitter = 9.0;
+    final maxPanel = (available - minTree - splitter).clamp(minPanel, available);
+    return _panelWidth.clamp(minPanel, maxPanel);
+  }
+
   void _rememberPanelWidth(double width) {
-    final next = width.clamp(320, 560).toDouble();
+    if (width == _panelWidth) return;
+    final next = width;
     setState(() => _panelWidth = next);
     unawaited(() async {
       try {
@@ -641,7 +651,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       unawaited(_controller.applyOps([FlowOutlineOps.moveIntoPrevious(row)]));
       return;
     }
-    unawaited(_rowMenu(row));
+    final anchor = _rowKeys[row.node.id]?.currentContext ?? context;
+    unawaited(_rowMenu(row, anchor));
   }
 
   void _shortcutAddAfter() {
@@ -675,9 +686,13 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     await _controller.applySource(choice.yaml, checked);
   }
 
-  Future<void> _rowMenu(FlowOutlineRow row, {Offset? position}) async {
+  Future<void> _rowMenu(
+    FlowOutlineRow row,
+    BuildContext anchor, {
+    Offset? position,
+  }) async {
     final choice = await showFlowOutlineMenu(
-      context,
+      anchor,
       row: row,
       canRetype: _controller.caps.canRetype,
       position: position,
@@ -1333,13 +1348,13 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                     },
               onTapRow: (row) => _selectNode(row.node),
               onSecondaryTapRow: (row, position) =>
-                  unawaited(_rowMenu(row, position: position)),
+                  unawaited(_rowMenu(row, context, position: position)),
               onToggleCollapse: _toggleCollapse,
               onAddAfter: _addAfter,
               onMoveUp: (row) => _move(row, up: true),
               onMoveDown: (row) => _move(row, up: false),
               onDelete: _delete,
-              onMenu: _rowMenu,
+              onMenu: (row, anchor) => unawaited(_rowMenu(row, anchor)),
               onLongPressRow:
                   canTalk ? (row) => _toggleSelected(row.node) : null,
             ),
@@ -1424,14 +1439,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             if (mounted && _overlay == wide) setState(() => _overlay = !wide);
           });
         }
+        final panelWidth = _fitPanelWidth(width);
         final panel = showPanel
-            ? FlowContextPanel(
-                onClose: () => setState(() => _panelOpen = false),
-                onDragWidth: wide
-                    ? (delta) => _rememberPanelWidth(_panelWidth + delta)
-                    : null,
-                child: _propertiesPane(l10n),
-              )
+            ? FlowContextPanel(child: _propertiesPane(l10n))
             : null;
         final treeStack = Stack(
           children: [
@@ -1455,7 +1465,17 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(child: treeStack),
-              if (panel != null) SizedBox(width: _panelWidth, child: panel),
+              if (panel != null) ...[
+                FlowPaneSplitter(
+                  onDrag: (dx) =>
+                      _rememberPanelWidth(_fitPanelWidth(width) - dx),
+                ),
+                SizedBox(
+                  key: const ValueKey('flow-properties-pane'),
+                  width: panelWidth,
+                  child: panel,
+                ),
+              ],
             ],
           );
         }
