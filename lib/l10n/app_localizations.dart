@@ -17975,6 +17975,30 @@ abstract class AppLocalizations {
   /// **'查看历史'**
   String get flow_listHistory;
 
+  /// No description provided for @flow_listDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除流程'**
+  String get flow_listDelete;
+
+  /// No description provided for @flow_deleteFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除失败'**
+  String get flow_deleteFailed;
+
+  /// No description provided for @flow_deleteConfirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除这个流程？'**
+  String get flow_deleteConfirmTitle;
+
+  /// No description provided for @flow_deleteConfirmBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」的定义会从这台主机上删掉，不能撤销。'**
+  String flow_deleteConfirmBody(String name);
+
   /// No description provided for @flow_libraryEmptyHint.
   ///
   /// In zh, this message translates to:
@@ -18464,7 +18488,7 @@ abstract class AppLocalizations {
   /// No description provided for @flow_stepsReadOnly.
   ///
   /// In zh, this message translates to:
-  /// **'手机上只能查看，编辑请在电脑上进行'**
+  /// **'这台主机不支持编辑，当前只能查看'**
   String get flow_stepsReadOnly;
 
   /// No description provided for @flow_stepsSelected.
@@ -18490,6 +18514,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'长按或点「选择」可以挑出步骤，再对群主说要怎么改'**
   String get flow_stepsHint;
+
+  /// No description provided for @flow_phoneEditHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'点步骤可以编辑，也可以挑几步跟群主说'**
+  String get flow_phoneEditHint;
+
+  /// No description provided for @flow_phoneSelected.
+  ///
+  /// In zh, this message translates to:
+  /// **'已选 {count} 步'**
+  String flow_phoneSelected(int count);
+
+  /// No description provided for @flow_phoneAddFirstStep.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加第一步'**
+  String get flow_phoneAddFirstStep;
 
   /// No description provided for @flow_talkAboutStep.
   ///

@@ -1,6 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+// 只为在用例结束后还原平台实例。
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
+import 'package:shepaw/controllers/flow/flow_draft_store.dart';
 import 'package:shepaw/controllers/flow/flow_editor_controller.dart';
 import 'package:shepaw/controllers/flow/flow_editor_notice.dart';
 import 'package:shepaw/controllers/flow/flow_host_caps.dart';
@@ -550,6 +555,38 @@ void main() {
     expect(await c.saveAs('fresh'), isFalse);
     expect(harness.sent.any((f) => f['type'] == 'flow_save_req'), isFalse);
     expect(harness.notices.last.kind, FlowEditorNoticeKind.hostNoReply);
+  });
+
+  test('流程被删掉后 abandon：迟到的 edit 回包不再落幽灵草稿', () async {
+    final original = SharedPreferencesStorePlatform.instance;
+    SharedPreferences.setMockInitialValues({});
+    addTearDown(() {
+      SharedPreferences.setMockInitialValues({});
+      SharedPreferencesStorePlatform.instance = original;
+    });
+    // 回包晚到，模拟「删除流程 → 卸载编辑页」时还在途的那一次 edit。
+    final harness = _Harness()..delay = const Duration(milliseconds: 250);
+    addTearDown(harness.close);
+    final drafts = FlowDraftStore();
+    final c = FlowEditorController(
+      peerId: 'p1',
+      name: 'dev',
+      client: harness.client,
+      draftStore: drafts,
+    );
+    c.onNotice = harness.notices.add;
+    await c.load();
+    addTearDown(c.dispose);
+
+    c.setField('a', 'desc', '改了');
+    // 500ms 防抖刚过、回包还没到：此刻删流程并清掉草稿。
+    await Future<void>.delayed(const Duration(milliseconds: 560));
+    expect(harness.sent.any((f) => f['type'] == 'flow_edit_req'), isTrue);
+    c.abandon();
+    await drafts.clear(peerId: 'p1', scope: '', name: 'dev');
+
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    expect(await drafts.load(peerId: 'p1', scope: '', name: 'dev'), isNull);
   });
 
 }

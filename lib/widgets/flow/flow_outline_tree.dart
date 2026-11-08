@@ -44,6 +44,9 @@ class FlowOutlineTree extends StatefulWidget {
     this.dragEnabled = false,
     this.canMove = true,
     this.tree = const [],
+    this.compact = false,
+    this.selectionMode = false,
+    this.selectedIds = const {},
   });
 
   final List<FlowOutlineRow> rows;
@@ -89,6 +92,14 @@ class FlowOutlineTree extends StatefulWidget {
 
   /// 完整节点树（不受折叠影响），软引用预检用。
   final List<FlowNode> tree;
+
+  /// 窄屏（手机）布局：行尾只留「⋯」，结构操作收进菜单，不画拖拽手柄。
+  /// 400px 宽的行放不下五个 IconButton + 标题。
+  final bool compact;
+
+  /// 「点选 + 说话」的显式选择模式：行首换成复选框，点行切换选中。
+  final bool selectionMode;
+  final Set<String> selectedIds;
 
   /// Test seam：拖拽过程中实际跑了几次 [refWarningsAfterMove]（全树模拟 +
   /// 正则扫描）。落点没变时不该增加。
@@ -385,7 +396,9 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
     FlowOutlineRow row,
   ) {
     final editable = widget._editable(row);
-    final draggable = widget.dragEnabled && editable;
+    final selecting = widget.selectionMode;
+    final draggable =
+        widget.dragEnabled && editable && !widget.compact && !selecting;
 
     Widget rowWidget = _Row(
       l10n: l10n,
@@ -399,6 +412,9 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
       editable: editable,
       badge: widget.badgeFor?.call(row),
       draggable: draggable,
+      compact: widget.compact,
+      selectionMode: selecting,
+      talkSelected: widget.selectedIds.contains(row.node.id),
       onDragStarted: () => _startDrag(row.node.id),
       onDragEnd: _endDrag,
       onTap: widget.onTapRow == null ? null : () => widget.onTapRow!(row),
@@ -586,6 +602,9 @@ class _Row extends StatelessWidget {
     required this.editable,
     required this.badge,
     required this.draggable,
+    required this.compact,
+    required this.selectionMode,
+    required this.talkSelected,
     required this.onDragStarted,
     required this.onDragEnd,
     required this.onTap,
@@ -610,6 +629,9 @@ class _Row extends StatelessWidget {
   final bool editable;
   final (String, Color)? badge;
   final bool draggable;
+  final bool compact;
+  final bool selectionMode;
+  final bool talkSelected;
   final VoidCallback? onDragStarted;
   final VoidCallback? onDragEnd;
   final VoidCallback? onTap;
@@ -652,7 +674,15 @@ class _Row extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(
               children: [
-                if (draggable) _dragHandle(),
+                if (selectionMode)
+                  Checkbox(
+                    key: ValueKey('pick-${node.id}'),
+                    value: talkSelected,
+                    visualDensity: VisualDensity.compact,
+                    onChanged: (_) => onTap?.call(),
+                  )
+                else if (draggable)
+                  _dragHandle(),
                 if (hasChildren)
                   IconButton(
                     key: ValueKey('collapse-${node.id}'),
@@ -715,25 +745,27 @@ class _Row extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (editable) ...[
-                  IconButton(
-                    key: ValueKey('up-${node.id}'),
-                    tooltip: l10n.flow_outlineMoveUp,
-                    icon: const Icon(Icons.arrow_upward, size: 18),
-                    onPressed: row.canMoveUp ? onMoveUp : null,
-                  ),
-                  IconButton(
-                    key: ValueKey('down-${node.id}'),
-                    tooltip: l10n.flow_outlineMoveDown,
-                    icon: const Icon(Icons.arrow_downward, size: 18),
-                    onPressed: row.canMoveDown ? onMoveDown : null,
-                  ),
-                  IconButton(
-                    key: ValueKey('after-${node.id}'),
-                    tooltip: l10n.flow_addAfter,
-                    icon: const Icon(Icons.add, size: 18),
-                    onPressed: onAddAfter,
-                  ),
+                if (editable && !selectionMode) ...[
+                  if (!compact) ...[
+                    IconButton(
+                      key: ValueKey('up-${node.id}'),
+                      tooltip: l10n.flow_outlineMoveUp,
+                      icon: const Icon(Icons.arrow_upward, size: 18),
+                      onPressed: row.canMoveUp ? onMoveUp : null,
+                    ),
+                    IconButton(
+                      key: ValueKey('down-${node.id}'),
+                      tooltip: l10n.flow_outlineMoveDown,
+                      icon: const Icon(Icons.arrow_downward, size: 18),
+                      onPressed: row.canMoveDown ? onMoveDown : null,
+                    ),
+                    IconButton(
+                      key: ValueKey('after-${node.id}'),
+                      tooltip: l10n.flow_addAfter,
+                      icon: const Icon(Icons.add, size: 18),
+                      onPressed: onAddAfter,
+                    ),
+                  ],
                   Builder(
                     builder: (buttonContext) => IconButton(
                       key: ValueKey('menu-${node.id}'),
@@ -744,13 +776,14 @@ class _Row extends StatelessWidget {
                           : () => onMenu!(buttonContext),
                     ),
                   ),
-                  IconButton(
-                    key: ValueKey('del-${node.id}'),
-                    tooltip: l10n.flow_inspectorDelete,
-                    icon: Icon(Icons.delete_outline,
-                        size: 18, color: scheme.error),
-                    onPressed: onDelete,
-                  ),
+                  if (!compact)
+                    IconButton(
+                      key: ValueKey('del-${node.id}'),
+                      tooltip: l10n.flow_inspectorDelete,
+                      icon: Icon(Icons.delete_outline,
+                          size: 18, color: scheme.error),
+                      onPressed: onDelete,
+                    ),
                 ],
               ],
             ),

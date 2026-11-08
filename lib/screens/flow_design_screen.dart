@@ -27,6 +27,7 @@ import '../widgets/flow/flow_context_panel.dart';
 import '../widgets/flow/flow_diagnostics_panel.dart';
 import '../widgets/flow/flow_header_form.dart';
 import '../widgets/flow/flow_history_sheet.dart';
+import '../widgets/flow/flow_inspector_header.dart';
 import '../widgets/flow/flow_node_inspector.dart';
 import '../widgets/flow/flow_node_tree.dart';
 import '../widgets/flow/flow_outline_menu.dart';
@@ -56,6 +57,7 @@ class FlowDesignScreen extends StatefulWidget {
     this.onControllerReady,
     this.embedded = false,
     this.restoreRequests,
+    this.pageOpen,
   });
 
   final String peerId;
@@ -78,6 +80,11 @@ class FlowDesignScreen extends StatefulWidget {
 
   /// 详情页草稿横幅点「恢复」时 +1；设计页等控制器载入完草稿再恢复。
   final ValueNotifier<int>? restoreRequests;
+
+  /// 手机整页属性有没有开。外层工作台的 PopScope 靠它避免「一次系统返回
+  /// 同时关掉整页和整个详情」——ModalRoute 会把 didPop=false 发给所有
+  /// PopEntry，两个 PopScope 都会收到。
+  final ValueNotifier<bool>? pageOpen;
 
   /// 演练动画每一步的间隔。
   final Duration stepInterval;
@@ -109,6 +116,15 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   bool _sourceOpen = false;
   double _panelWidth = 380;
   bool _overlay = false;
+
+  /// 手机上属性不占右栏：点节点或「流程设置」打开盖满编辑区的整页。
+  /// 它是同一个 widget 树里的覆盖层，不是路由，父级 setState 和控制器通知
+  /// 都能自然重建它（跨路由同步选中态会丢草稿和光标）。
+  bool _pageOpen = false;
+
+  /// 「点选 + 说话」的显式选择模式（手机上的主入口；长按仍可直接进入）。
+  bool _selecting = false;
+  bool _showSelectHint = false;
   bool _leaveArmed = false;
   bool _inspectorInvalid = false;
 
@@ -142,9 +158,39 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   bool get canTalk => _talkGroupId.isNotEmpty;
 
-  /// 编排只在桌面开（手机只读，但保留「点选 + 说话」），并且主机得支持这些操作。
-  bool get canEdit =>
-      LayoutUtils.isDesktopLayout(context) && _controller.caps.canEdit;
+  /// 编排不再按设备限制：主机支持哪些 op 就放开哪些编辑能力（手机也能改）。
+  /// 布局另说：[_phoneMode] 只决定属性放右栏还是放整页。
+  bool get canEdit => _controller.caps.canEdit;
+
+  /// 手机 / 窄可用宽度：属性用整页，大纲用 compact 行，不画拖拽手柄。
+  /// 桌面窗口很宽、但工作台右栏只剩四五百像素时也得按窄布局来，所以除了
+  /// [LayoutUtils] 的窗口判断，还用 [_body] 量到的真实可用宽度。
+  double _availableWidth = 0;
+  bool? _lastPhoneMode;
+
+  bool get _phoneMode =>
+      !LayoutUtils.isDesktopLayout(context) ||
+      (_availableWidth > 0 && _availableWidth < 600);
+
+  /// 只在布局真的变了时同步一次：下一帧让工具条跟上新的宽度，并在
+  /// 「手机 → 桌面」切换时先交出整页里正在编辑的文本再收起。
+  void _syncLayout(double width, bool phone) {
+    if (_availableWidth == width && _lastPhoneMode == phone) return;
+    final wasPhone = _lastPhoneMode;
+    _availableWidth = width;
+    _lastPhoneMode = phone;
+    final closingPage = wasPhone == true && !phone && _pageOpen;
+    if (closingPage) FocusManager.instance.primaryFocus?.unfocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        if (closingPage) {
+          _pageOpen = false;
+          _selecting = false;
+        }
+      });
+    });
+  }
 
   /// 说话要发到哪个群。没直接给 `groupId` 时，群库（`group:<gid>`）本身就是群。
   /// `sessionId` 留空：主机取群 meta 的 current_session。
@@ -159,6 +205,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   void initState() {
     super.initState();
     _loadPanelWidth();
+    unawaited(_loadSelectHint());
     widget.restoreRequests?.addListener(_onRestoreRequest);
     _startController();
     unawaited(_loadFlowRefs());
@@ -166,6 +213,23 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   }
 
   static const _panelWidthKey = 'flow_context_panel_width';
+  static const _selectHintKey = 'flow_editor_select_hint_seen';
+
+  /// 手机上第一次进来提醒一次：既能点步骤编辑，也能挑几步跟群主说。
+  /// 用独立的偏好键，不和只读步骤页（FlowStepsPane）共用。
+  Future<void> _loadSelectHint() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_selectHintKey) == true) return;
+      // 只有真正要显示提示时才把偏好写成「已看过」：先在桌面 / 非群流程
+      // 打开过设计页，不该让手机上的第一次提示消失。
+      if (!mounted || !_phoneMode || !canTalk) return;
+      setState(() => _showSelectHint = true);
+      await prefs.setBool(_selectHintKey, true);
+    } catch (_) {
+      // 测试里没初始化偏好时直接不提示。
+    }
+  }
 
   Future<void> _loadPanelWidth() async {
     try {
@@ -229,6 +293,17 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     _selected.clear();
     _collapsed.clear();
     _selectedId = null;
+    // 换主机 / 换流程不能把上一次打开的整页、选择模式和「还有非法值」
+    // 拦截态带过来，否则新流程一进来就停在别人的表单上。
+    _pageOpen = false;
+    _panelOpen = false;
+    _sourceOpen = false;
+    _selecting = false;
+    _showSelectHint = false;
+    _leaveArmed = false;
+    _inspectorInvalid = false;
+    _headerBlocked = false;
+    _headerLeaveArmed = false;
     _rowKeys.clear();
     _flashId = null;
     _flashTimer?.cancel();
@@ -278,6 +353,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   @override
   void dispose() {
     widget.restoreRequests?.removeListener(_onRestoreRequest);
+    widget.pageOpen?.value = false;
     _outlineFocus.dispose();
     _composer.dispose();
     _flashTimer?.cancel();
@@ -471,7 +547,13 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             _nodeById(nodeId),
             target.field,
           );
-          _panelOpen = true;
+          // 诊断「定位」在手机上也要打开整页表单，否则只滚到节点却没得改。
+          if (_phoneMode) {
+            _pageOpen = true;
+            _panelOpen = false;
+          } else {
+            _panelOpen = true;
+          }
           _leaveArmed = false;
         });
         _flashTimer?.cancel();
@@ -696,6 +778,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       row: row,
       canRetype: _controller.caps.canRetype,
       position: position,
+      // 手机 compact 行没有上移 / 下移按钮，补进菜单里。
+      includeMove: _phoneMode,
     );
     if (choice == null || !mounted) return;
     await _applyMenuChoice(row, choice);
@@ -742,6 +826,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         ]);
       case FlowOutlineMenuAction.outdent:
         await _controller.applyOps([FlowOutlineOps.outdent(row)]);
+      case FlowOutlineMenuAction.moveUp:
+        _move(row, up: true);
+      case FlowOutlineMenuAction.moveDown:
+        _move(row, up: false);
     }
   }
 
@@ -796,9 +884,16 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       _leaveArmed = false;
       _flashId = null;
       _flashField = null;
-      _panelOpen = true;
+      if (_phoneMode) {
+        // 手机上属性是一整页，不再叠一层右侧浮层。
+        _pageOpen = true;
+        _panelOpen = false;
+      } else {
+        _panelOpen = true;
+      }
     });
-    _outlineFocus.requestFocus();
+    // 手机上别抢焦点：编辑页里的输入框马上要拿焦点。
+    if (!_phoneMode) _outlineFocus.requestFocus();
   }
 
   void _showFlowSettings() {
@@ -806,16 +901,47 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     setState(() {
       _selectedId = null;
       _selected.clear();
-      _panelOpen = true;
+      if (_phoneMode) {
+        _pageOpen = true;
+        _panelOpen = false;
+      } else {
+        _panelOpen = true;
+      }
       _leaveArmed = false;
       _flashId = null;
       _flashField = null;
     });
   }
 
-  /// 点大纲空白：取消选中，属性页回到流程设置。
+  /// 关掉手机上的整页属性。和桌面切走节点一样：有非法值先拦一次，
+  /// 再按一次才丢弃，绝不静默丢掉没生效的输入。
+  void _closePhonePage() {
+    // 先让字段失焦：FlowFieldEditor 只在焦点离开时把最后一段文本提交，
+    // 整页一卸载 focus 监听就没了，不先交出来会丢掉刚敲的字。
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (!_confirmHeaderLeave()) return;
+    if (!_confirmLeave()) return;
+    setState(() {
+      _pageOpen = false;
+      // 表单随整页一起卸载，别把「名称没填好」的拦截态留到下一次选节点。
+      _headerBlocked = false;
+      _headerLeaveArmed = false;
+    });
+  }
+
+  /// 点大纲空白：取消选中。手机上不顺势弹出流程设置整页（误触面积太大）。
   void _onOutlineBlank() {
     if (_selectedId == null && _selected.isEmpty) return;
+    if (_phoneMode) {
+      // 和桌面一样守住非法 / 未提交的输入，只是不弹出另一张整页。
+      if (!_confirmHeaderLeave()) return;
+      if (!_confirmLeave()) return;
+      setState(() {
+        _selectedId = null;
+        _selected.clear();
+      });
+      return;
+    }
     _showFlowSettings();
   }
 
@@ -851,6 +977,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   }
 
   void _onEscape() {
+    // 手机上整页属性自己吃掉 Esc / 返回：先关页，再谈焦点和选中。
+    if (_phoneMode && _pageOpen) {
+      _closePhonePage();
+      return;
+    }
     final focus = FocusManager.instance.primaryFocus;
     if (focus != null && focus != _outlineFocus && focus.hasFocus) {
       _outlineFocus.requestFocus();
@@ -893,6 +1024,56 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   void _onExecutorChanged(String nodeId, Map<String, Object?> ops) {
     unawaited(_controller.setFields(nodeId, ops));
+  }
+
+  // ── 手机布局：compact 大纲 + 选择模式 ─────────────────────────────────────
+
+  void _toggleSelecting() {
+    setState(() {
+      _selecting = !_selecting;
+      if (!_selecting) _showSelectHint = false;
+    });
+  }
+
+  void _onOutlineTap(FlowOutlineRow row) {
+    if (_selecting) {
+      _toggleSelected(row.node);
+      return;
+    }
+    _selectNode(row.node);
+  }
+
+  /// 演练中 / 只读态画的是 FlowNodeTree，选择模式下点行同样只切选中。
+  void _onReadonlyTap(FlowNode node) {
+    if (_selecting) {
+      _toggleSelected(node);
+      return;
+    }
+    if (canEdit) {
+      _selectNode(node);
+    } else {
+      _showReadOnlyNode(node);
+    }
+  }
+
+  void _onOutlineLongPress(FlowOutlineRow row) {
+    if (!canTalk) return;
+    if (!_selecting) setState(() => _selecting = true);
+    _toggleSelected(row.node);
+  }
+
+  void _onReadonlyLongPress(FlowNode node) {
+    if (!canTalk) return;
+    if (!_selecting) setState(() => _selecting = true);
+    _toggleSelected(node);
+  }
+
+  /// 空流程没有行可点，桌面只能靠模板 / 源码；手机上给一个明确的起点。
+  void _addFirstStep() {
+    if (!canEdit || !_confirmHeaderLeave()) return;
+    unawaited(_controller.applyOps([
+      FlowEditOps.insert(parentId: '', index: 0, step: _newStep()),
+    ]));
   }
 
   // ── 点选 + 说话 ───────────────────────────────────────────────────────────
@@ -1019,7 +1200,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return ListenableBuilder(
+    final pageOpen = _phoneMode && _pageOpen;
+    if (widget.pageOpen?.value != pageOpen) {
+      widget.pageOpen?.value = pageOpen;
+    }
+    final content = ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
         final c = _controller;
@@ -1037,16 +1222,112 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                 children: [
                   _toolbar(context, l10n, c),
                   if (c.rehearsal.active) _rehearsalBanner(l10n),
+                  if (_phoneSelectBar(l10n) case final bar?) bar,
                   Expanded(child: _body(l10n)),
                   if (_talkBar(l10n) case final bar?) bar,
                 ],
               ),
               if (_sourceOpen)
                 Positioned.fill(child: _sourceOverlay(l10n, Theme.of(context))),
+              // 属性整页盖住工具条、大纲和说话条：编辑时只面对一张表单。
+              if (pageOpen)
+                Positioned.fill(child: _phonePropertiesPage(l10n)),
             ],
           ),
         );
       },
+    );
+    // 只有手机整页打开时才挂 PopScope：系统返回先关这一页，别把没保存的
+    // 草稿和整屏表单一起丢掉。其余形态的 widget 树保持原样。
+    if (!pageOpen) return content;
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _phoneMode && _pageOpen) _closePhonePage();
+      },
+      child: content,
+    );
+  }
+
+  /// 手机上一条细条：说明既能点步骤编辑，也能显式进入「点选 + 说话」。
+  Widget? _phoneSelectBar(AppLocalizations l10n) {
+    if (!_phoneMode || !canTalk) return null;
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _selecting
+                  ? l10n.flow_phoneSelected(_selected.length)
+                  : l10n.flow_phoneEditHint,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+          TextButton(
+            key: const ValueKey('steps-select'),
+            onPressed: _toggleSelecting,
+            child: Text(
+                _selecting ? l10n.flow_stepsDone : l10n.flow_stepsSelect),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 手机上的属性整页。桌面用 [FlowContextPanel]，两者复用同一份
+  /// [_propertiesPane]，所以字段、校验、即时生效和撤销粒度完全一致。
+  Widget _phonePropertiesPage(AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    final c = _controller;
+    final node = _selectedId == null ? null : _nodeById(_selectedId!);
+    final title = node == null
+        ? l10n.flow_headerOpen
+        : '${flowKindName(l10n, node.kind)} · ${node.id}';
+    return Material(
+      color: theme.colorScheme.surface,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: kToolbarHeight,
+              child: Row(
+                children: [
+                  IconButton(
+                    key: const ValueKey('phone-editor-close'),
+                    tooltip: l10n.common_back,
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: _closePhonePage,
+                  ),
+                  Expanded(
+                    child: Text(title,
+                        style: theme.textTheme.titleMedium,
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  if (canEdit && c.dirty)
+                    IconButton(
+                      key: const ValueKey('phone-editor-save'),
+                      tooltip: l10n.flow_save,
+                      icon: const Icon(Icons.check),
+                      onPressed: () => _doSave(c),
+                    ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: theme.colorScheme.outlineVariant),
+            Expanded(
+              child: ListView(
+                key: const ValueKey('phone-properties-page'),
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+                children: [_propertiesPane(l10n)],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1163,7 +1444,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                       icon: const Icon(Icons.tune, size: 18),
                       label: Text(l10n.flow_headerOpen),
                     ),
-            if (canEdit) _moreMenu(l10n, c),
+            if (canEdit) _moreMenu(l10n, c, compact),
           ],
         ),
       ),
@@ -1172,12 +1453,33 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   );
   }
 
-  Widget _moreMenu(AppLocalizations l10n, FlowEditorController c) {
+  Widget _moreMenu(AppLocalizations l10n, FlowEditorController c, bool compact) {
     return PopupMenuButton<String>(
       key: const ValueKey('design-more'),
       tooltip: l10n.flow_toolbarMore,
       onSelected: (choice) => _onMenuChoice(choice, c),
       itemBuilder: (context) => [
+        // 窄工具条把这三个按钮收进来（桌面仍是工具条上的按钮）。
+        if (compact) ...[
+          PopupMenuItem<String>(
+            key: const ValueKey('menu-undo'),
+            value: 'undo',
+            enabled: c.canUndo,
+            child: Text(l10n.flow_undo),
+          ),
+          PopupMenuItem<String>(
+            key: const ValueKey('menu-redo'),
+            value: 'redo',
+            enabled: c.canRedo,
+            child: Text(l10n.flow_redo),
+          ),
+          PopupMenuItem<String>(
+            key: const ValueKey('menu-rehearse'),
+            value: 'rehearse',
+            enabled: !c.loading && !c.rehearsal.active,
+            child: Text(l10n.flow_rehearse),
+          ),
+        ],
         PopupMenuItem<String>(
           key: const ValueKey('history-open'),
           value: 'history',
@@ -1200,6 +1502,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         unawaited(_openHistory());
       case 'source':
         _openSource();
+      case 'undo':
+        if (c.canUndo) unawaited(c.undo());
+      case 'redo':
+        if (c.canRedo) unawaited(c.redo());
+      case 'rehearse':
+        _startRehearsal(c);
     }
   }
 
@@ -1213,6 +1521,15 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   void _openProperties() {
     if (!mounted) return;
+    if (_phoneMode) {
+      // 手机上没有「展开右栏」这回事：直接打开当前节点的整页属性。
+      if (_selectedId == null) {
+        _showFlowSettings();
+      } else {
+        setState(() => _pageOpen = true);
+      }
+      return;
+    }
     setState(() => _panelOpen = true);
   }
 
@@ -1222,7 +1539,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     if (_inspectorInvalid || _headerBlocked) {
       setState(() {
         _leaveArmed = _inspectorInvalid;
-        _panelOpen = true;
+        if (_phoneMode) {
+          _pageOpen = true;
+        } else {
+          _panelOpen = true;
+        }
       });
       return false;
     }
@@ -1305,8 +1626,20 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           ),
           const SizedBox(height: 8),
         ],
-        // 桌面但主机缺操作：明确说清为什么只读，别让人以为按钮坏了。
-        if (!canEdit && LayoutUtils.isDesktopLayout(context))
+        // 第一次进来提醒一次：可以点步骤编辑，也可以挑几步跟群主说。
+        if (_phoneMode && canTalk && _showSelectHint)
+          MaterialBanner(
+            key: const ValueKey('phone-select-hint'),
+            content: Text(l10n.flow_stepsHint),
+            actions: [
+              TextButton(
+                onPressed: () => setState(() => _showSelectHint = false),
+                child: Text(l10n.common_ok),
+              ),
+            ],
+          ),
+        // 主机缺操作：明确说清为什么只读，别让人以为按钮坏了。
+        if (!canEdit)
           Card(
             color: theme.colorScheme.secondaryContainer,
             child: Padding(
@@ -1326,7 +1659,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               branchesLabelled: c.caps.branchesLabelled,
               canMove: c.caps.canMove,
               tree: c.tree,
-              dragEnabled: !c.busy,
+              dragEnabled: !c.busy && !_phoneMode,
+              compact: _phoneMode,
+              selectionMode: _selecting,
+              selectedIds: _selected,
               onDrop: _onDrop,
               selectedId: _selectedId,
               errorCounts: _errorCounts(),
@@ -1346,7 +1682,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                         _ => null,
                       };
                     },
-              onTapRow: (row) => _selectNode(row.node),
+              onTapRow: _onOutlineTap,
               onSecondaryTapRow: (row, position) =>
                   unawaited(_rowMenu(row, context, position: position)),
               onToggleCollapse: _toggleCollapse,
@@ -1355,16 +1691,16 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               onMoveDown: (row) => _move(row, up: false),
               onDelete: _delete,
               onMenu: (row, anchor) => unawaited(_rowMenu(row, anchor)),
-              onLongPressRow:
-                  canTalk ? (row) => _toggleSelected(row.node) : null,
+              onLongPressRow: canTalk ? _onOutlineLongPress : null,
             ),
           )
         else
           FlowNodeTree(
             nodes: rehearsal.view(c.tree),
-            onTapNode: canEdit ? _selectNode : _showReadOnlyNode,
-            onLongPressNode: canTalk ? _toggleSelected : null,
+            onTapNode: _onReadonlyTap,
+            onLongPressNode: canTalk ? _onReadonlyLongPress : null,
             selectedIds: _selected,
+            selectionMode: _selecting,
             badgeFor: diff == null
                 ? null
                 : (node) {
@@ -1378,6 +1714,16 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                       _ => null,
                     };
                   },
+          ),
+        // 空流程在手机上没有行可点，给一个明确的起点（桌面靠模板 / 源码）。
+        if (_phoneMode && canEdit && !rehearsal.active && _rows().isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: FilledButton.tonal(
+              key: const ValueKey('phone-add-first-step'),
+              onPressed: _addFirstStep,
+              child: Text(l10n.flow_phoneAddFirstStep),
+            ),
           ),
         if (diff != null && diff.removed.isNotEmpty)
           Padding(
@@ -1419,6 +1765,18 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               _selectedId == staleId &&
               _nodeById(staleId) == null) {
             _selectedId = null;
+            // 手机上整页属性正显示这个被删掉的节点，退回大纲。整页会在这一
+            // 帧被卸载，先让字段失焦提交，并清掉残留的拦截态，别把非法值
+            // 的「再点一次」带到下一次操作里。
+            if (_phoneMode) {
+              FocusManager.instance.primaryFocus?.unfocus();
+              _pageOpen = false;
+              _selecting = false;
+              _leaveArmed = false;
+              _inspectorInvalid = false;
+              _headerBlocked = false;
+              _headerLeaveArmed = false;
+            }
           }
           _selected.removeWhere((id) => _nodeById(id) == null);
         });
@@ -1433,7 +1791,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final wide = width >= 900;
-        final showPanel = canEdit && _panelOpen;
+        _syncLayout(width, !LayoutUtils.isDesktopLayout(context) || width < 600);
+        // 手机上属性是 build 外层 Stack 里的整页，这里不再画右栏 / 浮层。
+        final showPanel = canEdit && _panelOpen && !_phoneMode;
         if (_overlay != !wide) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && _overlay == wide) setState(() => _overlay = !wide);
@@ -1446,7 +1806,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         final treeStack = Stack(
           children: [
             treePane,
-            if (canEdit && !showPanel)
+            // 手机上点行 / 点「流程设置」就能开整页，不需要展开侧栏的入口。
+            if (canEdit && !showPanel && !_phoneMode)
               Positioned.directional(
                 textDirection: Directionality.of(context),
                 end: 8,
@@ -1500,7 +1861,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   Widget _propertiesPane(AppLocalizations l10n) {
     final c = _controller;
-    if (_selected.length >= 2) return _multiSummary(l10n);
+    // 手机上的多选是「点选 + 说话」用的；退出选择模式后点节点要能直接改字段，
+    // 不能被多选摘要挡住（桌面 Ctrl 多选仍然显示摘要）。
+    if (_selected.length >= 2 && !_phoneMode) return _multiSummary(l10n);
     final selected = _selectedId == null ? null : _nodeById(_selectedId!);
     final schema = c.schema;
     if (selected == null || schema == null) {
@@ -1692,14 +2055,18 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   Widget _sourceOverlay(AppLocalizations l10n, ThemeData theme) {
     final c = _controller;
-    final editable = canEdit && MediaQuery.sizeOf(context).width >= 900;
+    final size = MediaQuery.sizeOf(context);
+    // 手机上同样能改源码：面板按屏幕收缩，不再用写死的 720×520。
+    final editable = canEdit;
+    final panelWidth = size.width < 760 ? size.width - 16 : 720.0;
+    final panelHeight = size.height < 600 ? size.height - 32 : 520.0;
     return ColoredBox(
       color: theme.colorScheme.scrim.withValues(alpha: 0.45),
       child: Center(
         child: SizedBox(
           key: const ValueKey('drawer-source-page'),
-          width: 720,
-          height: 520,
+          width: panelWidth,
+          height: panelHeight,
           child: Material(
             color: theme.colorScheme.surface,
             elevation: 6,

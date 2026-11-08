@@ -90,6 +90,21 @@ class FlowEditorController extends ChangeNotifier {
     _notify();
   }
 
+  /// 流程已经从主机删掉时调用：不让 dispose() 的 flush 或迟到的 edit 回包
+  /// 再给这个已不存在的流程落一份草稿（草稿横幅会指向幽灵流程）。
+  bool _abandoned = false;
+
+  void abandon() {
+    _abandoned = true;
+    _restorableDraft = null;
+    _pending.clear();
+    _rejected.clear();
+    _rejectReason.clear();
+    _debounce?.cancel();
+    _debounce = null;
+    _notify();
+  }
+
   final Map<FlowPendingKey, Object?> _pending = <FlowPendingKey, Object?>{};
   final Map<FlowPendingKey, Object?> _rejected = <FlowPendingKey, Object?>{};
   final Map<FlowPendingKey, String> _rejectReason = <FlowPendingKey, String>{};
@@ -442,6 +457,7 @@ class FlowEditorController extends ChangeNotifier {
   }
 
   Future<void> _persistDraft() async {
+    if (_abandoned) return;
     final store = draftStore;
     if (store == null || !dirty) return;
     await store.save(

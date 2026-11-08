@@ -456,13 +456,14 @@ steps:
     await _settle(tester);
     await tester.tap(find.text('dev'));
     await _settle(tester);
-    // 窄屏直接看步骤，切 locale 后只读提示要跟着换。
-    expect(find.text('手机上只能查看，编辑请在电脑上进行'), findsOneWidget);
+    // 窄屏 + 旧主机（没有编辑 ops）退回只读步骤页，只读提示要跟着换语言。
+    expect(find.text('这台主机不支持编辑，当前只能查看'), findsOneWidget);
 
     locale.value = const Locale('en');
     await _settle(tester);
-    expect(find.text('手机上只能查看，编辑请在电脑上进行'), findsNothing);
-    expect(find.text('View only on a phone. Edit on a computer'), findsOneWidget);
+    expect(find.text('这台主机不支持编辑，当前只能查看'), findsNothing);
+    expect(find.text('This host does not support editing; view only'),
+        findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

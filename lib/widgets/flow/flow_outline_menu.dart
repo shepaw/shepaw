@@ -36,6 +36,10 @@ enum FlowOutlineMenuAction {
 
   /// 移出一层。
   outdent,
+
+  /// 上移 / 下移。手机上的 compact 行没有行尾按钮，这两个动作只能走菜单。
+  moveUp,
+  moveDown,
 }
 
 typedef FlowOutlineMenuChoice = ({
@@ -65,6 +69,7 @@ List<FlowOutlineMenuEntry> flowOutlineMenuEntries({
   required AppLocalizations l10n,
   required FlowOutlineRow row,
   required bool canRetype,
+  bool includeMove = false,
 }) {
   final node = row.node;
   final isContainer =
@@ -80,6 +85,29 @@ List<FlowOutlineMenuEntry> flowOutlineMenuEntries({
       ),
     ),
   ];
+  if (includeMove) {
+    // 不能移的行干脆不给条目：手机上没有禁用态的行尾按钮可看。
+    if (row.canMoveUp) {
+      entries.add(FlowOutlineMenuEntry(
+        label: l10n.flow_outlineMoveUp,
+        choice: (
+          action: FlowOutlineMenuAction.moveUp,
+          kind: null,
+          branch: null,
+        ),
+      ));
+    }
+    if (row.canMoveDown) {
+      entries.add(FlowOutlineMenuEntry(
+        label: l10n.flow_outlineMoveDown,
+        choice: (
+          action: FlowOutlineMenuAction.moveDown,
+          kind: null,
+          branch: null,
+        ),
+      ));
+    }
+  }
   if (isContainer) {
     if (node.kind == 'if') {
       entries.add(FlowOutlineMenuEntry(
@@ -182,12 +210,14 @@ Future<FlowOutlineMenuChoice?> showFlowOutlineMenu(
   required FlowOutlineRow row,
   required bool canRetype,
   Offset? position,
+  bool includeMove = false,
 }) {
   final l10n = AppLocalizations.of(context);
   final entries = flowOutlineMenuEntries(
     l10n: l10n,
     row: row,
     canRetype: canRetype,
+    includeMove: includeMove,
   );
   if (LayoutUtils.isDesktopLayout(context)) {
     return _showMenuAnchor(context, entries, position);

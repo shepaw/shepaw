@@ -8,7 +8,7 @@ import '../../peer/models/flow_models.dart';
 /// 改版前每行都挂一个常驻的「开始运行」按钮，误触就真的调 agent。现在：
 /// - 点行进详情（默认概览），开跑只在概览里；
 /// - 第一行名称 + 状态点，第二行说明 / 版本 + 草稿标记；
-/// - 「开始运行 / 复制 / 查看历史」收进右侧 `⋯` 菜单。
+/// - 「开始运行 / 复制 / 查看历史 / 删除」收进右侧 `⋯` 菜单。
 ///
 /// 状态来自 `flow_list_resp` 的可选字段：旧主机不返回时 [FlowSummary.status]
 /// 是 [FlowSummaryStatus.none]，这一行就退化成「名称 + 版本」，功能不变。
@@ -21,6 +21,7 @@ class FlowSummaryTile extends StatelessWidget {
     required this.onTap,
     required this.onStart,
     required this.onDuplicate,
+    required this.onDelete,
     required this.onHistory,
     this.needsApproval = false,
     this.onApproval,
@@ -40,6 +41,7 @@ class FlowSummaryTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onStart;
   final VoidCallback onDuplicate;
+  final VoidCallback onDelete;
   final VoidCallback onHistory;
 
   @override
@@ -140,6 +142,7 @@ class FlowSummaryTile extends StatelessWidget {
         onSelected: (action) => switch (action) {
           _RowAction.start => onStart(),
           _RowAction.duplicate => onDuplicate(),
+          _RowAction.delete => onDelete(),
           _RowAction.history => onHistory(),
         },
         itemBuilder: (context) => [
@@ -158,6 +161,14 @@ class FlowSummaryTile extends StatelessWidget {
             value: _RowAction.history,
             child: Text(l10n.flow_listHistory),
           ),
+          PopupMenuItem<_RowAction>(
+            key: ValueKey('flow-delete-${flow.name}'),
+            value: _RowAction.delete,
+            child: Text(
+              l10n.flow_listDelete,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
         ],
       ),
       onTap: onTap,
@@ -165,4 +176,4 @@ class FlowSummaryTile extends StatelessWidget {
   }
 }
 
-enum _RowAction { start, duplicate, history }
+enum _RowAction { start, duplicate, history, delete }

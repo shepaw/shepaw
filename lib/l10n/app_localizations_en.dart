@@ -10287,6 +10287,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_listHistory => 'View history';
 
   @override
+  String get flow_listDelete => 'Delete flow';
+
+  @override
+  String get flow_deleteFailed => 'Could not delete the flow';
+
+  @override
+  String get flow_deleteConfirmTitle => 'Delete this flow?';
+
+  @override
+  String flow_deleteConfirmBody(String name) {
+    return 'The definition of \"$name\" will be removed from this host. This cannot be undone.';
+  }
+
+  @override
   String get flow_libraryEmptyHint => 'No flows in this library yet';
 
   @override
@@ -10554,7 +10568,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_tabSteps => 'Steps';
 
   @override
-  String get flow_stepsReadOnly => 'View only on a phone. Edit on a computer';
+  String get flow_stepsReadOnly =>
+      'This host does not support editing; view only';
 
   @override
   String flow_stepsSelected(int count) {
@@ -10570,6 +10585,18 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get flow_stepsHint =>
       'Long-press or tap Select to pick steps, then tell the owner what to change';
+
+  @override
+  String get flow_phoneEditHint =>
+      'Tap a step to edit, or pick steps to tell the owner';
+
+  @override
+  String flow_phoneSelected(int count) {
+    return '$count selected';
+  }
+
+  @override
+  String get flow_phoneAddFirstStep => 'Add the first step';
 
   @override
   String get flow_talkAboutStep => 'Talk to the owner about this step…';

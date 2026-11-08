@@ -413,7 +413,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('手机直接看步骤，没有概览 / 运行 Tab，也没有编辑按钮', (tester) async {
+  testWidgets('手机直接进编辑页：没有概览 / 运行 Tab，保存和步骤都在', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -427,9 +427,15 @@ void main() {
     expect(find.byKey(const ValueKey('detail-tab-steps')), findsNothing);
     expect(find.byKey(const ValueKey('detail-tab-runs')), findsNothing);
     expect(find.byKey(const ValueKey('detail-tab-edit')), findsNothing);
-    expect(find.byType(FlowDesignScreen), findsNothing);
-    expect(find.text('手机上只能查看，编辑请在电脑上进行'), findsOneWidget);
-    expect(find.byKey(const ValueKey('save-button')), findsNothing);
+    // 手机和桌面共用同一个编辑面：能保存，能点步骤，只是属性换成整页。
+    expect(find.byType(FlowDesignScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('save-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
+    expect(find.byKey(const ValueKey('row-impl')), findsOneWidget);
+    expect(find.byKey(const ValueKey('phone-properties-page')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('row-impl')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('phone-properties-page')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

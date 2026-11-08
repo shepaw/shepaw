@@ -9885,6 +9885,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_listHistory => '查看历史';
 
   @override
+  String get flow_listDelete => '删除流程';
+
+  @override
+  String get flow_deleteFailed => '删除失败';
+
+  @override
+  String get flow_deleteConfirmTitle => '删除这个流程？';
+
+  @override
+  String flow_deleteConfirmBody(String name) {
+    return '「$name」的定义会从这台主机上删掉，不能撤销。';
+  }
+
+  @override
   String get flow_libraryEmptyHint => '库里还没有流程';
 
   @override
@@ -10148,7 +10162,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_tabSteps => '步骤';
 
   @override
-  String get flow_stepsReadOnly => '手机上只能查看，编辑请在电脑上进行';
+  String get flow_stepsReadOnly => '这台主机不支持编辑，当前只能查看';
 
   @override
   String flow_stepsSelected(int count) {
@@ -10163,6 +10177,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_stepsHint => '长按或点「选择」可以挑出步骤，再对群主说要怎么改';
+
+  @override
+  String get flow_phoneEditHint => '点步骤可以编辑，也可以挑几步跟群主说';
+
+  @override
+  String flow_phoneSelected(int count) {
+    return '已选 $count 步';
+  }
+
+  @override
+  String get flow_phoneAddFirstStep => '添加第一步';
 
   @override
   String get flow_talkAboutStep => '就这一步跟群主说…';

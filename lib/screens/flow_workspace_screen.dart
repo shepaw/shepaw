@@ -83,6 +83,10 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   FlowEditorController? _editor;
   bool _showRuns = false;
 
+  /// 手机上的整页属性有没有开。ModalRoute 会把同一次系统返回通知给所有
+  /// PopEntry，外层 PopScope 得靠它让设计页先关整页，不能连详情一起退掉。
+  final ValueNotifier<bool> _detailPageOpen = ValueNotifier<bool>(false);
+
   final FlowDraftStore _drafts = FlowDraftStore();
 
   /// 最近一次布局是不是宽屏（系统返回键逐级退要用）。
@@ -107,6 +111,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   void dispose() {
     _drafts.drafts.removeListener(_onDraftsChanged);
     _drafts.drafts.dispose();
+    _detailPageOpen.dispose();
     _search.dispose();
     super.dispose();
   }
@@ -167,8 +172,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   }
 
   /// 切走之前先问：编辑区里有没保存的改动。
-  /// 手机只读：新建也要收起来，别让只读端还能往库里写。
-  bool get _canCreateFlows => LayoutUtils.isDesktopLayout(context);
+  /// 手机上同样能新建 / 复制 / 删除流程：能不能写库看主机，不看设备。
+  bool get _canCreateFlows => true;
 
   Future<bool> _guardDirty() async {
     if (!_editorDirty) return true;
@@ -210,6 +215,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   }
 
   Future<void> _handlePop() async {
+    // 整页属性开着时，设计页自己的 PopScope 会关掉它；这次返回不能同时
+    // 把详情也退回列表（一次 didPop=false 会通知到两个 PopScope）。
+    if (_detailPageOpen.value) return;
     if (!_wide && _selectedName != null) {
       await _closeDetailGuarded();
       return;
@@ -467,6 +475,47 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
         initialSourceName: flow.name,
       ));
 
+  /// 列表行 `⋯` 里的「删除流程」：先确认，再让主机删库里的定义。
+  /// 手机和桌面共用同一个入口，删完顺手清掉本机草稿，免得留一条指向
+  /// 已不存在流程的「未保存草稿」横幅。
+  Future<void> _deleteFlow(FlowSummary flow) async {
+    final l10n = AppLocalizations.of(context);
+    final ok = await showConfirmDialog(
+      context,
+      title: l10n.flow_deleteConfirmTitle,
+      message: l10n.flow_deleteConfirmBody(flow.name),
+      confirmLabel: l10n.flow_listDelete,
+    );
+    if (ok != true || !mounted) return;
+    // 正在编辑这个流程且有未保存改动：先按工作台的惯例问一次，别把草稿
+    // 连同流程一起静默丢掉。
+    if (_selectedName == flow.name && _editorDirty && !await _guardDirty()) {
+      return;
+    }
+    if (!mounted) return;
+    final result = await _client.delete(_host, flow.name, scope: widget.scope);
+    if (!mounted) return;
+    if (!result.ok) {
+      _snack(result.reachable
+          ? (result.error ?? l10n.flow_deleteFailed)
+          : l10n.flow_hostNoReply);
+      return;
+    }
+    if (_selectedName == flow.name) {
+      // 卸载编辑页之前先让它「放弃」：dispose() 的 flush 和迟到的 edit 回包
+      // 都会落草稿，顺序反了就会给已删除的流程留一条幽灵草稿。
+      _editor?.abandon();
+      setState(() => _selectedName = null);
+    }
+    await _drafts.clear(
+      peerId: _host,
+      scope: widget.scope,
+      name: flow.name,
+    );
+    if (!mounted) return;
+    await _load();
+  }
+
   /// 列表行 `⋯` 里的「查看历史」：看旧版本，选中某一版就存成本地草稿，
   /// 概览页顶部会出现恢复横幅（不阻塞、不直接改库里的定义）。
   Future<void> _showHistory(FlowSummary flow) async {
@@ -526,7 +575,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                         ? BackButton(onPressed: _closeDetail)
                         : null,
                     actions: [
-                      // 窄屏详情是只读步骤，这一栏只留全局的新建 / 刷新。
+                      // 窄屏详情自己有一整页编辑区；这一栏只留列表态的新建和刷新。
                       if (!showingNarrowDetail && _canCreateFlows)
                         IconButton(
                           tooltip: l10n.flow_new,
@@ -682,6 +731,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                           onTap: () => _select(flow),
                           onStart: () => unawaited(_start(flow)),
                           onDuplicate: () => _duplicate(flow),
+                          onDelete: () => unawaited(_deleteFlow(flow)),
                           onHistory: () => unawaited(_showHistory(flow)),
                           onApproval: flow.lastRunId == null
                               ? null
@@ -768,6 +818,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       client: _client,
       draftStore: _drafts,
       showHeader: showHeader,
+      pageOpen: _detailPageOpen,
       onDirtyChanged: (dirty) {
         if (_editorDirty == dirty) return;
         _editorDirty = dirty;
