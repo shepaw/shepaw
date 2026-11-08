@@ -70,8 +70,9 @@ Future<bool> dispatchJadeSlip(
     avatar = agent?.avatar;
   }
 
-  if (slip.assigneeAgentId != agentId) {
-    await JadeSlipService.instance.update(slip.copyWith(
+  var current = slip;
+  if (current.assigneeAgentId != agentId) {
+    current = await JadeSlipService.instance.update(current.copyWith(
       assigneeAgentId: agentId,
       assigneeAgentName: agentName,
     ));
@@ -98,23 +99,23 @@ Future<bool> dispatchJadeSlip(
               chatService.generateChannelId(userId, agentId);
   }
 
-  if (slip.sourceChannelId.isEmpty) {
-    await JadeSlipService.instance.update(
-      slip.copyWith(sourceChannelId: targetChannelId),
+  if (current.sourceChannelId.isEmpty) {
+    current = await JadeSlipService.instance.update(
+      current.copyWith(sourceChannelId: targetChannelId),
     );
   }
 
   // 附件地址优先给袋子里的（v3）；取不到就让模型退回 v2 形式。
   final attachmentUris = <String, String>{};
-  for (final attachment in slip.attachments) {
+  for (final attachment in current.attachments) {
     try {
       attachmentUris[attachment.id] =
-          await JadeSlipService.instance.attachmentUri(slip, attachment);
+          await JadeSlipService.instance.attachmentUri(current, attachment);
     } catch (_) {
       // 地址拼不出来不影响派发。
     }
   }
-  final prompt = slip.toAgentPrompt(
+  final prompt = current.toAgentPrompt(
     focusItem: focusItem,
     onlyOpenItems: onlyOpenItems,
     attachmentUriOf: attachmentUris,

@@ -206,11 +206,14 @@ class GroupContextBuilder {
         'note':
             'Agent Hub shepaw CLI on this host. Local pouch (URI device = '
             'Hub) uses shepaw pouch read/write/list. Foreign pouch:// and '
-            'other namespaces (including slip and skills, except she-only) '
-            'are forwarded to the paired App gate. Do not use hub.cli.execute. '
+            'slip and skills run locally on this host. Do not use hub.cli.execute. '
             'Pass pouch:// URIs verbatim. '
-            'Jade slips (玉简) are namespace "slip": checking an item submits it; '
-            'the person accepts. Subcommands: shepaw slip. '
+            'Jade slips (玉简) are namespace "slip": submit --summary "..." '
+            'is the real submission (rev+1 invalidates acceptance); the person '
+            'accepts, and accept/return/decide/conclude/cancel/gap are person-only. '
+            'Writes are brief by default: slip get --contract for the contract view '
+            'or --full for everything; slip report --items ... --text ... records '
+            'one comment across several items. '
             'The system skill is the pouch://tools/.../SKILL.md URI on the scope card; '
             'read it with shepaw pouch read.',
         'params': {

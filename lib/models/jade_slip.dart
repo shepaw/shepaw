@@ -31,6 +31,9 @@ class JadeSlip {
     this.sourceChannelId = '',
     this.events = const [],
     this.removedItemIds = const [],
+    this.contractVersion = 1,
+    this.decisions = const [],
+    this.currentConclusion,
     required this.deviceId,
     required this.createdAt,
     required this.updatedAt,
@@ -83,6 +86,15 @@ class JadeSlip {
   /// 已删除的清单项 id。合并时用来避免把另一端已删的项加回来。
   final List<String> removedItemIds;
 
+  /// 契约版本：人改目标/约束/完成标准或新增决定时 +1。
+  final int contractVersion;
+
+  /// 人拍板的决定，一等公民；agent 只能转述、不能自报 decidedBy。
+  final List<JadeSlipDecision> decisions;
+
+  /// 覆盖式「当前结论」；旧结论留在动态里，不再误导。
+  final JadeSlipConclusion? currentConclusion;
+
   /// 权威副本所在设备 = 主机（Noise 指纹）。
   ///
   /// 客户端本地只有读缓存，不是权威；服务端唯一那份在主机自己这个目录里。
@@ -99,7 +111,22 @@ class JadeSlip {
   int get submittedCount =>
       items.where((e) => e.state == JadeSlipItemState.submitted).length;
 
+  /// 真正验收通过的项。已提交但仍等人验收的不算。
+  int get acceptedCount =>
+      items.where((e) => e.state == JadeSlipItemState.accepted).length;
+
   int get itemCount => items.length;
+
+  int get cancelledCount =>
+      items.where((e) => e.state == JadeSlipItemState.cancelled).length;
+
+  int get maxSubmissionRev => items.fold(
+        0,
+        (max, item) =>
+            item.submission != null && item.submission!.rev > max
+                ? item.submission!.rev
+                : max,
+      );
 
   /// 还要 Agent 动手的项：未提交，或被堵住。已提交的等验收，不再派出去。
   List<JadeSlipItem> get openItems => items
@@ -143,6 +170,9 @@ class JadeSlip {
     if (sourceInstructionId.trim().isNotEmpty) return false;
     if (sourceChannelId.trim().isNotEmpty) return false;
     if (events.isNotEmpty) return false;
+    if (decisions.isNotEmpty) return false;
+    if (currentConclusion != null) return false;
+    if (contractVersion != 1) return false;
     if (priority != JadeSlipPriority.none) return false;
     if (status != JadeSlipStatus.open) return false;
     return true;
@@ -186,6 +216,10 @@ class JadeSlip {
     String? sourceChannelId,
     List<JadeSlipEvent>? events,
     List<String>? removedItemIds,
+    int? contractVersion,
+    List<JadeSlipDecision>? decisions,
+    JadeSlipConclusion? currentConclusion,
+    bool clearConclusion = false,
     String? deviceId,
     int? updatedAt,
   }) {
@@ -212,31 +246,41 @@ class JadeSlip {
       sourceChannelId: sourceChannelId ?? this.sourceChannelId,
       events: events ?? this.events,
       removedItemIds: removedItemIds ?? this.removedItemIds,
+      contractVersion: contractVersion ?? this.contractVersion,
+      decisions: decisions ?? this.decisions,
+      currentConclusion:
+          clearConclusion ? null : (currentConclusion ?? this.currentConclusion),
       deviceId: deviceId ?? this.deviceId,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
-  /// 清单推导整简状态。已归档、或没有清单项时不自动改。
-  ///
-  /// 全部验收通过才是 done。还有人要做的是 open / in_progress。
-  /// 都交上来了是 needs_review。只剩被堵住的是 blocked。
+  /// 全部验收通过才是 done。只要还有一项被堵住，整简就是 blocked。
+  /// 还有人要做的是 open / in_progress，都交上来了是 needs_review。
   JadeSlip withDerivedStatus({int? updatedAt}) {
     if (status == JadeSlipStatus.archived || items.isEmpty) {
       return updatedAt == null ? this : copyWith(updatedAt: updatedAt);
     }
+    final allSettled = items.every((e) =>
+        e.state == JadeSlipItemState.accepted ||
+        e.state == JadeSlipItemState.cancelled);
+    final cancelledOk = items.every((e) =>
+        e.state != JadeSlipItemState.cancelled ||
+        e.cancelledReason.trim().isNotEmpty);
     final JadeSlipStatus next;
-    if (allItemsDone) {
+    if (allSettled && cancelledOk) {
       next = JadeSlipStatus.done;
+    } else if (items.any((e) => e.state == JadeSlipItemState.blocked)) {
+      next = JadeSlipStatus.blocked;
     } else if (items.any((e) => e.state == JadeSlipItemState.open)) {
       next = items.any((e) => e.state != JadeSlipItemState.open)
           ? JadeSlipStatus.inProgress
           : JadeSlipStatus.open;
     } else if (items.any((e) => e.state == JadeSlipItemState.submitted)) {
       next = JadeSlipStatus.needsReview;
-    } else if (items.any((e) => e.state == JadeSlipItemState.blocked)) {
-      next = JadeSlipStatus.blocked;
+    } else if (items.any((e) => e.state == JadeSlipItemState.cancelled)) {
+      next = JadeSlipStatus.inProgress;
     } else {
       next = JadeSlipStatus.open;
     }
@@ -280,6 +324,9 @@ class JadeSlip {
           attachments: attachments.values.toList(),
           events: eventList,
           removedItemIds: removed.toList(),
+          contractVersion: newer.contractVersion,
+          decisions: newer.decisions,
+          currentConclusion: newer.currentConclusion,
           updatedAt: newer.updatedAt,
         )
         .withDerivedStatus(updatedAt: newer.updatedAt);
@@ -314,6 +361,11 @@ class JadeSlip {
         if (events.isNotEmpty)
           'events': [for (final e in events) e.toJson()],
         if (removedItemIds.isNotEmpty) 'removed_items': removedItemIds,
+        if (contractVersion != 1) 'contract_version': contractVersion,
+        if (decisions.isNotEmpty)
+          'decisions': [for (final d in decisions) d.toJson()],
+        if (currentConclusion != null)
+          'current_conclusion': currentConclusion!.toJson(),
         'device_id': deviceId,
         'created_at': createdAt,
         'updated_at': updatedAt,
@@ -388,6 +440,16 @@ class JadeSlip {
         for (final id in (json['removed_items'] as List? ?? const []))
           id.toString().trim(),
       ].where((id) => id.isNotEmpty).toList(),
+      contractVersion: (json['contract_version'] as num?)?.toInt() ?? 1,
+      decisions: [
+        for (final raw in (json['decisions'] as List? ?? const []))
+          if (raw is Map)
+            JadeSlipDecision.fromJson(raw.cast<String, dynamic>()),
+      ],
+      currentConclusion: json['current_conclusion'] is Map
+          ? JadeSlipConclusion.fromJson(
+              (json['current_conclusion'] as Map).cast<String, dynamic>())
+          : null,
       deviceId: (json['device_id'] as String?)?.trim().isNotEmpty == true
           ? (json['device_id'] as String).trim()
           : (deviceId ?? ''),
@@ -498,18 +560,56 @@ class JadeSlip {
     }
     buf
       ..writeln()
+      ..writeln('contract_version: $contractVersion');
+    if (currentConclusion != null) {
+      buf.writeln('current_conclusion: ${currentConclusion!.text}');
+    }
+    if (decisions.isNotEmpty) {
+      buf.writeln('decisions:');
+      for (final d in decisions) {
+        buf.writeln('- ${d.text} (by ${d.decidedBy})');
+      }
+    }
+    if (items.any((e) =>
+        e.acceptance != null ||
+        e.submission != null ||
+        e.returnReason.isNotEmpty ||
+        e.state == JadeSlipItemState.cancelled)) {
+      buf.writeln('per-item contract:');
+      for (final item in items) {
+        final criteria = item.acceptance?.criteria.join('；') ?? '';
+        final sub = item.submission;
+        final parts = <String>[
+          if (criteria.isNotEmpty) '验收标准=$criteria',
+          if (sub != null) '提交 r${sub.rev}=${sub.summary}',
+          if (item.returnReason.isNotEmpty) '退回原因=${item.returnReason}',
+          if (item.state == JadeSlipItemState.cancelled)
+            '已取消=${item.cancelledReason}',
+        ];
+        if (parts.isNotEmpty) {
+          buf.writeln('- ${item.id}: ${parts.join(' / ')}');
+        }
+      }
+    }
+    buf
+      ..writeln()
       ..writeln('人和 Agent、Agent 与 Agent 写回同一条玉简：')
-      ..writeln('- shepaw slip get --id $id')
+      ..writeln('- shepaw slip get --id $id  （现读全文；写命令只返回摘要）')
       ..writeln(
           '- shepaw slip item --id $id --item <itemId> --done true  （提交，等验收）')
+      ..writeln(
+          '- shepaw slip report --id $id --items <itemId,itemId> --text "进度" [--evidence <uri>]  （一次汇报多项）')
       ..writeln(
           '- shepaw slip item --id $id --item <itemId> --assignee <agent_id>')
       ..writeln(
           '- shepaw slip item --id $id --item <itemId> --block --reason "..."')
       ..writeln(
           '- shepaw slip item --id $id --item <itemId> --evidence <store-uri>')
-      ..writeln('- shepaw slip accept --id $id --item <itemId>  （人验收）')
-      ..writeln('- shepaw slip comment --id $id --item <itemId> --text "进度"');
+      ..writeln('- shepaw slip comment --id $id --item <itemId> --text "进度"')
+      ..writeln(
+          '- shepaw slip accept --id $id [--item <itemId>]  （人验收，Agent 不可用）')
+      ..writeln(
+          '- shepaw slip item --id $id --item <itemId> --return --reason "..."  （人退回）');
     return buf.toString();
   }
 }
@@ -526,7 +626,12 @@ class JadeSlipItem {
     this.sessionId = '',
     this.childSlipId = '',
     this.blockedReason = '',
+    this.returnReason = '',
+    this.cancelledReason = '',
     this.evidence = const [],
+    this.gaps = const [],
+    this.acceptance,
+    this.submission,
     this.updatedAt = 0,
   });
 
@@ -550,7 +655,14 @@ class JadeSlipItem {
   /// 这项被拆成的子简。空表示还没有。
   final String childSlipId;
   final String blockedReason;
-  final List<String> evidence;
+
+  /// 人退回这项时给的原因。跟 blockedReason 分开，界面上不再显示成「阻塞」。
+  final String returnReason;
+  final String cancelledReason;
+  final List<JadeSlipEvidence> evidence;
+  final List<JadeSlipGap> gaps;
+  final JadeSlipAcceptance? acceptance;
+  final JadeSlipSubmission? submission;
   final int updatedAt;
 
   String get assigneeSuffix {
@@ -570,7 +682,14 @@ class JadeSlipItem {
     String? sessionId,
     String? childSlipId,
     String? blockedReason,
-    List<String>? evidence,
+    String? returnReason,
+    String? cancelledReason,
+    List<JadeSlipEvidence>? evidence,
+    List<JadeSlipGap>? gaps,
+    JadeSlipAcceptance? acceptance,
+    bool clearAcceptance = false,
+    JadeSlipSubmission? submission,
+    bool clearSubmission = false,
     int? updatedAt,
   }) =>
       JadeSlipItem(
@@ -586,7 +705,14 @@ class JadeSlipItem {
         sessionId: sessionId ?? this.sessionId,
         childSlipId: childSlipId ?? this.childSlipId,
         blockedReason: blockedReason ?? this.blockedReason,
+        returnReason: returnReason ?? this.returnReason,
+        cancelledReason: cancelledReason ?? this.cancelledReason,
         evidence: evidence ?? this.evidence,
+        gaps: gaps ?? this.gaps,
+        acceptance:
+            clearAcceptance ? null : (acceptance ?? this.acceptance),
+        submission:
+            clearSubmission ? null : (submission ?? this.submission),
         updatedAt: updatedAt ?? this.updatedAt,
       );
 
@@ -603,20 +729,30 @@ class JadeSlipItem {
         if (sessionId.isNotEmpty) 'session_id': sessionId,
         if (childSlipId.isNotEmpty) 'child_slip_id': childSlipId,
         if (blockedReason.isNotEmpty) 'blocked_reason': blockedReason,
-        if (evidence.isNotEmpty) 'evidence': evidence,
+        if (returnReason.isNotEmpty) 'return_reason': returnReason,
+        if (cancelledReason.isNotEmpty) 'cancelled_reason': cancelledReason,
+        if (evidence.isNotEmpty)
+          'evidence': [for (final e in evidence) e.toJson()],
+        if (gaps.isNotEmpty) 'gaps': [for (final g in gaps) g.toJson()],
+        if (acceptance != null) 'acceptance': acceptance!.toJson(),
+        if (submission != null) 'submission': submission!.toJson(),
         if (updatedAt > 0) 'updated_at': updatedAt,
       };
 
   factory JadeSlipItem.fromJson(Map<String, dynamic> json) {
     final rawEvidence = json['evidence'];
-    final evidence = <String>[];
+    final evidence = <JadeSlipEvidence>[];
     if (rawEvidence is List) {
-      for (final e in rawEvidence) {
-        final s = e.toString().trim();
-        if (s.isNotEmpty) evidence.add(s);
+      for (final raw in rawEvidence) {
+        final parsed = JadeSlipEvidence.fromRaw(raw);
+        if (parsed != null &&
+            !evidence.any((e) => e.key == parsed.key)) {
+          evidence.add(parsed);
+        }
       }
-    } else if (rawEvidence is String && rawEvidence.trim().isNotEmpty) {
-      evidence.add(rawEvidence.trim());
+    } else if (rawEvidence is String) {
+      final parsed = JadeSlipEvidence.fromRaw(rawEvidence);
+      if (parsed != null) evidence.add(parsed);
     }
     final rawState = json['state'] as String?;
     final state = rawState != null && rawState.trim().isNotEmpty
@@ -635,7 +771,21 @@ class JadeSlipItem {
       sessionId: (json['session_id'] as String? ?? '').trim(),
       childSlipId: (json['child_slip_id'] as String? ?? '').trim(),
       blockedReason: json['blocked_reason'] as String? ?? '',
+      returnReason: json['return_reason'] as String? ?? '',
+      cancelledReason: json['cancelled_reason'] as String? ?? '',
       evidence: evidence,
+      gaps: [
+        for (final raw in (json['gaps'] as List? ?? const []))
+          if (raw is Map) JadeSlipGap.fromJson(raw.cast<String, dynamic>()),
+      ],
+      acceptance: json['acceptance'] is Map
+          ? JadeSlipAcceptance.fromJson(
+              (json['acceptance'] as Map).cast<String, dynamic>())
+          : null,
+      submission: json['submission'] is Map
+          ? JadeSlipSubmission.fromJson(
+              (json['submission'] as Map).cast<String, dynamic>())
+          : null,
       updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
     );
   }
@@ -647,7 +797,8 @@ enum JadeSlipItemState {
   open,
   submitted,
   accepted,
-  blocked;
+  blocked,
+  cancelled;
 
   String get wire => name;
 
@@ -656,6 +807,7 @@ enum JadeSlipItemState {
         submitted => '~',
         accepted => 'x',
         blocked => '!',
+        cancelled => '-',
       };
 
   static JadeSlipItemState parse(String? raw) {
@@ -668,6 +820,8 @@ enum JadeSlipItemState {
         return accepted;
       case 'blocked':
         return blocked;
+      case 'cancelled':
+        return cancelled;
       default:
         return open;
     }
@@ -681,6 +835,9 @@ class JadeSlipComment {
     required this.authorId,
     this.authorName = '',
     this.itemId = '',
+    this.itemIds = const [],
+    this.kind = 'progress',
+    this.supersedes = '',
     required this.text,
     required this.createdAt,
   });
@@ -691,16 +848,40 @@ class JadeSlipComment {
 
   /// 挂在某一项上。空表示整简留言。
   final String itemId;
+
+  /// 一次汇报覆盖多项时的 id 列表（`slip report`）。旧记录只有 itemId。
+  final List<String> itemIds;
+
+  /// progress / decision / risk / note
+  final String kind;
+
+  /// 指向被本条取代的旧留言 id（迁移时用）。
+  final String supersedes;
   final String text;
   final int createdAt;
 
-  String get displayName => authorName.isEmpty ? authorId : authorName;
+  String get displayName {
+    if (authorName.isNotEmpty) return authorName;
+    if (authorId.length >= 16 && !authorId.contains(' ')) {
+      return authorId.substring(0, 8);
+    }
+    return authorId;
+  }
 
-  JadeSlipComment copyWith({String? text}) => JadeSlipComment(
+  JadeSlipComment copyWith({
+    String? text,
+    List<String>? itemIds,
+    String? kind,
+    String? supersedes,
+  }) =>
+      JadeSlipComment(
         id: id,
         authorId: authorId,
         authorName: authorName,
         itemId: itemId,
+        itemIds: itemIds ?? this.itemIds,
+        kind: kind ?? this.kind,
+        supersedes: supersedes ?? this.supersedes,
         text: text ?? this.text,
         createdAt: createdAt,
       );
@@ -709,20 +890,38 @@ class JadeSlipComment {
         'id': id,
         'author_id': authorId,
         'author_name': authorName,
-        if (itemId.isNotEmpty) 'item_id': itemId,
+        if (itemIds.length > 1)
+          'item_ids': itemIds
+        else if (itemId.isNotEmpty)
+          'item_id': itemId,
+        if (kind != 'progress') 'kind': kind,
+        if (supersedes.isNotEmpty) 'supersedes': supersedes,
         'text': text,
         'created_at': createdAt,
       };
 
-  factory JadeSlipComment.fromJson(Map<String, dynamic> json) =>
-      JadeSlipComment(
-        id: (json['id'] as String? ?? '').trim(),
-        authorId: (json['author_id'] as String? ?? '').trim(),
-        authorName: (json['author_name'] as String? ?? '').trim(),
-        itemId: (json['item_id'] as String? ?? '').trim(),
-        text: json['text'] as String? ?? '',
-        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      );
+  factory JadeSlipComment.fromJson(Map<String, dynamic> json) {
+    final ids = <String>[];
+    final rawIds = json['item_ids'];
+    if (rawIds is List) {
+      for (final raw in rawIds) {
+        final id = raw.toString().trim();
+        if (id.isNotEmpty) ids.add(id);
+      }
+    }
+    final single = (json['item_id'] as String? ?? '').trim();
+    return JadeSlipComment(
+      id: (json['id'] as String? ?? '').trim(),
+      authorId: (json['author_id'] as String? ?? '').trim(),
+      authorName: (json['author_name'] as String? ?? '').trim(),
+      itemId: single.isNotEmpty ? single : (ids.isNotEmpty ? ids.first : ''),
+      itemIds: ids,
+      kind: json['kind'] as String? ?? 'progress',
+      supersedes: (json['supersedes'] as String? ?? '').trim(),
+      text: json['text'] as String? ?? '',
+      createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+    );
+  }
 
   static String newId() => JadeSlipItem.newId();
 }
@@ -749,7 +948,13 @@ class JadeSlipEvent {
   final String text;
   final int createdAt;
 
-  String get displayName => actorName.isEmpty ? actorId : actorName;
+  String get displayName {
+    if (actorName.isNotEmpty) return actorName;
+    if (actorId.length >= 16 && !actorId.contains(' ')) {
+      return actorId.substring(0, 8);
+    }
+    return actorId;
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -875,3 +1080,285 @@ enum JadeSlipPriority {
     }
   }
 }
+
+
+/// 结构化证据：兼容旧记录里的裸 URI 字符串。
+class JadeSlipEvidence {
+  const JadeSlipEvidence({
+    required this.uri,
+    this.version,
+    this.hash,
+    this.size,
+    this.mtimeMs,
+    this.label,
+    this.attachedAt,
+  });
+
+  final String uri;
+  final int? version;
+  final String? hash;
+  final int? size;
+  final int? mtimeMs;
+  final String? label;
+  final int? attachedAt;
+
+  bool get isLegacy => version == null;
+  String get key => '$uri#${version ?? 0}';
+
+  String get displayName {
+    if (label != null && label!.isNotEmpty) return label!;
+    try {
+      return Uri.decodeComponent(Uri.parse(uri).pathSegments.last);
+    } catch (_) {
+      return uri;
+    }
+  }
+
+  String get versionLabel => version == null ? '' : ' · v$version';
+
+  /// legacy 记录原样输出字符串，不把它改写成对象。
+  Object toJson() {
+    if (isLegacy) return uri;
+    return {
+      'uri': uri,
+      if (version != null) 'version': version,
+      if (hash != null) 'hash': hash,
+      if (size != null) 'size': size,
+      if (mtimeMs != null) 'mtime_ms': mtimeMs,
+      if (label != null) 'label': label,
+      if (attachedAt != null) 'attached_at': attachedAt,
+    };
+  }
+
+  static JadeSlipEvidence? fromRaw(Object? raw) {
+    if (raw is String) {
+      final uri = raw.trim();
+      return uri.isEmpty ? null : JadeSlipEvidence(uri: uri);
+    }
+    if (raw is Map) {
+      final json = raw.cast<String, dynamic>();
+      final uri = (json['uri'] as String? ?? '').trim();
+      if (uri.isEmpty) return null;
+      return JadeSlipEvidence(
+        uri: uri,
+        version: (json['version'] as num?)?.toInt(),
+        hash: json['hash'] as String?,
+        size: (json['size'] as num?)?.toInt(),
+        mtimeMs: (json['mtime_ms'] as num?)?.toInt(),
+        label: json['label'] as String?,
+        attachedAt: (json['attached_at'] as num?)?.toInt(),
+      );
+    }
+    return null;
+  }
+}
+
+class JadeSlipAcceptance {
+  const JadeSlipAcceptance({
+    this.criteria = const [],
+    this.verify = const [],
+    this.confirmedBy = '',
+    this.confirmedAt = 0,
+  });
+
+  final List<String> criteria;
+  final List<String> verify;
+  final String confirmedBy;
+  final int confirmedAt;
+
+  bool get isConfirmed => confirmedBy.isNotEmpty;
+
+  JadeSlipAcceptance copyWith({
+    List<String>? criteria,
+    List<String>? verify,
+    String? confirmedBy,
+    int? confirmedAt,
+  }) =>
+      JadeSlipAcceptance(
+        criteria: criteria ?? this.criteria,
+        verify: verify ?? this.verify,
+        confirmedBy: confirmedBy ?? this.confirmedBy,
+        confirmedAt: confirmedAt ?? this.confirmedAt,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'criteria': criteria,
+        'verify': verify,
+        if (confirmedBy.isNotEmpty) 'confirmed_by': confirmedBy,
+        if (confirmedAt > 0) 'confirmed_at': confirmedAt,
+      };
+
+  factory JadeSlipAcceptance.fromJson(Map<String, dynamic> json) =>
+      JadeSlipAcceptance(
+        criteria: _stringList(json['criteria']),
+        verify: _stringList(json['verify']),
+        confirmedBy: json['confirmed_by'] as String? ?? '',
+        confirmedAt: (json['confirmed_at'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class JadeSlipSubmission {
+  const JadeSlipSubmission({
+    required this.rev,
+    required this.summary,
+    this.changed = const [],
+    this.verify = const [],
+    this.gaps = const [],
+    this.codeRefs = const [],
+    this.evidence = const [],
+    this.submittedBy = '',
+    this.sessionId = '',
+    this.submittedAt = 0,
+    this.supersedesRev,
+  });
+
+  final int rev;
+  final String summary;
+  final List<String> changed;
+  final List<String> verify;
+  final List<String> gaps;
+  final List<String> codeRefs;
+  final List<JadeSlipEvidence> evidence;
+  final String submittedBy;
+  final String sessionId;
+  final int submittedAt;
+  final int? supersedesRev;
+
+  Map<String, dynamic> toJson() => {
+        'rev': rev,
+        'summary': summary,
+        'changed': changed,
+        'verify': verify,
+        'gaps': gaps,
+        'code_refs': codeRefs,
+        if (evidence.isNotEmpty)
+          'evidence': [for (final e in evidence) e.toJson()],
+        if (submittedBy.isNotEmpty) 'submitted_by': submittedBy,
+        if (sessionId.isNotEmpty) 'session_id': sessionId,
+        if (submittedAt > 0) 'submitted_at': submittedAt,
+        if (supersedesRev != null) 'supersedes_rev': supersedesRev,
+      };
+
+  factory JadeSlipSubmission.fromJson(Map<String, dynamic> json) =>
+      JadeSlipSubmission(
+        rev: (json['rev'] as num?)?.toInt() ?? 1,
+        summary: json['summary'] as String? ?? '',
+        changed: _stringList(json['changed']),
+        verify: _stringList(json['verify']),
+        gaps: _stringList(json['gaps']),
+        codeRefs: _stringList(json['code_refs']),
+        evidence: [
+          for (final raw in (json['evidence'] as List? ?? const []))
+            if (JadeSlipEvidence.fromRaw(raw) != null)
+              JadeSlipEvidence.fromRaw(raw)!,
+        ],
+        submittedBy: json['submitted_by'] as String? ?? '',
+        sessionId: json['session_id'] as String? ?? '',
+        submittedAt: (json['submitted_at'] as num?)?.toInt() ?? 0,
+        supersedesRev: (json['supersedes_rev'] as num?)?.toInt(),
+      );
+}
+
+class JadeSlipGap {
+  const JadeSlipGap({
+    required this.id,
+    required this.text,
+    this.childSlipId = '',
+  });
+
+  final String id;
+  final String text;
+  final String childSlipId;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'text': text,
+        if (childSlipId.isNotEmpty) 'child_slip_id': childSlipId,
+      };
+
+  factory JadeSlipGap.fromJson(Map<String, dynamic> json) => JadeSlipGap(
+        id: (json['id'] as String? ?? '').trim(),
+        text: json['text'] as String? ?? '',
+        childSlipId: (json['child_slip_id'] as String? ?? '').trim(),
+      );
+}
+
+class JadeSlipDecision {
+  const JadeSlipDecision({
+    required this.id,
+    required this.text,
+    this.decidedBy = '',
+    this.decidedAt = 0,
+    this.sourceChannelId = '',
+    this.itemIds = const [],
+    this.supersedes = '',
+  });
+
+  final String id;
+  final String text;
+  final String decidedBy;
+  final int decidedAt;
+  final String sourceChannelId;
+  final List<String> itemIds;
+  final String supersedes;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'text': text,
+        if (decidedBy.isNotEmpty) 'decided_by': decidedBy,
+        if (decidedAt > 0) 'decided_at': decidedAt,
+        if (sourceChannelId.isNotEmpty)
+          'source_channel_id': sourceChannelId,
+        if (itemIds.isNotEmpty) 'item_ids': itemIds,
+        if (supersedes.isNotEmpty) 'supersedes': supersedes,
+      };
+
+  factory JadeSlipDecision.fromJson(Map<String, dynamic> json) =>
+      JadeSlipDecision(
+        id: (json['id'] as String? ?? '').trim(),
+        text: json['text'] as String? ?? '',
+        decidedBy: json['decided_by'] as String? ?? '',
+        decidedAt: (json['decided_at'] as num?)?.toInt() ?? 0,
+        sourceChannelId: json['source_channel_id'] as String? ?? '',
+        itemIds: _stringList(json['item_ids']),
+        supersedes: (json['supersedes'] as String? ?? '').trim(),
+      );
+}
+
+class JadeSlipConclusion {
+  const JadeSlipConclusion({
+    required this.text,
+    this.by = '',
+    this.at = 0,
+    this.evidence = const [],
+    this.submissionRev,
+  });
+
+  final String text;
+  final String by;
+  final int at;
+  final List<String> evidence;
+  final int? submissionRev;
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        if (by.isNotEmpty) 'by': by,
+        if (at > 0) 'at': at,
+        if (evidence.isNotEmpty) 'evidence': evidence,
+        if (submissionRev != null) 'submission_rev': submissionRev,
+      };
+
+  factory JadeSlipConclusion.fromJson(Map<String, dynamic> json) =>
+      JadeSlipConclusion(
+        text: json['text'] as String? ?? '',
+        by: json['by'] as String? ?? '',
+        at: (json['at'] as num?)?.toInt() ?? 0,
+        evidence: _stringList(json['evidence']),
+        submissionRev: (json['submission_rev'] as num?)?.toInt(),
+      );
+}
+
+List<String> _stringList(Object? raw) => [
+      for (final value in (raw as List? ?? const []))
+        if (value.toString().trim().isNotEmpty) value.toString().trim(),
+    ];

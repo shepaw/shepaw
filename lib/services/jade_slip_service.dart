@@ -454,6 +454,20 @@ class JadeSlipService {
           throw StateError('jade slip not found: $id');
         }
         final now = DateTime.now().millisecondsSinceEpoch;
+        final target = slip.items.firstWhere(
+          (e) => e.id == itemId,
+          orElse: () => JadeSlipItem(id: itemId, text: ''),
+        );
+        final submission = done
+            ? JadeSlipSubmission(
+                rev: (target.submission?.rev ?? 0) + 1,
+                summary: '通过勾选提交',
+                submittedBy: actorId,
+                sessionId: sessionId,
+                submittedAt: now,
+                supersedesRev: target.submission?.rev,
+              )
+            : null;
         final items = [
           for (final item in slip.items)
             if (item.id == itemId)
@@ -461,6 +475,8 @@ class JadeSlipService {
                 state:
                     done ? JadeSlipItemState.submitted : JadeSlipItemState.open,
                 blockedReason: '',
+                returnReason: '',
+                submission: submission,
                 actorId: actorId.isEmpty ? null : actorId,
                 actorName: actorName.isEmpty ? null : actorName,
                 sessionId: sessionId.isEmpty ? null : sessionId,
@@ -538,6 +554,7 @@ class JadeSlipService {
         actorId: actorId,
         actorName: actorName,
         blockedReason: '',
+        returnReason: '',
         updatedAt: now,
       ),
       event: _event(
@@ -612,9 +629,8 @@ class JadeSlipService {
       itemId,
       (item) => item.copyWith(
         state: JadeSlipItemState.open,
-        actorId: actorId,
-        actorName: actorName,
-        blockedReason: reason.trim(),
+        blockedReason: '',
+        returnReason: reason.trim(),
         updatedAt: now,
       ),
       event: _event(
@@ -660,15 +676,22 @@ class JadeSlipService {
     required String id,
     required String itemId,
     required String uri,
-  }) {
+  }) async {
     final ref = uri.trim();
     if (ref.isEmpty) throw ArgumentError('evidence uri cannot be empty');
+    final current = await _readCurrentOrFetch(id);
+    if (current == null) throw StateError('jade slip not found: $id');
+    if (current.items.any(
+      (item) => item.id == itemId && item.evidence.any((e) => e.uri == ref),
+    )) {
+      return current;
+    }
     final now = DateTime.now().millisecondsSinceEpoch;
     return _mapItem(
       id,
       itemId,
       (item) => item.copyWith(
-        evidence: [...item.evidence, ref],
+        evidence: [...item.evidence, JadeSlipEvidence(uri: ref)],
         updatedAt: now,
       ),
       event: _event(
@@ -937,19 +960,43 @@ class JadeSlipService {
           throw StateError('jade slip not found: $id');
         }
         final now = DateTime.now().millisecondsSinceEpoch;
-        final items = [
-          for (final item in slip.items)
-            if (item.state == JadeSlipItemState.accepted)
-              item
-            else
-              item.copyWith(
-                state: JadeSlipItemState.submitted,
-                blockedReason: '',
-                updatedAt: now,
-              ),
-        ];
+        final items = <JadeSlipItem>[];
+        var changed = 0;
+        for (final item in slip.items) {
+          if (item.state == JadeSlipItemState.accepted ||
+              item.state == JadeSlipItemState.blocked ||
+              item.state == JadeSlipItemState.cancelled) {
+            items.add(item);
+            continue;
+          }
+          changed++;
+          items.add(item.copyWith(
+            state: JadeSlipItemState.submitted,
+            blockedReason: '',
+            returnReason: '',
+            cancelledReason: '',
+            submission: JadeSlipSubmission(
+              rev: (item.submission?.rev ?? 0) + 1,
+              summary: '批量提交',
+              submittedAt: now,
+              supersedesRev: item.submission?.rev,
+            ),
+            updatedAt: now,
+          ));
+        }
         final docs = await _docs();
-        return _writeAndNotify(docs, slip.copyWith(items: items));
+        return _writeAndNotify(
+          docs,
+          slip.copyWith(
+            items: items,
+            events: changed == 0
+                ? slip.events
+                : [
+                    ...slip.events,
+                    _event(kind: 'submitted', text: '批量提交 $changed 项'),
+                  ],
+          ),
+        );
       });
 
   Future<void> delete(String id) =>
@@ -984,6 +1031,301 @@ class JadeSlipService {
       itemId: itemId,
       text: text,
       createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+
+  // ---------------------------------------------------------------------------
+  // P2：工作契约
+
+  /// 提交一项：必须带摘要；新 rev 会作废上一次验收（accepted → submitted）。
+  Future<JadeSlip> submitItem({
+    required String id,
+    required String itemId,
+    required String summary,
+    List<String> verify = const [],
+    List<String> gaps = const [],
+    List<String> codeRefs = const [],
+    String actorId = '',
+    String actorName = '',
+    String sessionId = '',
+  }) {
+    final text = summary.trim();
+    if (text.isEmpty) {
+      throw ArgumentError('submission summary cannot be empty');
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return _serializeBySlip(id, () async {
+      final slip = await _readCurrentOrFetch(id);
+      if (slip == null) throw StateError('jade slip not found: $id');
+      var wasAccepted = false;
+      var rev = 1;
+      var found = false;
+      final items = <JadeSlipItem>[];
+      for (final item in slip.items) {
+        if (item.id != itemId) {
+          items.add(item);
+          continue;
+        }
+        found = true;
+        wasAccepted = item.state == JadeSlipItemState.accepted;
+        rev = (item.submission?.rev ?? 0) + 1;
+        final submission = JadeSlipSubmission(
+          rev: rev,
+          summary: text,
+          verify: verify,
+          gaps: gaps,
+          codeRefs: codeRefs,
+          submittedBy: actorId,
+          sessionId: sessionId,
+          submittedAt: now,
+          supersedesRev: item.submission?.rev,
+        );
+        final newGaps = gaps.isEmpty
+            ? item.gaps
+            : [
+                ...item.gaps,
+                for (final gap in gaps)
+                  JadeSlipGap(id: JadeSlipItem.newId(), text: gap),
+              ];
+        items.add(item.copyWith(
+          state: JadeSlipItemState.submitted,
+          blockedReason: '',
+          returnReason: '',
+          cancelledReason: '',
+          submission: submission,
+          gaps: newGaps,
+          updatedAt: now,
+        ));
+      }
+      if (!found) throw StateError('jade slip item not found: $itemId');
+      final docs = await _docs();
+      return _writeAndNotify(
+        docs,
+        slip.copyWith(
+          items: items,
+          events: [
+            ...slip.events,
+            _event(
+              kind: wasAccepted ? 'submission_replaced' : 'submitted',
+              text: wasAccepted
+                  ? '新提交 r$rev 取代 r${rev - 1}，需重新验收'
+                  : '提交 r$rev：$text',
+              itemId: itemId,
+              actorId: actorId,
+              actorName: actorName,
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Future<JadeSlip> addStructuredEvidence({
+    required String id,
+    required String itemId,
+    required JadeSlipEvidence evidence,
+  }) async {
+    final current = await _readCurrentOrFetch(id);
+    if (current == null) throw StateError('jade slip not found: $id');
+    if (current.items.any((item) =>
+        item.id == itemId && item.evidence.any((e) => e.key == evidence.key))) {
+      return current;
+    }
+    return _mapItem(
+      id,
+      itemId,
+      (item) => item.copyWith(
+        evidence: [...item.evidence, evidence],
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+      event: _event(
+        kind: 'evidence',
+        text: '附上证据 ${evidence.displayName}',
+        itemId: itemId,
+      ),
+    );
+  }
+
+  Future<JadeSlip> proposeAcceptance({
+    required String id,
+    required String itemId,
+    required List<String> criteria,
+    List<String> verify = const [],
+    String actorId = '',
+    String actorName = '',
+  }) =>
+      _mapItem(
+        id,
+        itemId,
+        (item) => item.copyWith(
+          acceptance: JadeSlipAcceptance(criteria: criteria, verify: verify),
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+        event: _event(
+          kind: 'acceptance_proposed',
+          text: '提议验收标准：${criteria.join('；')}',
+          itemId: itemId,
+          actorId: actorId,
+          actorName: actorName,
+        ),
+      );
+
+  Future<JadeSlip> confirmAcceptance({
+    required String id,
+    required String itemId,
+    String actorId = '',
+    String actorName = '',
+  }) =>
+      _mapItem(
+        id,
+        itemId,
+        (item) => item.copyWith(
+          acceptance: (item.acceptance ?? const JadeSlipAcceptance()).copyWith(
+            confirmedBy: actorId,
+            confirmedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+        event: _event(
+          kind: 'acceptance_confirmed',
+          text: '确认验收标准',
+          itemId: itemId,
+          actorId: actorId,
+          actorName: actorName,
+        ),
+      );
+
+  Future<JadeSlip> addDecision({
+    required String id,
+    required String text,
+    List<String> itemIds = const [],
+    String actorId = '',
+    String actorName = '',
+    String sourceChannelId = '',
+  }) =>
+      _serializeBySlip(id, () async {
+        final slip = await _readCurrentOrFetch(id);
+        if (slip == null) throw StateError('jade slip not found: $id');
+        final decision = JadeSlipDecision(
+          id: JadeSlipItem.newId(),
+          text: text.trim(),
+          decidedBy: actorId,
+          decidedAt: DateTime.now().millisecondsSinceEpoch,
+          sourceChannelId: sourceChannelId,
+          itemIds: itemIds,
+        );
+        final version = slip.contractVersion + 1;
+        final docs = await _docs();
+        return _writeAndNotify(
+          docs,
+          slip.copyWith(
+            decisions: [...slip.decisions, decision],
+            contractVersion: version,
+            events: [
+              ...slip.events,
+              _event(
+                kind: 'decision',
+                text: text.trim(),
+                actorId: actorId,
+                actorName: actorName,
+              ),
+              _event(
+                kind: 'contract_changed',
+                text: '契约版本 v$version',
+                actorId: actorId,
+              ),
+            ],
+          ),
+        );
+      });
+
+  /// 覆盖式当前结论，不追加。
+  Future<JadeSlip> setConclusion({
+    required String id,
+    required String text,
+    List<String> evidence = const [],
+    String actorId = '',
+    String actorName = '',
+  }) =>
+      _serializeBySlip(id, () async {
+        final slip = await _readCurrentOrFetch(id);
+        if (slip == null) throw StateError('jade slip not found: $id');
+        final conclusion = JadeSlipConclusion(
+          text: text.trim(),
+          by: actorId,
+          at: DateTime.now().millisecondsSinceEpoch,
+          evidence: evidence,
+          submissionRev: slip.maxSubmissionRev,
+        );
+        final docs = await _docs();
+        return _writeAndNotify(
+          docs,
+          slip.copyWith(
+            currentConclusion: conclusion,
+            events: [
+              ...slip.events,
+              _event(
+                kind: 'conclusion_changed',
+                text: '更新当前结论',
+                actorId: actorId,
+                actorName: actorName,
+              ),
+            ],
+          ),
+        );
+      });
+
+  Future<JadeSlip> cancelItem({
+    required String id,
+    required String itemId,
+    required String reason,
+    String actorId = '',
+    String actorName = '',
+  }) =>
+      _mapItem(
+        id,
+        itemId,
+        (item) => item.copyWith(
+          state: JadeSlipItemState.cancelled,
+          cancelledReason: reason.trim(),
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+        event: _event(
+          kind: 'cancelled',
+          text: '取消：${reason.trim()}',
+          itemId: itemId,
+          actorId: actorId,
+          actorName: actorName,
+        ),
+      );
+
+  /// gaps 一键转子简：复用 splitItem，再把 childSlipId 回填到 gap 上。
+  Future<JadeSlip> splitGap({
+    required String id,
+    required String itemId,
+    required String title,
+  }) async {
+    final child = await splitItem(id: id, itemId: itemId);
+    return _mapItem(
+      id,
+      itemId,
+      (item) => item.copyWith(
+        gaps: [
+          ...item.gaps,
+          JadeSlipGap(
+            id: JadeSlipItem.newId(),
+            text: title.trim(),
+            childSlipId: child.id,
+          ),
+        ],
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+      event: _event(
+        kind: 'gap_split',
+        text: '未做项「${title.trim()}」拆成子简',
+        itemId: itemId,
+      ),
     );
   }
 

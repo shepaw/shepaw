@@ -446,7 +446,32 @@ class NotesItemCommand extends CliCommand {
         );
         return {'success': true, 'action': 'blocked', 'slip': await _slipJsonFull(slip)};
       }
+      if (flags.containsKey('return')) {
+        final denied = _denyUnlessUserOrShe();
+        if (denied != null) return denied;
+        if (itemId.isEmpty) return {'error': 'Missing --item. Usage: $usage'};
+        final reason = flags['reason']?.trim() ?? '';
+        final slip = await JadeSlipService.instance.returnItem(
+          id: id,
+          itemId: itemId,
+          reason: reason,
+          actorId: LocalUserIdentity.id,
+          actorName: LocalUserIdentity.displayName,
+        );
+        JadeSlipItem? returned;
+        for (final e in slip.items) {
+          if (e.id == itemId) returned = e;
+        }
+        await JadeSlipWake.notify(slip, '有一项被退回', item: returned);
+        return {
+          'success': true,
+          'action': 'returned',
+          'slip': await _slipJsonFull(slip),
+        };
+      }
       if (itemId.isNotEmpty && text.isNotEmpty) {
+        final denied = _denyUnlessUserOrShe();
+        if (denied != null) return denied;
         final slip = await JadeSlipService.instance.updateItemText(
           id: id,
           itemId: itemId,
@@ -466,6 +491,8 @@ class NotesItemCommand extends CliCommand {
         return {'error': 'Missing --item or --text. Usage: $usage'};
       }
       if (delete) {
+        final denied = _denyUnlessUserOrShe();
+        if (denied != null) return denied;
         final slip = await JadeSlipService.instance.removeItem(
           id: id,
           itemId: itemId,
@@ -494,7 +521,6 @@ class NotesItemCommand extends CliCommand {
         actorName: actorName,
         sessionId: done ? ChatAgentScope.channelId.trim() : '',
       );
-      if (done) await JadeSlipWake.notify(slip, '有一项已提交，等验收');
       return {
         'success': true,
         'action': done ? 'checked' : 'unchecked',
@@ -534,7 +560,6 @@ class NotesAcceptCommand extends CliCommand {
           actorId: LocalUserIdentity.id,
           actorName: LocalUserIdentity.displayName,
         );
-        await JadeSlipWake.notify(slip, '已验收');
         return {
           'success': true,
           'action': 'accepted',
@@ -547,7 +572,6 @@ class NotesAcceptCommand extends CliCommand {
         actorId: LocalUserIdentity.id,
         actorName: LocalUserIdentity.displayName,
       );
-      await JadeSlipWake.notify(slip, '有一项已验收');
       return {
         'success': true,
         'action': 'accepted',

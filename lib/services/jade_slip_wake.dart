@@ -5,18 +5,25 @@ import 'local_user_identity.dart';
 import 'logger_service.dart';
 import 'remote_agent_service.dart';
 
-/// 玉简被改派或退回时，给当前负责人的会话发一条短引用，让对方现读。
+/// 玉简被改派或退回时，给干活的那条会话发一条短引用，让对方现读。
 class JadeSlipWake {
-  static Future<void> notify(JadeSlip slip, String reason) async {
+  static Future<void> notify(
+    JadeSlip slip,
+    String reason, {
+    JadeSlipItem? item,
+  }) async {
     if (!getIt.isRegistered<ChatService>() ||
         !getIt.isRegistered<RemoteAgentService>()) {
       return;
     }
     final ids = <String>{
+      if (item != null && item.actorId.isNotEmpty) item.actorId,
+      if (item != null && item.assigneeAgentId.isNotEmpty)
+        item.assigneeAgentId,
       if (slip.assigneeAgentId.isNotEmpty) slip.assigneeAgentId,
-      for (final item in slip.items)
-        if (item.assigneeAgentId.isNotEmpty) item.assigneeAgentId,
-    };
+    }..removeWhere(
+        (id) => id.isEmpty || id == 'user' || id == LocalUserIdentity.id,
+      );
     if (ids.isEmpty) return;
     final chat = getIt<ChatService>();
     final agents = getIt<RemoteAgentService>();
@@ -27,8 +34,10 @@ class JadeSlipWake {
       try {
         final agent = await agents.getAgentById(id);
         if (agent == null) continue;
-        final channel =
-            await chat.getLatestActiveChannelId(LocalUserIdentity.id, id);
+        final session = item?.sessionId.trim() ?? '';
+        final channel = session.isNotEmpty
+            ? session
+            : await chat.getLatestActiveChannelId(LocalUserIdentity.id, id);
         if (channel == null || channel.isEmpty) continue;
         await chat.sendMessageToAgent(
           content: text,

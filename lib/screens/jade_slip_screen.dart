@@ -55,7 +55,7 @@ class JadeSlipScreen extends StatefulWidget {
   State<JadeSlipScreen> createState() => _JadeSlipScreenState();
 }
 
-enum JadeSlipListFilter { open, doing, done, all }
+enum JadeSlipListFilter { open, doing, review, done, all }
 
 /// 列表筛选。未完成是还没验收通过的；进行中是已经动过、还没验收的。
 bool jadeSlipMatchesListFilter(JadeSlipStatus status, JadeSlipListFilter filter) {
@@ -69,6 +69,8 @@ bool jadeSlipMatchesListFilter(JadeSlipStatus status, JadeSlipListFilter filter)
       return status == JadeSlipStatus.inProgress ||
           status == JadeSlipStatus.needsReview ||
           status == JadeSlipStatus.blocked;
+    case JadeSlipListFilter.review:
+      return status == JadeSlipStatus.needsReview;
     case JadeSlipListFilter.done:
       return status == JadeSlipStatus.done;
     case JadeSlipListFilter.all:
@@ -565,6 +567,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
   String _filterLabel(AppLocalizations l10n, JadeSlipListFilter f) => switch (f) {
         JadeSlipListFilter.open => l10n.jadeSlip_filterOpen,
         JadeSlipListFilter.doing => l10n.jadeSlip_filterDoing,
+        JadeSlipListFilter.review => l10n.jadeSlip_itemSubmitted,
         JadeSlipListFilter.done => l10n.jadeSlip_filterDone,
         JadeSlipListFilter.all => l10n.jadeSlip_filterAll,
       };
@@ -693,8 +696,15 @@ class _SlipRow extends StatelessWidget {
     if (slip.assigneeAgentName.isNotEmpty) meta.add(slip.assigneeAgentName);
     if (slip.dueAtMs != null) meta.add(_fmtDay(slip.dueAtMs!));
     if (slip.itemCount > 0) {
-      meta.add(l10n.jadeSlip_progress(slip.doneCount, slip.itemCount));
+      meta.add(l10n.jadeSlip_progress(slip.acceptedCount, slip.itemCount));
+      if (slip.submittedCount > 0) {
+        meta.add('${l10n.jadeSlip_itemSubmitted} ${slip.submittedCount}');
+      }
+      if (slip.cancelledCount > 0) {
+        meta.add('取消 ${slip.cancelledCount} 项');
+      }
     }
+    if (slip.maxSubmissionRev > 0) meta.add('r${slip.maxSubmissionRev}');
     if (slip.attachments.isNotEmpty) {
       meta.add(l10n.jadeSlip_attachmentCount(slip.attachments.length));
     }

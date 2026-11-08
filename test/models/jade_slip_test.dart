@@ -268,11 +268,226 @@ Buy tickets
     expect(copy.toJson()['kind'], 'jade_slip');
   });
 
-  test('isRecordPath only matches <id>.json', () {
-    expect(JadeSlip.isRecordPath('id1.json'), isTrue);
-    expect(JadeSlip.idFromRecordPath('id1.json'), 'id1');
-    expect(JadeSlip.isRecordPath('id1/files/a.png'), isFalse);
-    expect(JadeSlip.isRecordPath('slips/id1.json'), isFalse);
-    expect(JadeSlip.idFromRecordPath('id1/files/a.png'), isNull);
+  test('acceptedCount only counts accepted, blocked wins status', () {
+    final slip = JadeSlip(
+      id: 'a', title: 't', deviceId: 'd', createdAt: 1, updatedAt: 1,
+      items: const [
+        JadeSlipItem(id: '1', text: 'a', state: JadeSlipItemState.accepted),
+        JadeSlipItem(id: '2', text: 'b', state: JadeSlipItemState.submitted),
+        JadeSlipItem(id: '3', text: 'c', state: JadeSlipItemState.blocked),
+      ],
+    );
+    expect(slip.acceptedCount, 1);
+    expect(slip.submittedCount, 1);
+    expect(slip.withDerivedStatus().status, JadeSlipStatus.blocked);
   });
+
+  test('returnReason and itemIds round-trip, evidence dedupes', () {
+    final slip = JadeSlip(
+      id: 'a', title: 't', deviceId: 'd', createdAt: 1, updatedAt: 1,
+      items: const [
+        JadeSlipItem(id: '1', text: 'a', returnReason: 'redo'),
+      ],
+      comments: const [
+        JadeSlipComment(
+          id: 'c', authorId: 'agent-1', itemIds: ['1', '2'],
+          text: 'report', createdAt: 1,
+        ),
+      ],
+    );
+    final copy = JadeSlip.fromJson(slip.toJson());
+    expect(copy.items.single.returnReason, 'redo');
+    expect(copy.comments.single.itemIds, ['1', '2']);
+    expect(copy.comments.single.itemId, '1');
+    final item = JadeSlipItem.fromJson({
+      'id': '1', 'text': 'a',
+      'evidence': ['pouch://x/a.md', 'pouch://x/a.md', 'pouch://x/b.md'],
+    });
+    expect(item.evidence.map((e) => e.uri).toList(),
+        ['pouch://x/a.md', 'pouch://x/b.md']);
+  });
+
+
+  test('P2 status vectors match the host derive_status', () {
+    const cases = <(List<JadeSlipItemState>, List<String>, JadeSlipStatus)>[
+      ([JadeSlipItemState.accepted, JadeSlipItemState.cancelled], ['', 'why'],
+          JadeSlipStatus.done),
+      ([JadeSlipItemState.cancelled, JadeSlipItemState.cancelled],
+          ['why', 'why'], JadeSlipStatus.done),
+      ([JadeSlipItemState.cancelled], [''], JadeSlipStatus.inProgress),
+      ([JadeSlipItemState.accepted, JadeSlipItemState.blocked], ['', ''],
+          JadeSlipStatus.blocked),
+      ([JadeSlipItemState.open, JadeSlipItemState.submitted], ['', ''],
+          JadeSlipStatus.inProgress),
+      ([JadeSlipItemState.submitted, JadeSlipItemState.accepted], ['', ''],
+          JadeSlipStatus.needsReview),
+      ([JadeSlipItemState.open, JadeSlipItemState.open], ['', ''],
+          JadeSlipStatus.open),
+      ([JadeSlipItemState.accepted, JadeSlipItemState.accepted], ['', ''],
+          JadeSlipStatus.done),
+      ([JadeSlipItemState.cancelled, JadeSlipItemState.submitted], ['why', ''],
+          JadeSlipStatus.needsReview),
+    ];
+    for (final (states, reasons, expected) in cases) {
+      final slip = JadeSlip(
+        id: 'v',
+        title: 'v',
+        deviceId: 'd',
+        createdAt: 1,
+        updatedAt: 1,
+        items: [
+          for (var i = 0; i < states.length; i++)
+            JadeSlipItem(
+              id: 'i$i',
+              text: 'x',
+              state: states[i],
+              cancelledReason: reasons[i],
+            ),
+        ],
+      );
+      expect(slip.withDerivedStatus().status, expected,
+          reason: 'states=$states');
+    }
+  });
+
+  test('P2 contract objects round-trip through JSON', () {
+    final slip = JadeSlip(
+      id: 'a',
+      title: 't',
+      deviceId: 'd',
+      createdAt: 1,
+      updatedAt: 1,
+      contractVersion: 3,
+      decisions: const [
+        JadeSlipDecision(
+          id: 'd1',
+          text: '按默认值执行',
+          decidedBy: 'user',
+          decidedAt: 100,
+          itemIds: ['1', '2'],
+        ),
+      ],
+      currentConclusion: const JadeSlipConclusion(
+        text: '代码已提交，等真机联调',
+        by: 'user',
+        at: 200,
+        submissionRev: 5,
+      ),
+      items: const [
+        JadeSlipItem(
+          id: '1',
+          text: 'a',
+          state: JadeSlipItemState.submitted,
+          acceptance: JadeSlipAcceptance(
+            criteria: ['测试全绿'],
+            verify: ['cargo test'],
+            confirmedBy: 'user',
+            confirmedAt: 90,
+          ),
+          submission: JadeSlipSubmission(
+            rev: 5,
+            summary: 'P4 完成',
+            changed: ['a.rs'],
+            verify: ['cargo test'],
+            gaps: ['真机联调'],
+            codeRefs: ['worktree-x@abc'],
+            submittedBy: 'agent-1',
+            submittedAt: 300,
+            supersedesRev: 4,
+          ),
+          gaps: [JadeSlipGap(id: 'g1', text: '真机联调', childSlipId: 'c1')],
+          evidence: [
+            JadeSlipEvidence(
+              uri: 'pouch://p/slip:x/files/report.md',
+              version: 7,
+              hash: 'abc',
+              label: '实现结果',
+            ),
+          ],
+        ),
+      ],
+    );
+    final copy = JadeSlip.fromJson(slip.toJson());
+    expect(copy.contractVersion, 3);
+    expect(copy.decisions.single.text, '按默认值执行');
+    expect(copy.decisions.single.itemIds, ['1', '2']);
+    expect(copy.currentConclusion!.text, '代码已提交，等真机联调');
+    expect(copy.currentConclusion!.submissionRev, 5);
+    expect(copy.items.single.acceptance!.criteria, ['测试全绿']);
+    expect(copy.items.single.acceptance!.isConfirmed, isTrue);
+    expect(copy.items.single.submission!.rev, 5);
+    expect(copy.items.single.submission!.supersedesRev, 4);
+    expect(copy.items.single.submission!.gaps, ['真机联调']);
+    expect(copy.items.single.gaps.single.childSlipId, 'c1');
+    expect(copy.items.single.evidence.single.version, 7);
+    expect(copy.items.single.evidence.single.versionLabel, ' · v7');
+    expect(copy.maxSubmissionRev, 5);
+  });
+
+  test('P2 legacy evidence stays a string array on round-trip', () {
+    final raw = {
+      'id': 'a',
+      'title': 't',
+      'status': 'open',
+      'priority': 'none',
+      'items': [
+        {
+          'id': '1',
+          'text': 'a',
+          'state': 'open',
+          'done': false,
+          'evidence': ['pouch://x/a.md', 'pouch://x/b.md'],
+        }
+      ],
+      'device_id': 'd',
+      'created_at': 1,
+      'updated_at': 1,
+    };
+    final slip = JadeSlip.fromJson(raw);
+    expect(slip.items.single.evidence.length, 2);
+    expect(slip.items.single.evidence.first.isLegacy, isTrue);
+    final back = slip.toJson();
+    expect(back['items'][0]['evidence'], ['pouch://x/a.md', 'pouch://x/b.md']);
+  });
+
+  test('P2 cancelled state and comment kind round-trip', () {
+    final raw = {
+      'id': 'a',
+      'title': 't',
+      'status': 'open',
+      'priority': 'none',
+      'items': [
+        {
+          'id': '1',
+          'text': 'a',
+          'state': 'cancelled',
+          'cancelled_reason': '暂缓',
+          'submission': {'rev': 2, 'summary': 'x'},
+        }
+      ],
+      'comments': [
+        {
+          'id': 'c1',
+          'author_id': 'agent-1',
+          'text': '风险',
+          'created_at': 10,
+          'kind': 'risk',
+          'supersedes': 'c0',
+        }
+      ],
+      'device_id': 'd',
+      'created_at': 1,
+      'updated_at': 1,
+    };
+    final slip = JadeSlip.fromJson(raw);
+    expect(slip.items.single.state, JadeSlipItemState.cancelled);
+    expect(slip.items.single.cancelledReason, '暂缓');
+    expect(slip.cancelledCount, 1);
+    expect(slip.comments.single.kind, 'risk');
+    expect(slip.comments.single.supersedes, 'c0');
+    final back = slip.toJson();
+    expect(back['items'][0]['state'], 'cancelled');
+    expect(back['comments'][0]['kind'], 'risk');
+  });
+
 }

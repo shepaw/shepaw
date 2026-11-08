@@ -201,6 +201,24 @@ class _JadeSlipDispatchDialogState extends State<_JadeSlipDispatchDialog> {
     );
   }
 
+  /// 派发前提醒缺了哪些契约字段；只提醒，不拦截。
+  String _contractHint() {
+    final slip = widget.slip;
+    final missing = <String>[];
+    if (slip.goal.trim().isEmpty) missing.add('目标');
+    if (slip.doneWhen.trim().isEmpty) missing.add('完成标准');
+    final withoutCriteria = slip.items
+        .where((item) =>
+            item.acceptance == null || item.acceptance!.criteria.isEmpty)
+        .length;
+    if (withoutCriteria > 0) {
+      missing.add('$withoutCriteria 项的验收标准');
+    }
+    if (missing.isEmpty) return '';
+    return '契约提醒：还没填 ${missing.join('、')}。'
+        '不填也能派发，但 Agent 会不知道做到什么算完。';
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -217,6 +235,23 @@ class _JadeSlipDispatchDialogState extends State<_JadeSlipDispatchDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_contractHint().isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _contractHint(),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               _label(l10n.jadeSlip_handOffAgent, theme, scheme),
               const SizedBox(height: 6),
               _agentRow(agent, l10n, theme, scheme),

@@ -672,6 +672,20 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                     icon: const Icon(Icons.play_arrow_rounded, size: 20),
                     label: Text(l10n.jadeSlip_run),
                   ),
+                  if (slip.submittedCount > 0) ...[
+                    const SizedBox(width: 4),
+                    FilledButton.icon(
+                      onPressed: () => unawaited(_acceptAll()),
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: scheme.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.check_circle_outline, size: 20),
+                      label: Text(
+                          '${l10n.jadeSlip_acceptItem} ${slip.submittedCount}'),
+                    ),
+                  ],
                   const SizedBox(width: 4),
                   IconButton(
                     tooltip: l10n.common_delete,
@@ -763,7 +777,10 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                 _ChecklistRow(
                   key: ValueKey(item.id),
                   item: item,
-                  onChanged: (v) => unawaited(_toggleItem(slip, item, v)),
+                  onChanged: item.state == JadeSlipItemState.submitted ||
+                          item.state == JadeSlipItemState.accepted
+                      ? null
+                      : (v) => unawaited(_toggleItem(slip, item, v ?? false)),
                   onDelete: () => unawaited(_removeItem(item.id)),
                   onRename: (text) => unawaited(_renameItem(item.id, text)),
                   onHandOff: () => unawaited(_handOffItem(slip, item)),
@@ -779,6 +796,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                       ? () => unawaited(_returnItem(item))
                       : null,
                   onSplit: () => unawaited(_splitItem(item)),
+                  onGap: (gap) => unawaited(_splitGap(item, gap)),
+                  onSplitChild: (childId) => _openSlip(childId),
                   onEditComplete: () {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted) _itemFocus.requestFocus();
@@ -936,6 +955,50 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                     ),
                   ),
               ],
+              if (slip.currentConclusion != null) ...[
+                const SizedBox(height: 20),
+                _ConclusionCard(conclusion: slip.currentConclusion!),
+              ],
+              if (slip.decisions.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _SectionLabel(
+                  label: '决定',
+                  trailing: 'v${slip.contractVersion}',
+                ),
+                const SizedBox(height: 6),
+                for (final decision in slip.decisions)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.gavel_outlined,
+                            size: 16, color: scheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                decision.text,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                              if (decision.decidedBy.isNotEmpty ||
+                                  decision.decidedAt > 0)
+                                Text(
+                                  '${decision.decidedBy} · ${_fmtStamp(decision.decidedAt)}'
+                                  '${decision.itemIds.isEmpty ? '' : ' · ${decision.itemIds.length} 项'}',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
               if (slip.events.isNotEmpty) ...[
                 const SizedBox(height: 28),
                 _SectionLabel(
@@ -943,13 +1006,13 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                   trailing: '${slip.events.length}',
                 ),
                 const SizedBox(height: 6),
-                for (final event in slip.events)
+                for (final group in _groupEvents(slip.events))
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 3),
                     child: Text(
-                      event.displayName.isEmpty
-                          ? event.text
-                          : '${event.displayName} · ${event.text}',
+                      '${_fmtStamp(group.event.createdAt)} '
+                      '${group.event.displayName.isEmpty ? '' : '${group.event.displayName} · '}'
+                      '${group.label}${group.count > 1 ? ' ×${group.count}' : ''}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -959,8 +1022,10 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
               const SizedBox(height: 28),
               _SectionLabel(
                 label: l10n.jadeSlip_comments,
-                trailing:
-                    slip.comments.isEmpty ? null : '${slip.comments.length}',
+                trailing: slip.comments.isEmpty
+                    ? null
+                    : '${slip.comments.where((c) => c.supersedes.isEmpty).length}'
+                        '${slip.comments.any((c) => c.supersedes.isNotEmpty) ? ' / ${slip.comments.length}' : ''}',
               ),
               const SizedBox(height: 6),
               if (slip.comments.isEmpty)
@@ -975,12 +1040,14 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                 )
               else
                 for (final comment in slip.comments)
-                  _CommentRow(
-                    comment: comment,
-                    onDelete: comment.authorId == LocalUserIdentity.id
-                        ? () => unawaited(_removeComment(comment.id))
-                        : null,
-                  ),
+                  if (comment.supersedes.isEmpty)
+                    _CommentRow(
+                      comment: comment,
+                      itemLabel: _commentItemLabel(slip, comment),
+                      onDelete: comment.authorId == LocalUserIdentity.id
+                          ? () => unawaited(_removeComment(comment.id))
+                          : null,
+                    ),
               _AddItemRow(
                 controller: _comment,
                 focusNode: null,
@@ -1079,6 +1146,24 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   Future<void> _handOffItem(JadeSlip slip, JadeSlipItem item) =>
       _dispatch(slip, focusItem: item);
 
+  /// 整简一次验收所有已提交项，不逐项唤醒 Agent。
+  Future<void> _acceptAll() async {
+    if (!await _flush()) return;
+    final updated = await _guardValue(
+      () => _service.acceptWhole(
+        id: widget.slipId,
+        actorId: LocalUserIdentity.id,
+        actorName: LocalUserIdentity.displayName,
+      ),
+    );
+    if (updated == null || !mounted) return;
+    setState(() => _slip = updated);
+    widget.onChanged?.call();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppLocalizations.of(context).jadeSlip_acceptItem)),
+    );
+  }
+
   Future<void> _toggleItem(JadeSlip slip, JadeSlipItem item, bool done) async {
     _localEditSeq++;
     await _flush();
@@ -1121,7 +1206,6 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     }
     setState(() => _slip = updated);
     widget.onChanged?.call();
-    if (done) await JadeSlipWake.notify(updated, '有一项已提交，等验收');
   }
 
   Future<void> _acceptItem(JadeSlip slip, JadeSlipItem item) async {
@@ -1163,7 +1247,6 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     }
     setState(() => _slip = updated);
     widget.onChanged?.call();
-    await JadeSlipWake.notify(updated, '有一项已验收');
   }
 
   Future<void> _addEvidence(JadeSlipItem item) async {
@@ -1238,7 +1321,12 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     }
     widget.onChanged?.call();
     if (updated == null) return;
-    await JadeSlipWake.notify(updated, '已把一项交给 ${picked.name}');
+    JadeSlipItem? assigned;
+    for (final e in updated.items) {
+      if (e.id == item.id) assigned = e;
+    }
+    await JadeSlipWake.notify(updated, '已把一项交给 ${picked.name}',
+        item: assigned);
   }
 
   Future<void> _returnItem(JadeSlipItem item) async {
@@ -1282,7 +1370,11 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     }
     widget.onChanged?.call();
     if (updated == null) return;
-    await JadeSlipWake.notify(updated, '有一项被退回');
+    JadeSlipItem? returned;
+    for (final e in updated.items) {
+      if (e.id == item.id) returned = e;
+    }
+    await JadeSlipWake.notify(updated, '有一项被退回', item: returned);
   }
 
   Future<void> _splitItem(JadeSlipItem item) async {
@@ -1296,6 +1388,29 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     widget.onChanged?.call();
     if (child == null) return; // 没拆成就别把用户带进一条不存在的简
     _openSlip(child.id);
+  }
+
+  /// 把一条 gap 拆成子简，并回到父简刷新。
+  Future<void> _splitGap(JadeSlipItem item, JadeSlipGap gap) async {
+    final updated = await _guardValue(
+      () => _service.splitGap(
+        id: widget.slipId,
+        itemId: item.id,
+        title: gap.text,
+      ),
+    );
+    if (updated == null || !mounted) return;
+    setState(() => _slip = updated);
+    widget.onChanged?.call();
+    for (final candidate in updated.items) {
+      if (candidate.id != item.id) continue;
+      for (final entry in candidate.gaps) {
+        if (entry.childSlipId.isNotEmpty && entry.text == gap.text) {
+          _openSlip(entry.childSlipId);
+          return;
+        }
+      }
+    }
   }
 
   void _openSlip(String slipId) {
@@ -1462,6 +1577,169 @@ class _ContractField extends StatelessWidget {
         contentPadding: const EdgeInsets.all(14),
       ),
       onChanged: (_) => onChanged(),
+    );
+  }
+}
+
+
+/// 覆盖式「当前结论」卡片。
+class _ConclusionCard extends StatelessWidget {
+  const _ConclusionCard({required this.conclusion});
+
+  final JadeSlipConclusion conclusion;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.flag_outlined, size: 16, color: scheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                '当前结论',
+                style: theme.textTheme.labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const Spacer(),
+              if (conclusion.submissionRev != null)
+                Text(
+                  'r${conclusion.submissionRev}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.primary,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            conclusion.text,
+            style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+          ),
+          if (conclusion.by.isNotEmpty || conclusion.at > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${conclusion.by} · ${_fmtStamp(conclusion.at)}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 清单项上的契约细节：验收标准 / 本次提交 / 未做项 / 取消原因。
+class _ContractDetails extends StatelessWidget {
+  const _ContractDetails({
+    required this.item,
+    this.onOpenChild,
+    this.onSplitGap,
+  });
+
+  final JadeSlipItem item;
+  final ValueChanged<String>? onOpenChild;
+  final ValueChanged<JadeSlipGap>? onSplitGap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final acceptance = item.acceptance;
+    final submission = item.submission;
+    final hasContent = acceptance != null ||
+        submission != null ||
+        item.gaps.isNotEmpty ||
+        item.cancelledReason.isNotEmpty;
+    if (!hasContent) return const SizedBox.shrink();
+    final small = theme.textTheme.bodySmall;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (acceptance != null && acceptance.criteria.isNotEmpty)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.rule_outlined, size: 14, color: scheme.primary),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    '验收标准：${acceptance.criteria.join('；')}'
+                    '${acceptance.isConfirmed ? '' : '（待确认）'}',
+                    style: small?.copyWith(color: scheme.primary),
+                  ),
+                ),
+              ],
+            ),
+          if (submission != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              '${item.state == JadeSlipItemState.submitted ? '本次提交' : '提交'} '
+              'r${submission.rev}：${submission.summary}',
+              style: small?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            if (submission.verify.isNotEmpty)
+              Text('验证：${submission.verify.join('；')}',
+                  style: small?.copyWith(color: scheme.onSurfaceVariant)),
+            if (submission.changed.isNotEmpty)
+              Text('改动：${submission.changed.join('、')}',
+                  style: small?.copyWith(color: scheme.onSurfaceVariant)),
+            if (submission.codeRefs.isNotEmpty)
+              Text('代码：${submission.codeRefs.join('、')}',
+                  style: small?.copyWith(color: scheme.onSurfaceVariant)),
+          ],
+          if (item.cancelledReason.isNotEmpty)
+            Text(
+              '已取消：${item.cancelledReason}',
+              style: small?.copyWith(color: scheme.error),
+            ),
+          for (final gap in item.gaps)
+            Row(
+              children: [
+                Icon(Icons.report_problem_outlined,
+                    size: 14, color: scheme.error),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text('未做：${gap.text}',
+                      style: small?.copyWith(color: scheme.error)),
+                ),
+                if (gap.childSlipId.isNotEmpty && onOpenChild != null)
+                  TextButton(
+                    onPressed: () => onOpenChild!(gap.childSlipId),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                    child: const Text('子简'),
+                  ),
+                if (gap.childSlipId.isEmpty && onSplitGap != null)
+                  TextButton(
+                    onPressed: () => onSplitGap!(gap),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                    child: const Text('转子简'),
+                  ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1722,11 +2000,13 @@ class _ChecklistRow extends StatefulWidget {
     this.onReturn,
     this.onEvidence,
     this.onSplit,
+    this.onSplitChild,
+    this.onGap,
     this.onEditComplete,
   });
 
   final JadeSlipItem item;
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<bool?>? onChanged;
   final VoidCallback onDelete;
   final ValueChanged<String> onRename;
 
@@ -1740,6 +2020,12 @@ class _ChecklistRow extends StatefulWidget {
   final VoidCallback? onReturn;
   final VoidCallback? onEvidence;
   final VoidCallback? onSplit;
+
+  /// 打开 gap 拆出来的子简。
+  final ValueChanged<String>? onSplitChild;
+
+  /// 把尚无子简的 gap 拆成子简。
+  final ValueChanged<JadeSlipGap>? onGap;
 
   /// 回车保存后回调（用于把焦点移到「添加一项」）。
   final VoidCallback? onEditComplete;
@@ -1834,7 +2120,7 @@ class _ChecklistRowState extends State<_ChecklistRow> {
               child: Checkbox(
                 value: item.state == JadeSlipItemState.accepted ||
                     item.state == JadeSlipItemState.submitted,
-                onChanged: (v) => widget.onChanged(v ?? false),
+                onChanged: widget.onChanged,
                 visualDensity: VisualDensity.compact,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(4),
@@ -1922,12 +2208,24 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                                   color: scheme.error,
                                 ),
                               ),
+                            if (item.returnReason.isNotEmpty)
+                              Text(
+                                '${l10n.jadeSlip_returnItem}：${item.returnReason}',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.error,
+                                ),
+                              ),
+                            _ContractDetails(
+                              item: item,
+                              onOpenChild: widget.onSplitChild,
+                              onSplitGap: widget.onGap,
+                            ),
                             for (final ref in item.evidence)
                               GestureDetector(
                                 onTap: () => StoreOpenService.instance
-                                    .openStoreUri(context, ref),
+                                    .openStoreUri(context, ref.uri),
                                 child: Text(
-                                  ref,
+                                  '${ref.displayName}${ref.versionLabel}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: theme.textTheme.bodySmall?.copyWith(
@@ -2131,9 +2429,10 @@ class _AddItemRow extends StatelessWidget {
 }
 
 class _CommentRow extends StatelessWidget {
-  const _CommentRow({required this.comment, this.onDelete});
+  const _CommentRow({required this.comment, this.itemLabel, this.onDelete});
 
   final JadeSlipComment comment;
+  final String? itemLabel;
 
   /// 只允许删自己写的评论，避免误删 Agent 的过程记录。
   final VoidCallback? onDelete;
@@ -2155,6 +2454,16 @@ class _CommentRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (itemLabel != null && itemLabel!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      itemLabel!,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ),
                 Row(
                   children: [
                     Flexible(
@@ -2340,6 +2649,62 @@ String _fmtDateTime(int ms) {
   final mm = d.minute.toString().padLeft(2, '0');
   return '${d.year}-${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')} $hh:$mm';
+}
+
+class _EventGroup {
+  _EventGroup(this.event, this.label);
+  final JadeSlipEvent event;
+  final String label;
+  int count = 1;
+}
+
+/// 按 (kind, 文案) 全局合并，不要求相邻：同一份证据挂到 6 项上会留 6 条
+/// 相同事件，中间夹着别的 item 的事件，只合并相邻是折不掉它们的。
+List<_EventGroup> _groupEvents(List<JadeSlipEvent> events) {
+  final groups = <_EventGroup>[];
+  final byKey = <String, _EventGroup>{};
+  for (final event in events) {
+    final label = _eventLabel(event);
+    final key = '${event.kind}\u0000$label';
+    final existing = byKey[key];
+    if (existing != null) {
+      existing.count++;
+    } else {
+      final group = _EventGroup(event, label);
+      byKey[key] = group;
+      groups.add(group);
+    }
+  }
+  return groups;
+}
+
+String _eventLabel(JadeSlipEvent event) {
+  if (event.kind != 'evidence') return event.text;
+  final uri = event.text.replaceFirst('附上证据 ', '').trim();
+  if (uri.isEmpty) return event.text;
+  final name = _evidenceName(uri);
+  return name == uri ? event.text : '附上证据 $name';
+}
+
+String _evidenceName(String ref) {
+  try {
+    return Uri.decodeComponent(Uri.parse(ref).pathSegments.last);
+  } catch (_) {
+    return ref;
+  }
+}
+
+String _commentItemLabel(JadeSlip slip, JadeSlipComment comment) {
+  if (comment.itemIds.length > 1) return '${comment.itemIds.length} 项';
+  final id = comment.itemId;
+  if (id.isEmpty) return '';
+  for (final item in slip.items) {
+    if (item.id == id) {
+      final text = item.text.trim();
+      return text.length > 18 ? '${text.substring(0, 18)}…' : text;
+    }
+  }
+  return '';
 }
 
 String _fmtDay(int ms) {
