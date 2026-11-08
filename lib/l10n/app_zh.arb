@@ -6137,5 +6137,36 @@
   "flow_runtimeOutputs": "结果输出",
   "flow_inputRequiredShort": "必填",
   "flow_headerNamesBlocked": "有名称为空或重复，这一组还没保存",
-  "flow_headerLimitsBlocked": "最多任务数或超时还不是有效值，运行限制还没保存"
+  "flow_headerLimitsBlocked": "最多任务数或超时还不是有效值，运行限制还没保存",
+  "flow_headerInputsHint": "开始运行时会请你填写这些",
+  "flow_headerTypeString": "文本",
+  "flow_headerTypeInt": "整数",
+  "flow_headerTypeBool": "是否",
+  "flow_headerTypeList": "列表",
+  "flow_headerUsedBy": "被 {count} 个步骤引用：{names}",
+  "@flow_headerUsedBy": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "names": {"type": "String"}
+    }
+  },
+  "flow_headerRoleUsedBy": "被 {count} 个步骤使用：{names}",
+  "@flow_headerRoleUsedBy": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "names": {"type": "String"}
+    }
+  },
+  "flow_headerDeleteRefs": "删除后这些步骤里的引用会失效：{names}",
+  "@flow_headerDeleteRefs": {
+    "placeholders": {
+      "names": {"type": "String"}
+    }
+  },
+  "flow_headerPreviewStart": "预览开跑对话框",
+  "flow_headerRoleDefault": "默认执行者",
+  "flow_headerClearDefault": "清除",
+  "flow_headerLimitsTitle": "运行限制",
+  "flow_headerNoLimit": "不限",
+  "flow_startPreviewBanner": "这是预览，不会真正开始运行"
 }

@@ -5699,5 +5699,36 @@
   "flow_runtimeOutputs": "Outputs",
   "flow_inputRequiredShort": "Required",
   "flow_headerNamesBlocked": "A name is empty or duplicated, so this group is not saved yet",
-  "flow_headerLimitsBlocked": "Max tasks or timeout is not a valid value, so the limit is not saved yet"
+  "flow_headerLimitsBlocked": "Max tasks or timeout is not a valid value, so the limit is not saved yet",
+  "flow_headerInputsHint": "You fill these in when the flow starts",
+  "flow_headerTypeString": "Text",
+  "flow_headerTypeInt": "Integer",
+  "flow_headerTypeBool": "Yes / no",
+  "flow_headerTypeList": "List",
+  "flow_headerUsedBy": "Used by {count} steps: {names}",
+  "@flow_headerUsedBy": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "names": {"type": "String"}
+    }
+  },
+  "flow_headerRoleUsedBy": "Used by {count} steps: {names}",
+  "@flow_headerRoleUsedBy": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "names": {"type": "String"}
+    }
+  },
+  "flow_headerDeleteRefs": "These steps will keep a broken reference: {names}",
+  "@flow_headerDeleteRefs": {
+    "placeholders": {
+      "names": {"type": "String"}
+    }
+  },
+  "flow_headerPreviewStart": "Preview the start form",
+  "flow_headerRoleDefault": "Default executor",
+  "flow_headerClearDefault": "Clear",
+  "flow_headerLimitsTitle": "Run limits",
+  "flow_headerNoLimit": "No limit",
+  "flow_startPreviewBanner": "Preview only. This will not start a run"
 }

@@ -315,3 +315,57 @@ List<String> refWarningsAfterMove(
 
   return warnings;
 }
+
+/// 哪些步骤用到了某个输入或角色。算不出来就给空表，调用方不显示、也不拦编辑。
+class FlowHeaderUsage {
+  FlowHeaderUsage._();
+
+  static Map<String, List<String>> inputs(List<FlowNode> tree) {
+    final out = <String, List<String>>{};
+    for (final node in _nodes(tree)) {
+      final text = _strings(node.fields).join('\n');
+      for (final match in RegExp(r'inputs\.([A-Za-z0-9_-]+)').allMatches(text)) {
+        final name = match.group(1)!;
+        final users = out[name] ??= <String>[];
+        if (node.id.isNotEmpty && !users.contains(node.id)) users.add(node.id);
+      }
+    }
+    return out;
+  }
+
+  static Map<String, List<String>> roles(List<FlowNode> tree) {
+    final out = <String, List<String>>{};
+    for (final node in _nodes(tree)) {
+      final task = node.fields?['task'];
+      final role = task is Map ? task['role']?.toString().trim() : null;
+      if (role == null || role.isEmpty || node.id.isEmpty) continue;
+      final users = out[role] ??= <String>[];
+      if (!users.contains(node.id)) users.add(node.id);
+    }
+    return out;
+  }
+
+  static List<FlowNode> _nodes(List<FlowNode> tree) {
+    final out = <FlowNode>[];
+    void walk(List<FlowNode> nodes) {
+      for (final node in nodes) {
+        out.add(node);
+        walk(node.children);
+      }
+    }
+
+    walk(tree);
+    return out;
+  }
+
+  static List<String> _strings(Object? value) {
+    if (value is String) return [value];
+    if (value is Map) {
+      return [for (final entry in value.values) ..._strings(entry)];
+    }
+    if (value is List) {
+      return [for (final item in value) ..._strings(item)];
+    }
+    return const [];
+  }
+}

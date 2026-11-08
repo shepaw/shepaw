@@ -45,6 +45,7 @@ Future<FlowStartPlan?> pushFlowStartScreen(
   Map<String, String> initialInputs = const {},
   Map<String, String> initialBindings = const {},
   Future<String?> Function()? onPickAgent,
+  bool preview = false,
 }) {
   return Navigator.of(context).push<FlowStartPlan>(
     MaterialPageRoute<FlowStartPlan>(
@@ -61,6 +62,7 @@ Future<FlowStartPlan?> pushFlowStartScreen(
         initialInputs: initialInputs,
         initialBindings: initialBindings,
         onPickAgent: onPickAgent,
+        preview: preview,
       ),
     ),
   );
@@ -81,6 +83,7 @@ class FlowStartScreen extends StatefulWidget {
     this.initialInputs = const {},
     this.initialBindings = const {},
     this.onPickAgent,
+    this.preview = false,
   });
 
   final String flowName;
@@ -110,6 +113,9 @@ class FlowStartScreen extends StatefulWidget {
   final Map<String, String> initialBindings;
 
   final Future<String?> Function()? onPickAgent;
+
+  /// 流程设置里的预览：表单只读，不会开始运行。
+  final bool preview;
 
   @override
   State<FlowStartScreen> createState() => _FlowStartScreenState();
@@ -200,6 +206,16 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
             children: [
               // 开跑确认：把「会真实调用 agent」和「演练不会」写在同一屏，
               // 别让人把两种播放按钮搞混。取消这一页不会产生任何运行。
+              if (widget.preview)
+                Card(
+                  key: const ValueKey('start-preview-banner'),
+                  color: scheme.secondaryContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(l10n.flow_startPreviewBanner),
+                  ),
+                )
+              else
               Card(
                 key: const ValueKey('start-confirm-banner'),
                 color: scheme.tertiaryContainer,
@@ -218,7 +234,7 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (widget.dirty) ...[
+              if (widget.dirty && !widget.preview) ...[
                 Card(
                   color: scheme.secondaryContainer,
                   child: Column(
@@ -247,6 +263,7 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
                   child: TextField(
                     key: ValueKey('start-input-${spec.name}'),
                     controller: _inputs[spec.name],
+                    readOnly: widget.preview,
                     keyboardType: spec.type == 'int'
                         ? TextInputType.number
                         : TextInputType.multiline,
@@ -297,7 +314,7 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
                     trailing: widget.rolesAutoBound
                         ? null
                         : const Icon(Icons.chevron_right),
-                    onTap: widget.rolesAutoBound
+                    onTap: widget.rolesAutoBound || widget.preview
                         ? null
                         : () async {
                             final picked = await widget.onPickAgent?.call();
@@ -334,14 +351,18 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: Text(l10n.common_cancel),
+                    child: Text(widget.preview
+                        ? l10n.flow_stepsDone
+                        : l10n.common_cancel),
                   ),
-                  const SizedBox(width: 12),
-                  FilledButton(
-                    key: const ValueKey('start-go'),
-                    onPressed: _submit,
-                    child: Text(l10n.flow_startGo),
-                  ),
+                  if (!widget.preview) ...[
+                    const SizedBox(width: 12),
+                    FilledButton(
+                      key: const ValueKey('start-go'),
+                      onPressed: _submit,
+                      child: Text(l10n.flow_startGo),
+                    ),
+                  ],
                 ],
               ),
             ],

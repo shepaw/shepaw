@@ -5,8 +5,11 @@ import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_editor_controller.dart';
 import '../../controllers/flow/flow_executor.dart';
+import '../../controllers/flow/flow_references.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
+import '../../screens/flow_start_screen.dart';
+import '../discard_changes_scope.dart';
 
 /// 流程设置：嵌在属性面板里，改动直接 `setHeaders`，没有「应用」按钮。
 class FlowHeaderForm extends StatefulWidget {
@@ -313,6 +316,16 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
           child: Text(l10n.flow_headerTitle,
               style: theme.textTheme.titleMedium),
         ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            widget.controller.name,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontFamily: 'monospace',
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
         if (widget.readOnly)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -334,67 +347,53 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                   onChanged: (_) => _schedule(),
                   onEditingComplete: _flushNow,
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _maxTasks,
-                        readOnly: widget.readOnly,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                            labelText: l10n.flow_headerMaxTasks,
-                            isDense: true),
-                        onChanged: (_) => _schedule(),
-                        onEditingComplete: _flushNow,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _timeout,
-                        readOnly: widget.readOnly,
-                        decoration: InputDecoration(
-                            labelText: l10n.flow_headerTimeout,
-                            hintText: '2h',
-                            isDense: true),
-                        onChanged: (_) => _schedule(),
-                        onEditingComplete: _flushNow,
-                      ),
-                    ),
-                  ],
-                ),
-                if (_limitsBlocked)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      l10n.flow_headerLimitsBlocked,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: scheme.error),
-                    ),
-                  ),
               ]),
               _section(l10n.flow_headerInputs, [
+                Text(l10n.flow_headerInputsHint,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant)),
                 if (_inputsBlocked)
                   Text(l10n.flow_headerNamesBlocked,
                       style: theme.textTheme.bodySmall
                           ?.copyWith(color: scheme.error)),
-                for (final row in _inputs) _inputRow(row, l10n),
-                _addRow(l10n.flow_headerAddInput, () => setState(() {
-                      _inputs.add(_InputRow(name: '', type: 'string', draft: true));
-                    })),
+                for (var i = 0; i < _inputs.length; i++)
+                  _inputCard(i, l10n),
+                _addRow(l10n.flow_headerAddInput, () {
+                  final row = _InputRow(
+                    name: '',
+                    type: 'string',
+                    draft: true,
+                    expanded: true,
+                  );
+                  setState(() => _inputs.add(row));
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) row.nameFocus.requestFocus();
+                  });
+                }),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    key: const ValueKey('header-preview-start'),
+                    onPressed: _previewStart,
+                    child: Text(l10n.flow_headerPreviewStart),
+                  ),
+                ),
               ]),
               _section(l10n.flow_headerRoles, [
                 if (_rolesBlocked)
                   Text(l10n.flow_headerNamesBlocked,
                       style: theme.textTheme.bodySmall
                           ?.copyWith(color: scheme.error)),
-                for (final row in _roles)
-                  _pairRow(row, l10n.flow_headerRoleName,
-                      l10n.flow_headerRoleDesc),
-                _addRow(l10n.flow_headerAddRole, () => setState(
-                    () => _roles.add(_PairRow('', '', draft: true)))),
+                for (var i = 0; i < _roles.length; i++) _roleCard(i, l10n),
+                _addRow(l10n.flow_headerAddRole, () {
+                  final row = _PairRow('', '', draft: true, expanded: true);
+                  setState(() => _roles.add(row));
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) row.nameFocus.requestFocus();
+                  });
+                }),
               ]),
+              _limitsSection(l10n, theme),
               _section(l10n.flow_headerOutputs, [
                 if (_outputsBlocked)
                   Text(l10n.flow_headerNamesBlocked,
@@ -439,11 +438,17 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
         ),
       );
 
-  Widget _pairRow(_PairRow row, String keyLabel, String valueLabel) => Row(
+  Widget _pairRow(
+    _PairRow row,
+    String keyLabel,
+    String valueLabel, {
+    Future<void> Function()? onDelete,
+  }) => Row(
         children: [
           Expanded(
             child: TextField(
               controller: row.key,
+              focusNode: row.nameFocus,
               readOnly: widget.readOnly,
               decoration:
                   InputDecoration(labelText: keyLabel, isDense: true),
@@ -467,6 +472,10 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
             onPressed: widget.readOnly
                 ? null
                 : () {
+                    if (onDelete != null) {
+                      unawaited(onDelete());
+                      return;
+                    }
                     setState(() {
                       row.draft = false;
                       _roles.remove(row);
@@ -480,9 +489,400 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
         ],
       );
 
-  Widget _inputRow(_InputRow row, AppLocalizations l10n) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(8),
+  Map<String, List<String>> get _inputUsers =>
+      FlowHeaderUsage.inputs(widget.tree);
+
+  Map<String, List<String>> get _roleUsers =>
+      FlowHeaderUsage.roles(widget.tree);
+
+  Future<void> _previewStart() {
+    final specs = [
+      for (final row in _inputs)
+        if (row.name.text.trim().isNotEmpty)
+          FlowInputSpec(
+            name: row.name.text.trim(),
+            type: row.type,
+            required: row.required,
+            defaultValue: row.defaultValue.text.trim().isEmpty
+                ? null
+                : row.defaultValue.text.trim(),
+          ),
+    ];
+    final roles = [
+      for (final row in _roles)
+        if (row.key.text.trim().isNotEmpty) row.key.text.trim(),
+    ];
+    final defaults = {
+      for (final row in _roles)
+        if (row.key.text.trim().isNotEmpty &&
+            (row.agentDefault?.isNotEmpty ?? false))
+          row.key.text.trim(): row.agentDefault!,
+    };
+    return pushFlowStartScreen(
+      context,
+      flowName: widget.controller.name,
+      yaml: widget.controller.yaml,
+      roles: roles,
+      roleDefaults: defaults,
+      inputSpecs: specs,
+      dirty: false,
+      scope: widget.controller.scope,
+      revision: widget.controller.revision,
+      onPickAgent: widget.onPickAgent,
+      preview: true,
+    );
+  }
+
+  Future<bool> _confirmDrop(String name, List<String> users) async {
+    if (name.isEmpty || users.isEmpty) return true;
+    final l10n = AppLocalizations.of(context);
+    final ok = await showConfirmDialog(
+      context,
+      title: l10n.common_delete,
+      message: l10n.flow_headerDeleteRefs(users.join(', ')),
+      confirmLabel: l10n.common_delete,
+    );
+    return ok == true;
+  }
+
+  void _moveInput(int index, int delta) {
+    final next = index + delta;
+    if (next < 0 || next >= _inputs.length) return;
+    setState(() {
+      final row = _inputs.removeAt(index);
+      _inputs.insert(next, row);
+    });
+    _schedule();
+  }
+
+  void _moveRole(int index, int delta) {
+    final next = index + delta;
+    if (next < 0 || next >= _roles.length) return;
+    setState(() {
+      final row = _roles.removeAt(index);
+      _roles.insert(next, row);
+    });
+    _schedule();
+  }
+
+  Widget _rowMenu({
+    required int index,
+    required int length,
+    required void Function(String action) onSelected,
+  }) {
+    final l10n = AppLocalizations.of(context);
+    return PopupMenuButton<String>(
+      enabled: !widget.readOnly,
+      onSelected: onSelected,
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'up',
+          enabled: index > 0,
+          child: Text(l10n.flow_outlineMoveUp),
+        ),
+        PopupMenuItem(
+          value: 'down',
+          enabled: index < length - 1,
+          child: Text(l10n.flow_outlineMoveDown),
+        ),
+        PopupMenuItem(value: 'delete', child: Text(l10n.common_delete)),
+      ],
+    );
+  }
+
+  bool _inputNameBad(_InputRow row) {
+    final name = row.name.text.trim();
+    if (row.draft && name.isEmpty) return false;
+    if (name.isEmpty) return true;
+    final same = [
+      for (final other in _inputs)
+        if (!other.draft || other.name.text.trim().isNotEmpty)
+          other.name.text.trim(),
+    ].where((item) => item == name);
+    return same.length > 1;
+  }
+
+  bool _roleNameBad(_PairRow row) {
+    final name = row.key.text.trim();
+    if (row.draft && name.isEmpty) return false;
+    if (name.isEmpty) return true;
+    final same = [
+      for (final other in _roles)
+        if (!other.draft || other.key.text.trim().isNotEmpty)
+          other.key.text.trim(),
+    ].where((item) => item == name);
+    return same.length > 1;
+  }
+
+  Widget _inputCard(int index, AppLocalizations l10n) {
+    final row = _inputs[index];
+    final name = row.name.text.trim();
+    final users = _inputUsers[name] ?? const <String>[];
+    final summary = name.isEmpty
+        ? l10n.flow_headerAddInput
+        : '$name · ${_inputTypeLabel(l10n, row.type)}'
+            '${row.required ? ' · ${l10n.flow_inputRequiredShort}' : ''}';
+    return Card(
+      color: _inputNameBad(row)
+          ? Theme.of(context).colorScheme.errorContainer
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            dense: true,
+            title: Text(summary),
+            subtitle: users.isEmpty
+                ? null
+                : Text(l10n.flow_headerUsedBy(users.length, users.join(', '))),
+            trailing: _rowMenu(
+              index: index,
+              length: _inputs.length,
+              onSelected: (action) async {
+                switch (action) {
+                  case 'up':
+                    _moveInput(index, -1);
+                  case 'down':
+                    _moveInput(index, 1);
+                  case 'delete':
+                    if (!await _confirmDrop(name, users) || !mounted) return;
+                    setState(() {
+                      row.draft = false;
+                      _inputs.remove(row);
+                    });
+                    _schedule();
+                    WidgetsBinding.instance
+                        .addPostFrameCallback((_) => row.dispose());
+                }
+              },
+            ),
+            onTap: () => setState(() => row.expanded = !row.expanded),
+          ),
+          if (row.expanded) _inputFields(row, l10n),
+        ],
+      ),
+    );
+  }
+
+  Widget _roleCard(int index, AppLocalizations l10n) {
+    final row = _roles[index];
+    final name = row.key.text.trim();
+    final users = _roleUsers[name] ?? const <String>[];
+    final agent = row.agentDefault?.trim() ?? '';
+    final summary = name.isEmpty
+        ? l10n.flow_headerAddRole
+        : agent.isEmpty
+            ? name
+            : '$name · $agent';
+    return Card(
+      color: _roleNameBad(row)
+          ? Theme.of(context).colorScheme.errorContainer
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            dense: true,
+            title: Text(summary),
+            subtitle: users.isEmpty
+                ? null
+                : Text(
+                    l10n.flow_headerRoleUsedBy(users.length, users.join(', '))),
+            trailing: _rowMenu(
+              index: index,
+              length: _roles.length,
+              onSelected: (action) async {
+                switch (action) {
+                  case 'up':
+                    _moveRole(index, -1);
+                  case 'down':
+                    _moveRole(index, 1);
+                  case 'delete':
+                    if (!await _confirmDrop(name, users) || !mounted) return;
+                    setState(() {
+                      row.draft = false;
+                      _roles.remove(row);
+                    });
+                    _schedule();
+                    WidgetsBinding.instance
+                        .addPostFrameCallback((_) => row.dispose());
+                }
+              },
+            ),
+            onTap: () => setState(() => row.expanded = !row.expanded),
+          ),
+          if (row.expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _pairRow(
+                    row,
+                    l10n.flow_headerRoleName,
+                    l10n.flow_headerRoleDesc,
+                    onDelete: () async {
+                      if (!await _confirmDrop(name, users) || !mounted) return;
+                      setState(() {
+                        row.draft = false;
+                        _roles.remove(row);
+                      });
+                      _schedule();
+                      WidgetsBinding.instance
+                          .addPostFrameCallback((_) => row.dispose());
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: widget.readOnly ||
+                                  widget.onPickAgent == null
+                              ? null
+                              : () async {
+                                  final picked =
+                                      await widget.onPickAgent!.call();
+                                  if (picked == null || !mounted) return;
+                                  setState(() => row.agentDefault = picked);
+                                  _schedule();
+                                },
+                          child: Text(
+                            agent.isEmpty
+                                ? l10n.flow_headerRoleDefault
+                                : agent,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      if (agent.isNotEmpty)
+                        TextButton(
+                          onPressed: widget.readOnly
+                              ? null
+                              : () {
+                                  setState(() => row.agentDefault = '');
+                                  _schedule();
+                                },
+                          child: Text(l10n.flow_headerClearDefault),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _limitsSection(AppLocalizations l10n, ThemeData theme) {
+    final tasks = _maxTasks.text.trim();
+    final timeout = _timeout.text.trim();
+    final summary =
+        '${tasks.isEmpty ? l10n.flow_headerNoLimit : tasks} · ${timeout.isEmpty ? l10n.flow_headerNoLimit : timeout}';
+    return ExpansionTile(
+      tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+      title: Text(l10n.flow_headerLimitsTitle),
+      subtitle: Text(summary, style: theme.textTheme.bodySmall),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _maxTasks,
+                readOnly: widget.readOnly,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                    labelText: l10n.flow_headerMaxTasks, isDense: true),
+                onChanged: (_) => _schedule(),
+                onEditingComplete: _flushNow,
+              ),
+              const SizedBox(height: 8),
+              _timeoutEditor(l10n),
+              if (_limitsBlocked)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    l10n.flow_headerLimitsBlocked,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.error),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _timeoutEditor(AppLocalizations l10n) {
+    final match =
+        RegExp(r'^(\d+)\s*([smh])$').firstMatch(_timeout.text.trim());
+    final legacy = _timeout.text.trim().isNotEmpty && match == null;
+    if (legacy) {
+      return TextField(
+        controller: _timeout,
+        readOnly: widget.readOnly,
+        decoration: InputDecoration(
+            labelText: l10n.flow_headerTimeout, hintText: '2h', isDense: true),
+        onChanged: (_) => _schedule(),
+        onEditingComplete: _flushNow,
+      );
+    }
+    final amount = match?.group(1) ?? '';
+    final unit = match?.group(2) ?? 's';
+    String label(String value) => switch (value) {
+          'm' => l10n.flow_durationMinutes,
+          'h' => l10n.flow_durationHours,
+          _ => l10n.flow_durationSeconds,
+        };
+    return Row(
+      children: [
+        Expanded(
+          child: TextFormField(
+            key: ValueKey('header-timeout-$amount-$unit'),
+            initialValue: amount,
+            readOnly: widget.readOnly,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+                labelText: l10n.flow_headerTimeout, isDense: true),
+            onChanged: (text) {
+              final raw = text.trim();
+              final n = int.tryParse(raw);
+              _timeout.text =
+                  raw.isEmpty ? '' : (n != null && n > 0 ? '$n$unit' : raw);
+              _schedule();
+            },
+            onEditingComplete: _flushNow,
+          ),
+        ),
+        const SizedBox(width: 8),
+        DropdownButton<String>(
+          value: unit,
+          items: [
+            for (final value in ['s', 'm', 'h'])
+              DropdownMenuItem(value: value, child: Text(label(value))),
+          ],
+          onChanged: widget.readOnly
+              ? null
+              : (value) {
+                  if (value == null) return;
+                  final n = int.tryParse(amount);
+                  setState(() {
+                    _timeout.text =
+                        n != null && n > 0 ? '$n$value' : amount;
+                  });
+                  _schedule();
+                },
+        ),
+      ],
+    );
+  }
+
+  Widget _inputFields(_InputRow row, AppLocalizations l10n) => Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
           child: Column(
             children: [
               Row(
@@ -490,6 +890,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                   Expanded(
                     child: TextField(
                       controller: row.name,
+                      focusNode: row.nameFocus,
                       readOnly: widget.readOnly,
                       decoration: InputDecoration(
                           labelText: l10n.flow_headerInputName,
@@ -510,7 +911,9 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                       items: [
                         for (final type in _inputTypeChoices(row.type))
                           DropdownMenuItem<String>(
-                              value: type, child: Text(type)),
+                            value: type,
+                            child: Text(_inputTypeLabel(l10n, type)),
+                          ),
                       ],
                       onChanged: widget.readOnly
                           ? null
@@ -564,34 +967,51 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
               ),
             ],
           ),
-        ),
-      );
+        );
 }
 
 /// roles / outputs 的一行。`original` 留住原始值，没编辑过的行原样写回，
 /// 免得把 `desc`、额外键、非字符串值抹掉。
 class _PairRow {
-  _PairRow(String key, String value, {this.original, this.draft = false})
-      : key = TextEditingController(text: key),
-        value = TextEditingController(text: value);
+  _PairRow(
+    String key,
+    String value, {
+    this.original,
+    this.draft = false,
+    this.expanded = false,
+    this.agentDefault,
+  })  : key = TextEditingController(text: key),
+        value = TextEditingController(text: value),
+        nameFocus = FocusNode();
 
   /// 刚加出来、还没起名的行。空名称不参与「不能提交」的判断。
   bool draft = false;
+  bool expanded;
+
+  /// 角色的默认执行者。空字符串表示用户清掉了。
+  String? agentDefault;
 
   _PairRow.from(String key, Object? raw)
       : original = raw,
+        expanded = false,
+        agentDefault = raw is Map ? raw['default']?.toString() : null,
         key = TextEditingController(text: key),
-        value = TextEditingController(text: _display(raw));
+        value = TextEditingController(text: _display(raw)),
+        nameFocus = FocusNode();
 
   _PairRow.forRole(String key, Object? raw)
       : original = raw,
+        expanded = false,
+        agentDefault = raw is Map ? raw['default']?.toString() : null,
         key = TextEditingController(text: key),
         value = TextEditingController(
           text: raw is Map ? (raw['desc']?.toString() ?? '') : '',
-        );
+        ),
+        nameFocus = FocusNode();
 
   final TextEditingController key;
   final TextEditingController value;
+  final FocusNode nameFocus;
   final Object? original;
 
   static String _display(Object? raw) =>
@@ -606,6 +1026,12 @@ class _PairRow {
       out.remove('desc');
     } else {
       out['desc'] = value.text.trim();
+    }
+    final agent = agentDefault?.trim() ?? '';
+    if (agent.isEmpty) {
+      out.remove('default');
+    } else {
+      out['default'] = agent;
     }
     return out;
   }
@@ -622,6 +1048,7 @@ class _PairRow {
   void dispose() {
     key.dispose();
     value.dispose();
+    nameFocus.dispose();
   }
 }
 
@@ -638,25 +1065,31 @@ class _InputRow {
     required this.type,
     this.required = false,
     this.draft = false,
+    this.expanded = false,
     String defaultText = '',
     this.original,
   })  : name = TextEditingController(text: name),
-       defaultValue = TextEditingController(text: defaultText);
+        defaultValue = TextEditingController(text: defaultText),
+        nameFocus = FocusNode();
 
   /// 刚加出来、还没起名的行。
   bool draft = false;
+  bool expanded;
 
   _InputRow.from(String key, Object? raw)
       : original = raw is Map ? Map<String, dynamic>.from(raw) : null,
         type = _typeOf(raw),
         required = raw is Map && raw['required'] == true,
+        expanded = false,
         name = TextEditingController(text: key),
         defaultValue = TextEditingController(
           text: raw is Map ? raw['default']?.toString() ?? '' : '',
-        );
+        ),
+        nameFocus = FocusNode();
 
   final TextEditingController name;
   final TextEditingController defaultValue;
+  final FocusNode nameFocus;
   final Map<String, dynamic>? original;
   String type;
   bool required;
@@ -693,5 +1126,14 @@ class _InputRow {
   void dispose() {
     name.dispose();
     defaultValue.dispose();
+    nameFocus.dispose();
   }
 }
+
+String _inputTypeLabel(AppLocalizations l10n, String type) => switch (type) {
+      'int' => l10n.flow_headerTypeInt,
+      'bool' => l10n.flow_headerTypeBool,
+      'list' => l10n.flow_headerTypeList,
+      'string' => l10n.flow_headerTypeString,
+      _ => type,
+    };

@@ -329,4 +329,31 @@ void main() {
       expect(refWarningsAfterMove(tree, 'x', elseEnd), isEmpty);
     });
   });
+
+  test('输入和角色的引用按步骤列出来', () {
+    final tree = [
+      FlowNode(
+        key: 'build',
+        id: 'build',
+        kind: 'task',
+        fields: {
+          'task': {
+            'role': 'reviewer',
+            'prompt': '发布 {{ inputs.version }}',
+          },
+        },
+      ),
+      FlowNode(
+        key: 'tag',
+        id: 'tag',
+        kind: 'task',
+        fields: {
+          'task': {'prompt': '{{ inputs.version }} 打标签'},
+        },
+      ),
+    ];
+    expect(FlowHeaderUsage.inputs(tree)['version'], ['build', 'tag']);
+    expect(FlowHeaderUsage.roles(tree)['reviewer'], ['build']);
+    expect(FlowHeaderUsage.inputs(tree)['missing'], isNull);
+  });
 }

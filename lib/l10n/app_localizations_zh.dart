@@ -10187,4 +10187,52 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_headerLimitsBlocked => '最多任务数或超时还不是有效值，运行限制还没保存';
+
+  @override
+  String get flow_headerInputsHint => '开始运行时会请你填写这些';
+
+  @override
+  String get flow_headerTypeString => '文本';
+
+  @override
+  String get flow_headerTypeInt => '整数';
+
+  @override
+  String get flow_headerTypeBool => '是否';
+
+  @override
+  String get flow_headerTypeList => '列表';
+
+  @override
+  String flow_headerUsedBy(int count, String names) {
+    return '被 $count 个步骤引用：$names';
+  }
+
+  @override
+  String flow_headerRoleUsedBy(int count, String names) {
+    return '被 $count 个步骤使用：$names';
+  }
+
+  @override
+  String flow_headerDeleteRefs(String names) {
+    return '删除后这些步骤里的引用会失效：$names';
+  }
+
+  @override
+  String get flow_headerPreviewStart => '预览开跑对话框';
+
+  @override
+  String get flow_headerRoleDefault => '默认执行者';
+
+  @override
+  String get flow_headerClearDefault => '清除';
+
+  @override
+  String get flow_headerLimitsTitle => '运行限制';
+
+  @override
+  String get flow_headerNoLimit => '不限';
+
+  @override
+  String get flow_startPreviewBanner => '这是预览，不会真正开始运行';
 }

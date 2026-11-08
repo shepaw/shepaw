@@ -10597,4 +10597,53 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get flow_headerLimitsBlocked =>
       'Max tasks or timeout is not a valid value, so the limit is not saved yet';
+
+  @override
+  String get flow_headerInputsHint => 'You fill these in when the flow starts';
+
+  @override
+  String get flow_headerTypeString => 'Text';
+
+  @override
+  String get flow_headerTypeInt => 'Integer';
+
+  @override
+  String get flow_headerTypeBool => 'Yes / no';
+
+  @override
+  String get flow_headerTypeList => 'List';
+
+  @override
+  String flow_headerUsedBy(int count, String names) {
+    return 'Used by $count steps: $names';
+  }
+
+  @override
+  String flow_headerRoleUsedBy(int count, String names) {
+    return 'Used by $count steps: $names';
+  }
+
+  @override
+  String flow_headerDeleteRefs(String names) {
+    return 'These steps will keep a broken reference: $names';
+  }
+
+  @override
+  String get flow_headerPreviewStart => 'Preview the start form';
+
+  @override
+  String get flow_headerRoleDefault => 'Default executor';
+
+  @override
+  String get flow_headerClearDefault => 'Clear';
+
+  @override
+  String get flow_headerLimitsTitle => 'Run limits';
+
+  @override
+  String get flow_headerNoLimit => 'No limit';
+
+  @override
+  String get flow_startPreviewBanner =>
+      'Preview only. This will not start a run';
 }

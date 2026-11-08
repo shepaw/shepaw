@@ -18538,6 +18538,90 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'最多任务数或超时还不是有效值，运行限制还没保存'**
   String get flow_headerLimitsBlocked;
+
+  /// No description provided for @flow_headerInputsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始运行时会请你填写这些'**
+  String get flow_headerInputsHint;
+
+  /// No description provided for @flow_headerTypeString.
+  ///
+  /// In zh, this message translates to:
+  /// **'文本'**
+  String get flow_headerTypeString;
+
+  /// No description provided for @flow_headerTypeInt.
+  ///
+  /// In zh, this message translates to:
+  /// **'整数'**
+  String get flow_headerTypeInt;
+
+  /// No description provided for @flow_headerTypeBool.
+  ///
+  /// In zh, this message translates to:
+  /// **'是否'**
+  String get flow_headerTypeBool;
+
+  /// No description provided for @flow_headerTypeList.
+  ///
+  /// In zh, this message translates to:
+  /// **'列表'**
+  String get flow_headerTypeList;
+
+  /// No description provided for @flow_headerUsedBy.
+  ///
+  /// In zh, this message translates to:
+  /// **'被 {count} 个步骤引用：{names}'**
+  String flow_headerUsedBy(int count, String names);
+
+  /// No description provided for @flow_headerRoleUsedBy.
+  ///
+  /// In zh, this message translates to:
+  /// **'被 {count} 个步骤使用：{names}'**
+  String flow_headerRoleUsedBy(int count, String names);
+
+  /// No description provided for @flow_headerDeleteRefs.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除后这些步骤里的引用会失效：{names}'**
+  String flow_headerDeleteRefs(String names);
+
+  /// No description provided for @flow_headerPreviewStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'预览开跑对话框'**
+  String get flow_headerPreviewStart;
+
+  /// No description provided for @flow_headerRoleDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认执行者'**
+  String get flow_headerRoleDefault;
+
+  /// No description provided for @flow_headerClearDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除'**
+  String get flow_headerClearDefault;
+
+  /// No description provided for @flow_headerLimitsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行限制'**
+  String get flow_headerLimitsTitle;
+
+  /// No description provided for @flow_headerNoLimit.
+  ///
+  /// In zh, this message translates to:
+  /// **'不限'**
+  String get flow_headerNoLimit;
+
+  /// No description provided for @flow_startPreviewBanner.
+  ///
+  /// In zh, this message translates to:
+  /// **'这是预览，不会真正开始运行'**
+  String get flow_startPreviewBanner;
 }
 
 class _AppLocalizationsDelegate
