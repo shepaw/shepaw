@@ -67,6 +67,21 @@ void main() {
     expect(value, {'n': '{{ inputs.goal }}'});
   });
 
+  testWidgets('时长写成 0 不当成清空', (tester) async {
+    Object? value = 'unset';
+    await _pump(
+      tester,
+      FlowFieldEditor(
+        spec: _spec('limits.timeout', FlowFieldShape.duration),
+        current: '30s',
+        onChanged: (v) => value = v,
+      ),
+    );
+    await tester.enterText(find.byKey(const ValueKey('f:limits.timeout')), '0');
+    await tester.pump();
+    expect(value, '0');
+  });
+
   testWidgets('mapOf 重名时不把两行收成一个值', (tester) async {
     Object? value;
     await _pump(

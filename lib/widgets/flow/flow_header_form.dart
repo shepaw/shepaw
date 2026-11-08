@@ -508,7 +508,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                           labelText: l10n.flow_headerInputType,
                           isDense: true),
                       items: [
-                        for (final type in ['string', 'int', 'bool', 'list'])
+                        for (final type in _inputTypeChoices(row.type))
                           DropdownMenuItem<String>(
                               value: type, child: Text(type)),
                       ],
@@ -625,6 +625,13 @@ class _PairRow {
   }
 }
 
+const _knownInputTypes = ['string', 'int', 'bool', 'list'];
+
+List<String> _inputTypeChoices(String type) => [
+      ..._knownInputTypes,
+      if (!_knownInputTypes.contains(type)) type,
+    ];
+
 class _InputRow {
   _InputRow({
     required String name,
@@ -641,7 +648,7 @@ class _InputRow {
 
   _InputRow.from(String key, Object? raw)
       : original = raw is Map ? Map<String, dynamic>.from(raw) : null,
-        type = raw is Map ? (raw['type']?.toString() ?? 'string') : 'string',
+        type = _typeOf(raw),
         required = raw is Map && raw['required'] == true,
         name = TextEditingController(text: key),
         defaultValue = TextEditingController(
@@ -663,16 +670,24 @@ class _InputRow {
     } else {
       out.remove('required');
     }
-    if (defaultValue.text.trim().isEmpty) {
+    final text = defaultValue.text.trim();
+    if (text.isEmpty) {
       out.remove('default');
-    } else if (original?['default'] is num) {
-      // 原来是数字，用户没改就别把它变成字符串。
-      final n = num.tryParse(defaultValue.text.trim());
-      out['default'] = n ?? defaultValue.text.trim();
     } else {
-      out['default'] = defaultValue.text.trim();
+      // 没改过的 bool / 列表要原样写回。这里若压成字符串，
+      // 改一下简介就会把整个 inputs 带出去，默认值类型就变了。
+      out['default'] =
+          flowInputDefaultForForm(original?['default'], text, type);
     }
     return out;
+  }
+
+  static String _typeOf(Object? raw) {
+    final type = raw is Map ? (raw['type']?.toString().trim() ?? '') : '';
+    if (type.isEmpty) return 'string';
+    // 主机把 array 当成 list 的别名。下拉里没有 array，会直接断言。
+    if (type == 'array') return 'list';
+    return type;
   }
 
   void dispose() {

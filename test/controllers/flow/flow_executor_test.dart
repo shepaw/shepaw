@@ -273,4 +273,14 @@ steps:
     expect(FlowHeaderPeek.outputs('flow: x\n'), isEmpty);
     expect(FlowHeaderPeek.limits('::: not yaml').maxTasks, 0);
   });
+
+  test('没改过的输入默认值保持原来的类型', () {
+    expect(flowInputDefaultForForm(true, 'true', 'bool'), isTrue);
+    expect(flowInputDefaultForForm(false, 'false', 'bool'), isFalse);
+    expect(flowInputDefaultForForm(['a', 'b'], '[a, b]', 'list'), ['a', 'b']);
+    expect(flowInputDefaultForForm(3, '3', 'int'), 3);
+    expect(flowInputDefaultForForm(true, 'false', 'bool'), isFalse);
+    expect(flowInputDefaultForForm(3, '4', 'int'), 4);
+    expect(flowInputDefaultForForm(3, '', 'int'), isNull);
+  });
 }

@@ -272,6 +272,26 @@ class FlowHeaderPeek {
   }
 }
 
+/// 输入框里的默认值写回 YAML。
+///
+/// 字没改过就返回 [previous]，bool、列表、数字都保持原来的类型。
+/// 空字符串返回 null，调用方删掉这个键。
+Object? flowInputDefaultForForm(Object? previous, String text, String type) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return null;
+  if (previous != null && trimmed == previous.toString()) return previous;
+  switch (type) {
+    case 'int':
+      return num.tryParse(trimmed) ?? trimmed;
+    case 'bool':
+      if (trimmed == 'true') return true;
+      if (trimmed == 'false') return false;
+      return trimmed;
+    default:
+      return trimmed;
+  }
+}
+
 /// 只读地看一眼定义头里的 `inputs`，用来生成开跑表单。
 ///
 /// 和 [peekRoles] 一样：只读不写，读不动就给空列表。

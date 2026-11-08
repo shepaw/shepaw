@@ -389,10 +389,10 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         } else {
           final raw = _scalar.text.trim();
           final amount = int.tryParse(raw);
-          if (raw.isEmpty || (amount != null && amount <= 0)) {
+          if (raw.isEmpty) {
             value = null;
-          } else if (amount == null) {
-            // 数字框里写了非数字：把原文交回去标红，别当成「清空」。
+          } else if (amount == null || amount <= 0) {
+            // 0 和负数不是一段时长。交原文标红，别把原来的 30s 删掉。
             value = raw;
           } else {
             value = '$amount$_durationUnit';
