@@ -106,6 +106,36 @@ void main() {
     expect(find.text('🦊'), findsOneWidget);
   });
 
+  testWidgets('点 Agent 直接选人，父级刷新不会把还没写回的选择清掉', (tester) async {
+    final fake = _FakeChoices(_models());
+    Map<String, Object?>? applied;
+    final fields = {
+      'task': {'prompt': '写'},
+    };
+    Widget page() => _inspector(
+          fields: fields,
+          bundle: fake.bundle,
+          fake: fake,
+          onApply: (ops) => applied = ops,
+          onPickAgent: () async => 'agent-y',
+          agentOf: (id) => id == 'agent-y'
+              ? const FlowAgentFace(name: '审稿', avatar: '🦊')
+              : null,
+        );
+    await tester.pumpWidget(page());
+    await _settle(tester);
+
+    await tester.tap(find.byKey(const ValueKey('exec-agent')));
+    await _settle(tester);
+    expect(applied?['task.agent'], 'agent-y');
+    expect(find.text('审稿'), findsOneWidget);
+
+    await tester.pumpWidget(page());
+    await _settle(tester);
+    expect(find.text('审稿'), findsOneWidget);
+    expect(find.text('先选择执行者'), findsNothing);
+  });
+
   testWidgets('换 agent 会重新拉模型并清空已选的 model', (tester) async {
     final fake = _FakeChoices(_models());
     Map<String, Object?>? applied;

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_executor.dart';
@@ -73,11 +75,10 @@ class FlowExecutorField extends StatelessWidget {
               key: const ValueKey('exec-agent'),
               label: Text(l10n.flow_executorAgent),
               selected: selected.mode == FlowExecutorMode.agent,
-              onSelected: (_) => onChanged(FlowExecutor.agent(
-                selected.mode == FlowExecutorMode.agent
-                    ? (selected.value ?? '')
-                    : '',
-              )),
+              // 空 id 主机不收，选中态会被刷掉，选择器也就打不开。点这里直接选人。
+              onSelected: onPickAgent == null
+                  ? null
+                  : (_) => unawaited(_chooseAgent()),
             ),
             ChoiceChip(
               key: const ValueKey('exec-she'),
@@ -108,6 +109,12 @@ class FlowExecutorField extends StatelessWidget {
   }
 
   String _firstRole() => roles.isEmpty ? '' : roles.first;
+
+  Future<void> _chooseAgent() async {
+    final picked = await onPickAgent?.call();
+    if (picked == null || picked.isEmpty) return;
+    onChanged(FlowExecutor.agent(picked));
+  }
 }
 
 class _AgentTile extends StatelessWidget {
@@ -122,6 +129,12 @@ class _AgentTile extends StatelessWidget {
   final FlowAgentFace? Function(String id)? agentOf;
   final Future<String?> Function()? onPickAgent;
   final void Function(FlowExecutor executor) onChanged;
+
+  Future<void> _choose() async {
+    final picked = await onPickAgent?.call();
+    if (picked == null || picked.isEmpty) return;
+    onChanged(FlowExecutor.agent(picked));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -153,11 +166,7 @@ class _AgentTile extends StatelessWidget {
         ),
       ),
       trailing: const Icon(Icons.chevron_right),
-      onTap: () async {
-        final picked = await onPickAgent?.call();
-        if (picked == null || picked.isEmpty || !context.mounted) return;
-        onChanged(FlowExecutor.agent(picked));
-      },
+      onTap: onPickAgent == null ? null : () => unawaited(_choose()),
     );
   }
 }

@@ -399,9 +399,13 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     _specs = _collect(widget.node);
     _syncChoiceSeed('task.model', model: true);
     _syncChoiceSeed('task.mode', model: false);
-    if (!_sameExecutor(FlowExecutor.of(widget.node.fields), _executor)) {
-      // 外部撤销把执行者改回去了，而用户没在改这个控件。
-      _executor = FlowExecutor.of(widget.node.fields);
+    final fromNode = FlowExecutor.of(widget.node.fields);
+    final previous = FlowExecutor.of(oldWidget.node.fields);
+    // 只在节点上的执行者变了时才跟上（撤销、主机回包）。父级因别的通知
+    // 重建时字段还是旧的，不能把刚选中、还没写回去的 Agent 清掉。
+    if (!_sameExecutor(previous, fromNode) &&
+        !_sameExecutor(fromNode, _executor)) {
+      _executor = fromNode;
     }
   }
 
