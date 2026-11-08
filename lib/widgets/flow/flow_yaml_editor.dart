@@ -48,13 +48,48 @@ class FlowYamlEditor extends StatefulWidget {
 class _FlowYamlEditorState extends State<FlowYamlEditor> {
   late final TextEditingController _field =
       TextEditingController(text: widget.yaml);
+
+  /// 上次从外部草稿灌进来的文本。输入框还等于它，说明人没在源码里改过。
+  /// 不能用 `late` 字段初始化：那要等到第一次读取才执行，读到的会是更新后的 yaml。
+  late String _seeded;
+  String? _pendingSeed;
   FlowValidation? _checked;
   bool _checking = false;
   bool _applying = false;
 
   @override
+  void didUpdateWidget(covariant FlowYamlEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.yaml == _seeded) return;
+    // 源码里已经有人改过的字，不能用后到的草稿盖掉。
+    if (_field.text != _seeded) return;
+    // 等这一帧画完再改控制器，避免父组件重建时把输入框标脏。
+    _pendingSeed = widget.yaml;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _applyPendingSeed());
+  }
+
+  void _applyPendingSeed() {
+    final next = _pendingSeed;
+    if (next == null || !mounted) return;
+    if (_field.text != _seeded) {
+      _pendingSeed = null;
+      return;
+    }
+    _pendingSeed = null;
+    _seeded = next;
+    final selection = _field.selection;
+    _field.value = TextEditingValue(
+      text: next,
+      selection: selection.isValid && selection.end <= next.length
+          ? selection
+          : TextSelection.collapsed(offset: next.length),
+    );
+  }
+
+  @override
   void initState() {
     super.initState();
+    _seeded = widget.yaml;
     _field.addListener(_notifyChanged);
   }
 
@@ -81,10 +116,13 @@ class _FlowYamlEditorState extends State<FlowYamlEditor> {
 
   Future<void> _apply() async {
     final validate = widget.validate;
+    // 人没改过时，框里可能还是上一帧的草稿。发出去的要用现在这份。
+    final untouched = _field.text == _seeded;
+    final text = untouched ? widget.yaml : _field.text;
     setState(() => _applying = true);
     FlowValidation? checked;
     if (validate != null) {
-      checked = await validate(_field.text);
+      checked = await validate(text);
     }
     if (!mounted) return;
     setState(() => _applying = false);
@@ -100,7 +138,7 @@ class _FlowYamlEditorState extends State<FlowYamlEditor> {
         return;
       }
     }
-    widget.onApply?.call(_field.text, checked);
+    widget.onApply?.call(text, checked);
   }
 
   void _snack(String text) =>

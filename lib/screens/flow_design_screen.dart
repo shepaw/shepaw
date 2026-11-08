@@ -452,6 +452,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   void _locate(FlowDiagnosticTarget target) {
     switch (target) {
       case NodeTarget(:final nodeId):
+        if (!_confirmHeaderLeave()) return;
         if (!_confirmLeave()) return;
         setState(() {
           // 祖先都展开，否则目标还折叠着看不见。
@@ -511,6 +512,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   void _addAfter(FlowOutlineRow row) {
     if (!_confirmHeaderLeave()) return;
+    _addAfterNow(row);
+  }
+
+  void _addAfterNow(FlowOutlineRow row) {
     unawaited(_controller.applyOps([
       FlowOutlineOps.insertAfter(row, _newStep()),
     ]));
@@ -650,6 +655,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   /// 载入某一版当草稿：走和源码「用这份」一样的校验 + 采纳路径，树和诊断一起换。
   Future<void> _openHistory() async {
+    if (!_confirmHeaderLeave()) return;
+    if (!_confirmLeave()) return;
     final choice = await showFlowHistorySheet(
       context,
       client: _controller.client,
@@ -666,7 +673,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   }
 
   Future<void> _rowMenu(FlowOutlineRow row, {Offset? position}) async {
-    if (!_confirmHeaderLeave()) return;
     final choice = await showFlowOutlineMenu(
       context,
       row: row,
@@ -681,10 +687,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     FlowOutlineRow row,
     FlowOutlineMenuChoice choice,
   ) async {
+    if (!_confirmHeaderLeave()) return;
     final step = _newStep;
     switch (choice.action) {
       case FlowOutlineMenuAction.insertAfter:
-        _addAfter(row);
+        _addAfterNow(row);
       case FlowOutlineMenuAction.insertChild:
         await _controller.applyOps([
           FlowOutlineOps.insertChild(row.node, step(), branch: choice.branch),
@@ -702,7 +709,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       case FlowOutlineMenuAction.retype:
         await _controller.applyOps([FlowOutlineOps.retype(row, choice.kind!)]);
       case FlowOutlineMenuAction.delete:
-        await _delete(row);
+        await _deleteNow(row);
       case FlowOutlineMenuAction.moveIntoPrevious:
         await _controller.applyOps([FlowOutlineOps.moveIntoPrevious(row)]);
       case FlowOutlineMenuAction.wrapWithPrevious:
@@ -722,6 +729,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   Future<void> _delete(FlowOutlineRow row) async {
     if (!_confirmHeaderLeave()) return;
+    await _deleteNow(row);
+  }
+
+  Future<void> _deleteNow(FlowOutlineRow row) async {
     final l10n = AppLocalizations.of(context);
     final ok = await showConfirmDialog(
       context,
@@ -845,6 +856,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   void _toggleSelected(FlowNode node) {
     if (_controller.busy) return;
+    // 第二项选中会把属性面板换成多选摘要，表单跟着卸掉。
+    final adding = !_selected.contains(node.id);
+    if (adding && _selected.length == 1) {
+      if (!_confirmHeaderLeave()) return;
+      if (!_confirmLeave()) return;
+    }
     setState(() {
       if (!_selected.add(node.id)) _selected.remove(node.id);
     });
@@ -1621,6 +1638,20 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     );
   }
 
+  /// 源码页点「应用」。人没改过源码时，文本还是面板打开时的那一版，
+  /// 不能在 flush 之后再套回去，否则会把后来的字段改动清掉。
+  Future<void> _applySource(String edited, FlowValidation? checked) async {
+    if (!_confirmHeaderLeave()) return;
+    if (!_confirmLeave()) return;
+    final c = _controller;
+    final before = c.yaml;
+    if (!await c.flush()) return;
+    if (!mounted) return;
+    setState(() => _panelOpen = false);
+    if (edited == before || edited == c.yaml) return;
+    await c.applySource(edited, checked);
+  }
+
   Widget _sourcePage(AppLocalizations l10n, ThemeData theme) {
     final c = _controller;
     final editable = canEdit && MediaQuery.of(context).size.width >= 900;
@@ -1644,10 +1675,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               readOnly: !editable,
               validate: (text) => c.client.validate(widget.peerId, text),
               applyLabel: l10n.flow_sourceApply,
-              onApply: (edited, checked) {
-                setState(() => _panelOpen = false);
-                unawaited(c.applySource(edited, checked));
-              },
+              onApply: (edited, checked) =>
+                  unawaited(_applySource(edited, checked)),
             ),
           ),
         ),
