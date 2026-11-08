@@ -16,12 +16,16 @@ class FlowHeaderForm extends StatefulWidget {
     this.readOnly = false,
     this.onPickAgent,
     this.tree = const [],
+    this.onBlocked,
   });
 
   final FlowEditorController controller;
   final bool readOnly;
   final Future<String?> Function()? onPickAgent;
   final List<FlowNode> tree;
+
+  /// 名称或运行限制还不合法，这一组没有提交。保存和演练要停下来。
+  final ValueChanged<bool>? onBlocked;
 
   @override
   State<FlowHeaderForm> createState() => _FlowHeaderFormState();
@@ -134,6 +138,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
 
   @override
   void dispose() {
+    widget.onBlocked?.call(false);
     widget.controller.removeListener(_onController);
     _formFocus.removeListener(_onFormFocus);
     _formFocus.dispose();
@@ -253,6 +258,9 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
       next['outputs'] = encodedOutputs;
     }
 
+    final blocked =
+        inputsBlocked || rolesBlocked || outputsBlocked || limitsBlocked;
+    widget.onBlocked?.call(blocked);
     if (inputsBlocked != _inputsBlocked ||
         rolesBlocked != _rolesBlocked ||
         outputsBlocked != _outputsBlocked ||

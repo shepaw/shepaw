@@ -113,6 +113,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   bool _overlay = false;
   bool _leaveArmed = false;
   bool _inspectorInvalid = false;
+
+  /// 流程设置里有还没能提交的名称或运行限制。
+  bool _headerBlocked = false;
   int _focusNonce = 0;
   int _discardNonce = 0;
   String? _flashField;
@@ -1122,8 +1125,22 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     });
   }
 
-  void _doSave(FlowEditorController c) {
+  /// 先把焦点移走，让描述和流程设置把当前输入交出来，再看有没有没能提交的。
+  bool _flushEditors() {
     FocusManager.instance.primaryFocus?.unfocus();
+    if (_inspectorInvalid || _headerBlocked) {
+      setState(() {
+        _leaveArmed = _inspectorInvalid;
+        _panelOpen = true;
+        _panelTab = 'properties';
+      });
+      return false;
+    }
+    return true;
+  }
+
+  void _doSave(FlowEditorController c) {
+    if (!_flushEditors()) return;
     if (c.errorCount > 0) _openPanel('problems');
     unawaited(c.save());
   }
@@ -1131,7 +1148,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   void _startRehearsal(FlowEditorController c) {
     // 演练的图标 / 文案与「开始运行」显式区分；演练期间顶部一直挂着提示条。
     // 先把正在编辑的输入框交出去，否则描述这类只在失焦时提交的字段进不了演练。
-    FocusManager.instance.primaryFocus?.unfocus();
+    if (!_flushEditors()) return;
     _openPanel('rehearsal');
     unawaited(c.startRehearsal());
   }
@@ -1370,6 +1387,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         readOnly: !c.caps.canEditHeader || c.rehearsal.active,
         onPickAgent: _pickAgent,
         tree: c.tree,
+        onBlocked: (blocked) => _headerBlocked = blocked,
       );
     }
     final problems = [
