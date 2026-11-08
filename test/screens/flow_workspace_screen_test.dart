@@ -72,8 +72,6 @@ void main() {
     await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
     await tester.tap(find.text('dev'));
     await _settle(tester);
-    // 详情默认落在概览；编辑器要切到「编辑」Tab 才创建。
-    await _openEdit(tester);
     // 加一步 → 产生未保存草稿。
     await tester.tap(find.byKey(const ValueKey('after-impl')));
     await _settle(tester);
@@ -347,8 +345,7 @@ steps:
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('tapping a flow opens its overview first, edit is a separate tab',
-      (tester) async {
+  testWidgets('tapping a flow opens the editor directly', (tester) async {
     tester.view.physicalSize = const Size(2400, 1800);
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.reset);
@@ -358,17 +355,11 @@ steps:
 
     await tester.tap(find.text('dev'));
     await _settle(tester);
-    // 默认落在概览：开始运行在这里，编辑页还没被创建。
-    expect(find.byKey(const ValueKey('detail-tab-overview')), findsOneWidget);
-    expect(find.byKey(const ValueKey('overview-start')), findsOneWidget);
-    expect(find.byType(FlowDesignScreen), findsNothing);
-    expect(harness.sent.any((f) => f['type'] == 'flow_get_req'), isFalse);
-
-    await _openEdit(tester);
-    // 切到编辑 Tab 才把定义取回来。
-    expect(harness.sent.any((f) => f['type'] == 'flow_get_req'), isTrue);
+    expect(find.byKey(const ValueKey('detail-tab-overview')), findsNothing);
+    expect(find.byKey(const ValueKey('detail-tab-runs')), findsNothing);
     expect(find.byType(FlowDesignScreen), findsOneWidget);
-    // 主机只给了空 ops：这台主机只读，所以没有保存按钮（也不该有灰态编辑按钮）。
+    expect(harness.sent.any((f) => f['type'] == 'flow_get_req'), isTrue);
+    // 主机只给了空 ops：这台主机只读，所以没有保存按钮。
     expect(find.byKey(const ValueKey('save-button')), findsNothing);
     expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -384,10 +375,10 @@ steps:
     expect(find.byType(BackButton), findsOneWidget);
     await tester.tap(find.text('dev'));
     await _settle(tester);
-    // 窄屏详情：只读，只有 概览 / 运行 两个 Tab，没有灰掉的编辑按钮。
+    // 窄屏详情：只读步骤，没有概览 / 运行 Tab。
     expect(find.text('设计：dev'), findsNothing);
-    expect(find.byKey(const ValueKey('detail-tab-overview')), findsOneWidget);
-    expect(find.byKey(const ValueKey('detail-tab-runs')), findsOneWidget);
+    expect(find.byKey(const ValueKey('detail-tab-overview')), findsNothing);
+    expect(find.byKey(const ValueKey('detail-tab-runs')), findsNothing);
     expect(find.byKey(const ValueKey('detail-tab-edit')), findsNothing);
     expect(find.byType(FlowDesignScreen), findsNothing);
     expect(find.byType(BackButton), findsOneWidget);
@@ -465,13 +456,13 @@ steps:
     await _settle(tester);
     await tester.tap(find.text('dev'));
     await _settle(tester);
-    // 概览页自带按钮，切 locale 后它们的文案必须跟着换。
-    expect(find.text('开始运行'), findsOneWidget);
+    // 窄屏直接看步骤，切 locale 后只读提示要跟着换。
+    expect(find.text('手机上只能查看，编辑请在电脑上进行'), findsOneWidget);
 
     locale.value = const Locale('en');
     await _settle(tester);
-    expect(find.text('开始运行'), findsNothing);
-    expect(find.text('Start run'), findsOneWidget);
+    expect(find.text('手机上只能查看，编辑请在电脑上进行'), findsNothing);
+    expect(find.text('View only on a phone. Edit on a computer'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -482,7 +473,6 @@ steps:
     await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
     await tester.tap(find.text('dev'));
     await _settle(tester);
-    await _openEdit(tester);
     // 加一步 → 产生未保存改动（onDirtyChanged → _editorDirty = true）。
     await tester.tap(find.byKey(const ValueKey('after-impl')));
     await _settle(tester);
@@ -938,12 +928,6 @@ Future<void> _settleMenu(WidgetTester tester) async {
   for (var i = 0; i < 8; i++) {
     await tester.pump(const Duration(milliseconds: 50));
   }
-}
-
-/// 桌面详情默认落在概览，编辑页要显式切到「编辑」Tab 才创建。
-Future<void> _openEdit(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey('detail-tab-edit')));
-  await _settle(tester);
 }
 
 Future<void> _pump(

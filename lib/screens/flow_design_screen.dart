@@ -38,8 +38,8 @@ import '../widgets/flow/flow_yaml_editor.dart';
 /// App 不解析 YAML：每次改动都发给 Hub（`flow_edit_req`），用回来的节点树重画；
 /// 不合法的地方在诊断里。保存才写进流程库成为新的 revision。
 ///
-/// 草稿状态在 [FlowEditorController] 里，这一层只管画布、检查器弹出、源码条
-/// 和「点选 + 说话」。
+/// 草稿状态在 [FlowEditorController] 里，这一层只管画布、属性侧栏、源码对话框
+/// 和「点选 + 说话」。诊断贴在组件列表顶部；侧栏只编辑当前组件或流程设置。
 class FlowDesignScreen extends StatefulWidget {
   const FlowDesignScreen({
     super.key,
@@ -55,7 +55,6 @@ class FlowDesignScreen extends StatefulWidget {
     this.onDirtyChanged,
     this.onControllerReady,
     this.embedded = false,
-    this.initialDrawerTab,
     this.restoreRequests,
   });
 
@@ -74,13 +73,10 @@ class FlowDesignScreen extends StatefulWidget {
   /// 回传 null，免得工作台拿着一个已 dispose 的 controller。
   final void Function(FlowEditorController? controller)? onControllerReady;
 
-  /// 嵌在工作台详情区里：不画自己的 AppBar（外层详情页已经有 Tab 栏）。
+  /// 嵌在工作台详情区里：不画自己的 AppBar（外层已经有标题）。
   final bool embedded;
 
-  /// 从概览页「演练」进来时，侧栏抽屉直接落在演练页签。
-  final String? initialDrawerTab;
-
-  /// 概览页草稿横幅点「恢复」时 +1；设计页等控制器载入完草稿再恢复。
+  /// 详情页草稿横幅点「恢复」时 +1；设计页等控制器载入完草稿再恢复。
   final ValueNotifier<int>? restoreRequests;
 
   /// 演练动画每一步的间隔。
@@ -106,9 +102,11 @@ class FlowDesignScreen extends StatefulWidget {
 class _FlowDesignScreenState extends State<FlowDesignScreen> {
   late FlowEditorController _controller;
 
-  /// 右侧上下文面板。默认展开，页签是属性 / 问题 / 演练 / 源码。
-  bool _panelOpen = true;
-  String _panelTab = 'properties';
+  /// 右侧只放属性。默认收起，点一个组件或「流程设置」再展开。
+  bool _panelOpen = false;
+
+  /// 源码编辑不占侧栏，盖在画布上，应用后马上收起。
+  bool _sourceOpen = false;
   double _panelWidth = 380;
   bool _overlay = false;
   bool _leaveArmed = false;
@@ -123,7 +121,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   int _discardNonce = 0;
   String? _flashField;
   final FocusNode _outlineFocus = FocusNode();
-  static const _panelTabs = ['properties', 'problems', 'rehearsal', 'source'];
 
   List<String> _flowRefs = const [];
   String? _flashId;
@@ -161,10 +158,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   @override
   void initState() {
     super.initState();
-    if (_panelTabs.contains(widget.initialDrawerTab)) {
-      _panelTab = widget.initialDrawerTab!;
-      _panelOpen = true;
-    }
     _loadPanelWidth();
     widget.restoreRequests?.addListener(_onRestoreRequest);
     _startController();
@@ -468,7 +461,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             _nodeById(nodeId),
             target.field,
           );
-          _panelTab = 'properties';
           _panelOpen = true;
           _leaveArmed = false;
         });
@@ -786,11 +778,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     if (node.id != _selectedId && !_confirmLeave()) return;
     setState(() {
       _selectedId = node.id;
-      _panelTab = 'properties';
       _leaveArmed = false;
       _flashId = null;
       _flashField = null;
-      if (_overlay) _panelOpen = true;
+      _panelOpen = true;
     });
     _outlineFocus.requestFocus();
   }
@@ -800,7 +791,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     setState(() {
       _selectedId = null;
       _selected.clear();
-      _panelTab = 'properties';
       _panelOpen = true;
       _leaveArmed = false;
       _flashId = null;
@@ -1019,19 +1009,25 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       builder: (context, _) {
         final c = _controller;
         return Scaffold(
-          // 嵌在详情页里时，Tab 栏在上面；这里不再叠第二条 AppBar。
+          // 嵌在详情页里时，外层已经有标题；这里不再叠第二条 AppBar。
           appBar: widget.embedded
               ? null
               : AppBar(
                   title: Text(l10n.flow_designTitle(widget.name)),
                   automaticallyImplyLeading: false,
                 ),
-          body: Column(
+          body: Stack(
             children: [
-              _toolbar(context, l10n, c),
-              if (c.rehearsal.active) _rehearsalBanner(l10n),
-              Expanded(child: _body(l10n)),
-              if (_talkBar(l10n) case final bar?) bar,
+              Column(
+                children: [
+                  _toolbar(context, l10n, c),
+                  if (c.rehearsal.active) _rehearsalBanner(l10n),
+                  Expanded(child: _body(l10n)),
+                  if (_talkBar(l10n) case final bar?) bar,
+                ],
+              ),
+              if (_sourceOpen)
+                Positioned.fill(child: _sourceOverlay(l10n, Theme.of(context))),
             ],
           ),
         );
@@ -1174,20 +1170,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           child: Text(l10n.flow_historyOpen),
         ),
         PopupMenuItem<String>(
-          // 旧的「源码条」入口 key 保持不变，现在打开侧栏的源码页签。
+          // 源码不占侧栏页签：从这里打开一个对话框。
           key: const ValueKey('yaml-bar'),
           value: 'source',
           child: Text(l10n.flow_source),
-        ),
-        PopupMenuItem<String>(
-          key: const ValueKey('menu-problems'),
-          value: 'problems',
-          child: Text(l10n.flow_drawerProblems),
-        ),
-        PopupMenuItem<String>(
-          key: const ValueKey('menu-rehearsal'),
-          value: 'rehearsal',
-          child: Text(l10n.flow_drawerRehearsal),
         ),
       ],
     );
@@ -1198,11 +1184,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       case 'history':
         unawaited(_openHistory());
       case 'source':
-        _openPanel('source');
-      case 'problems':
-        _openPanel('problems');
-      case 'rehearsal':
-        _openPanel('rehearsal');
+        _openSource();
     }
   }
 
@@ -1214,12 +1196,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     return l10n.flow_diffSummary(count);
   }
 
-  void _openPanel(String tab) {
+  void _openProperties() {
     if (!mounted) return;
-    setState(() {
-      _panelOpen = true;
-      _panelTab = tab;
-    });
+    setState(() => _panelOpen = true);
   }
 
   /// 先把焦点移走，让描述和流程设置把当前输入交出来，再看有没有没能提交的。
@@ -1229,7 +1208,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       setState(() {
         _leaveArmed = _inspectorInvalid;
         _panelOpen = true;
-        _panelTab = 'properties';
       });
       return false;
     }
@@ -1238,15 +1216,14 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   void _doSave(FlowEditorController c) {
     if (!_flushEditors()) return;
-    if (c.errorCount > 0) _openPanel('problems');
     unawaited(c.save());
   }
 
   void _startRehearsal(FlowEditorController c) {
-    // 演练的图标 / 文案与「开始运行」显式区分；演练期间顶部一直挂着提示条。
+    // 演练的图标 / 文案与「开始运行」显式区分；演练期间顶部一直挂着提示条，
+    // 选项直接摆在组件列表上方，不再占侧栏页签。
     // 先把正在编辑的输入框交出去，否则描述这类只在失焦时提交的字段进不了演练。
     if (!_flushEditors()) return;
-    _openPanel('rehearsal');
     unawaited(c.startRehearsal());
   }
 
@@ -1274,9 +1251,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     final theme = Theme.of(context);
     final diff = c.diff;
     final rehearsal = c.rehearsal;
-    // 节点树独占首屏：问题 / 对比 / 演练 / 源码都搬进右侧抽屉，不再作为
-    // 卡片插在树上面把它挤下去。抽屉开合只改 Row 的分割，树的滚动位置由
-    // 同一个 ListView 自己保留。
+    // 诊断和演练选项贴在组件列表顶部。侧栏只放属性，开合不换页签。
+    // 树的滚动位置由同一个 ListView 自己保留。
     final treePane = Stack(
       children: [
         Positioned.fill(
@@ -1290,6 +1266,30 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       key: const ValueKey('flow-node-tree'),
       padding: const EdgeInsets.all(12),
       children: [
+        if (c.diagnostics.isNotEmpty)
+          FlowDiagnosticsPanel(
+            diagnostics: c.diagnostics,
+            tree: c.tree,
+            onLocate: _locate,
+          ),
+        if (rehearsal.active) ...[
+          _rehearsalCard(l10n, theme),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final step
+                  in rehearsal.rehearsal?.steps ?? const <String>[])
+                Chip(
+                  key: ValueKey('rehearse-step-$step'),
+                  label: Text(step, style: const TextStyle(fontSize: 11)),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
         // 桌面但主机缺操作：明确说清为什么只读，别让人以为按钮坏了。
         if (!canEdit && LayoutUtils.isDesktopLayout(context))
           Card(
@@ -1426,17 +1426,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         }
         final panel = showPanel
             ? FlowContextPanel(
-                tab: _panelTab,
-                onTab: _openPanel,
                 onClose: () => setState(() => _panelOpen = false),
-                problemCount: c.errorCount,
                 onDragWidth: wide
                     ? (delta) => _rememberPanelWidth(_panelWidth + delta)
                     : null,
-                properties: _propertiesPane(l10n),
-                problems: _problemsPage(l10n),
-                rehearsal: _rehearsalPage(l10n, theme),
-                source: _sourcePage(l10n, theme),
+                child: _propertiesPane(l10n),
               )
             : null;
         final treeStack = Stack(
@@ -1451,7 +1445,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                   key: const ValueKey('drawer-open'),
                   tooltip: l10n.flow_drawerOpen,
                   icon: const Icon(Icons.view_sidebar_outlined),
-                  onPressed: () => _openPanel('properties'),
+                  onPressed: _openProperties,
                 ),
               ),
           ],
@@ -1655,103 +1649,85 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     );
   }
 
-  Widget _problemsPage(AppLocalizations l10n) {
-    return ListView(
-      key: const ValueKey('drawer-problems-page'),
-      padding: const EdgeInsets.all(12),
-      children: [
-        FlowDiagnosticsPanel(
-          diagnostics: _controller.diagnostics,
-          tree: _controller.tree,
-          onLocate: _locate,
-        ),
-      ],
-    );
-  }
-
-  Widget _rehearsalPage(AppLocalizations l10n, ThemeData theme) {
-    final c = _controller;
-    return ListView(
-      key: const ValueKey('drawer-rehearsal-page'),
-      padding: const EdgeInsets.all(12),
-      children: [
-        Text(l10n.flow_rehearseHint, style: theme.textTheme.bodySmall),
-        const SizedBox(height: 12),
-        if (!c.rehearsal.active)
-          OutlinedButton.icon(
-            key: const ValueKey('rehearse-start'),
-            onPressed: c.loading || c.busy
-                ? null
-                : () => _startRehearsal(c),
-            icon: const Icon(Icons.science_outlined, size: 18),
-            label: Text(l10n.flow_rehearseStart),
-          )
-        else ...[
-          _rehearsalCard(l10n, theme),
-          const SizedBox(height: 8),
-          // 演练走过的时间线：走到哪一步一眼看得出，不用回到节点树数。
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              for (final step in c.rehearsal.rehearsal?.steps ?? const <String>[])
-                Chip(
-                  key: ValueKey('rehearse-step-$step'),
-                  label: Text(step, style: const TextStyle(fontSize: 11)),
-                  visualDensity: VisualDensity.compact,
-                ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-
-  /// 源码页点「应用」。人没改过源码时，文本还是面板打开时的那一版，
+  /// 源码不放进侧栏。人没改过源码时，文本还是打开对话框时的那一版，
   /// 不能在 flush 之后再套回去，否则会把后来的字段改动清掉。
-  Future<void> _applySource(String edited, FlowValidation? checked) async {
-    if (!_confirmHeaderLeave()) return;
-    if (!_confirmLeave()) return;
+  Future<bool> _applySource(String edited, FlowValidation? checked) async {
+    if (!_confirmHeaderLeave()) return false;
+    if (!_confirmLeave()) return false;
     final c = _controller;
     final before = c.yaml;
-    if (!await c.flush()) return;
-    if (!mounted) return;
+    if (!await c.flush()) return false;
+    if (!mounted) return false;
     if (edited != before && edited != c.yaml) {
       final ok = await c.applySource(edited, checked);
-      if (!mounted || !ok) return;
+      if (!mounted || !ok) return false;
     }
-    setState(() => _panelOpen = false);
+    return true;
   }
 
-  Widget _sourcePage(AppLocalizations l10n, ThemeData theme) {
+  void _openSource() {
+    if (!mounted) return;
+    setState(() => _sourceOpen = true);
+  }
+
+  Widget _sourceOverlay(AppLocalizations l10n, ThemeData theme) {
     final c = _controller;
-    final editable = canEdit && MediaQuery.of(context).size.width >= 900;
-    return Column(
-      key: const ValueKey('drawer-source-page'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Text(
-            l10n.flow_sourceSyncHint,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: FlowYamlEditor(
-              yaml: c.yaml,
-              readOnly: !editable,
-              validate: (text) => c.client.validate(widget.peerId, text),
-              applyLabel: l10n.flow_sourceApply,
-              onApply: (edited, checked) =>
-                  unawaited(_applySource(edited, checked)),
+    final editable = canEdit && MediaQuery.sizeOf(context).width >= 900;
+    return ColoredBox(
+      color: theme.colorScheme.scrim.withValues(alpha: 0.45),
+      child: Center(
+        child: SizedBox(
+          key: const ValueKey('drawer-source-page'),
+          width: 720,
+          height: 520,
+          child: Material(
+            color: theme.colorScheme.surface,
+            elevation: 6,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+              child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          l10n.flow_sourceSyncHint,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        key: const ValueKey('source-close'),
+                        tooltip: l10n.flow_drawerClose,
+                        icon: const Icon(Icons.close),
+                        onPressed: () => setState(() => _sourceOpen = false),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: FlowYamlEditor(
+                      yaml: c.yaml,
+                      readOnly: !editable,
+                      validate: (text) =>
+                          c.client.validate(widget.peerId, text),
+                      applyLabel: l10n.flow_sourceApply,
+                      onApply: (edited, checked) => unawaited(() async {
+                        final ok = await _applySource(edited, checked);
+                        if (ok && mounted) setState(() => _sourceOpen = false);
+                      }()),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 

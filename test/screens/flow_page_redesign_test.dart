@@ -15,8 +15,8 @@ import 'package:shepaw/widgets/flow/flow_runs_pane.dart';
 
 /// 流程库交互重设计的回归用例（方案 workflow-page-redesign.md 第六章）。
 ///
-/// 覆盖：列表行状态 / 空库入口、概览默认 Tab 与开跑确认、演练与运行区分、
-/// 工具条保存状态、侧栏抽屉、草稿横幅、运行分组、窄屏两 Tab、旧主机兼容。
+/// 覆盖：列表行状态 / 空库入口、点进流程直接编辑与开跑确认、演练与运行区分、
+/// 工具条保存状态、属性侧栏、草稿横幅、运行分组、窄屏只读步骤、旧主机兼容。
 const _yaml = 'flow: dev\nsteps:\n- id: impl\n  task: {prompt: 写}\n';
 
 Map<String, dynamic> _node(String id) => {
@@ -247,11 +247,12 @@ void main() {
     expect(find.byTooltip('最近失败'), findsNothing);
     await tester.tap(find.text('dev'));
     await _settle(tester);
-    expect(find.byKey(const ValueKey('overview-start')), findsOneWidget);
+    expect(find.byType(FlowDesignScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('详情默认概览；开始运行必经确认面板，取消不产生运行',
+  testWidgets('点进流程直接编辑；开始运行必经确认面板，取消不产生运行',
       (tester) async {
     final host = _Host();
     addTearDown(host.close);
@@ -259,13 +260,14 @@ void main() {
 
     await tester.tap(find.text('dev'));
     await _settle(tester);
-    expect(find.byKey(const ValueKey('detail-tab-overview')), findsOneWidget);
-    expect(find.byKey(const ValueKey('detail-tab-edit')), findsOneWidget);
-    expect(find.byKey(const ValueKey('detail-tab-runs')), findsOneWidget);
-    expect(find.byKey(const ValueKey('overview-start')), findsOneWidget);
+    expect(find.byType(FlowDesignScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('detail-tab-overview')), findsNothing);
+    expect(find.byKey(const ValueKey('detail-tab-edit')), findsNothing);
+    expect(find.byKey(const ValueKey('detail-tab-runs')), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('overview-start')));
-    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('flow-more-dev')));
+    await _settleMenu(tester);
+    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
     await _settleMenu(tester);
     expect(find.byType(FlowStartScreen), findsOneWidget);
     expect(find.byKey(const ValueKey('start-confirm-banner')), findsOneWidget);
@@ -281,6 +283,9 @@ void main() {
   });
 
   testWidgets('演练与运行图标/文案不同，演练期间有持续提示条', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     final host = _Host();
     addTearDown(host.close);
     await _pumpWorkspace(tester, host);
@@ -289,25 +294,15 @@ void main() {
 
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey('overview-start')),
-        matching: find.byIcon(Icons.play_arrow),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('overview-rehearse')),
+        of: find.byKey(const ValueKey('rehearse-button')),
         matching: find.byIcon(Icons.science_outlined),
       ),
       findsOneWidget,
     );
-    expect(find.text('演练（不会真调用 agent）'), findsOneWidget);
+    expect(find.text('演练'), findsWidgets);
+    expect(find.text('开始运行'), findsNothing);
 
-    // 「演练」把编辑页的侧栏落在演练页签，从那里开始演练。
-    await tester.tap(find.byKey(const ValueKey('overview-rehearse')));
-    await _settle(tester);
-    expect(find.byKey(const ValueKey('drawer-tab-rehearsal')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('rehearse-start')));
+    await tester.tap(find.byKey(const ValueKey('rehearse-button')));
     await _settle(tester);
     expect(find.byKey(const ValueKey('rehearsal-banner')), findsOneWidget);
     expect(find.text('演练中 · 不会产生真实调用'), findsOneWidget);
@@ -359,7 +354,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('侧栏抽屉：四个页签可切换，节点树不被卡片挤下去', (tester) async {
+  testWidgets('侧栏只有属性：点组件才展开，源码走对话框，节点树还在', (tester) async {
     final host = _Host();
     addTearDown(host.close);
     await tester.pumpWidget(_app(FlowDesignScreen(
@@ -369,22 +364,29 @@ void main() {
     )));
     await _settle(tester);
 
-    // 面板默认展开：属性 / 问题 / 演练 / 源码，对比不再占页签。
     expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
-    expect(find.byKey(const ValueKey('drawer-tab-properties')), findsOneWidget);
-    expect(find.byKey(const ValueKey('drawer-tab-problems')), findsOneWidget);
-    expect(find.byKey(const ValueKey('drawer-tab-diff')), findsNothing);
-    expect(find.byKey(const ValueKey('drawer-tab-rehearsal')), findsOneWidget);
-    expect(find.byKey(const ValueKey('drawer-tab-source')), findsOneWidget);
-    expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
+    expect(find.byKey(const ValueKey('drawer-tab-properties')), findsNothing);
+    expect(find.byKey(const ValueKey('drawer-tab-problems')), findsNothing);
+    expect(find.byKey(const ValueKey('drawer-tab-rehearsal')), findsNothing);
+    expect(find.byKey(const ValueKey('drawer-tab-source')), findsNothing);
+    expect(find.byKey(const ValueKey('drawer-close')), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('drawer-tab-source')));
+    await tester.tap(find.text('impl'));
     await _settle(tester);
-    expect(find.byKey(const ValueKey('yaml-editor')), findsOneWidget);
+    expect(find.byKey(const ValueKey('drawer-properties-page')), findsOneWidget);
+    expect(find.byKey(const ValueKey('f:task.prompt')), findsOneWidget);
     expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('drawer-close')));
     await _settle(tester);
+    expect(find.byKey(const ValueKey('drawer-properties-page')), findsNothing);
+    expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('design-more')));
+    await _settleMenu(tester);
+    await tester.tap(find.byKey(const ValueKey('yaml-bar')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('yaml-editor')), findsOneWidget);
     expect(find.byKey(const ValueKey('drawer-tab-source')), findsNothing);
     expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -414,7 +416,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('手机仅 概览 / 运行 两个 Tab，没有灰态编辑按钮', (tester) async {
+  testWidgets('手机直接看步骤，没有概览 / 运行 Tab，也没有编辑按钮', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -424,12 +426,12 @@ void main() {
     await tester.tap(find.text('dev'));
     await _settle(tester);
 
-    expect(find.byKey(const ValueKey('detail-tab-overview')), findsOneWidget);
-    expect(find.byKey(const ValueKey('detail-tab-steps')), findsOneWidget);
-    expect(find.byKey(const ValueKey('detail-tab-runs')), findsOneWidget);
+    expect(find.byKey(const ValueKey('detail-tab-overview')), findsNothing);
+    expect(find.byKey(const ValueKey('detail-tab-steps')), findsNothing);
+    expect(find.byKey(const ValueKey('detail-tab-runs')), findsNothing);
     expect(find.byKey(const ValueKey('detail-tab-edit')), findsNothing);
     expect(find.byType(FlowDesignScreen), findsNothing);
-    expect(find.byKey(const ValueKey('overview-rehearse')), findsNothing);
+    expect(find.text('手机上只能查看，编辑请在电脑上进行'), findsOneWidget);
     expect(find.byKey(const ValueKey('save-button')), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });

@@ -526,8 +526,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                         ? BackButton(onPressed: _closeDetail)
                         : null,
                     actions: [
-                      // 窄屏详情态不再把编辑页的 actions 提升到外层：手机只读，
-                      // 概览页自带按钮，这一栏只留全局的新建 / 刷新。
+                      // 窄屏详情是只读步骤，这一栏只留全局的新建 / 刷新。
                       if (!showingNarrowDetail && _canCreateFlows)
                         IconButton(
                           tooltip: l10n.flow_new,
@@ -769,8 +768,6 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       client: _client,
       draftStore: _drafts,
       showHeader: showHeader,
-      onStart: () => unawaited(_start(flow)),
-      onOpenRun: _openRun,
       onDirtyChanged: (dirty) {
         if (_editorDirty == dirty) return;
         _editorDirty = dirty;

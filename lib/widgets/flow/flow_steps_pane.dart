@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../controllers/flow/flow_diagnostics.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
 import '../../peer/pouch_turn_relay.dart';
 import '../../peer/services/hub_flow.dart';
 import '../../services/local_user_identity.dart';
+import 'flow_diagnostics_panel.dart';
 import 'flow_inspector_header.dart';
 import 'flow_node_inspector.dart';
 import 'flow_node_tree.dart';
@@ -39,6 +41,7 @@ class FlowStepsPane extends StatefulWidget {
 
 class _FlowStepsPaneState extends State<FlowStepsPane> {
   List<FlowNode> _tree = const [];
+  List<FlowDiagnostic> _diagnostics = const [];
   FlowSchema? _schema;
   bool _loading = true;
   bool _selecting = false;
@@ -132,8 +135,19 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
       _loading = false;
       _schema = schema;
       _tree = tree;
+      _diagnostics = checked?.diagnostics ?? const [];
       _selected.removeWhere((id) => !ids.contains(id));
     });
+  }
+
+  void _locateDiagnostic(FlowDiagnosticTarget target) {
+    if (target is! NodeTarget) return;
+    for (final node in _flatten(_tree)) {
+      if (node.id == target.nodeId) {
+        _open(node);
+        return;
+      }
+    }
   }
 
   void _open(FlowNode node) {
@@ -302,6 +316,12 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
             key: const ValueKey('flow-steps-tree'),
             padding: const EdgeInsets.all(12),
             children: [
+              if (_diagnostics.isNotEmpty)
+                FlowDiagnosticsPanel(
+                  diagnostics: _diagnostics,
+                  tree: _tree,
+                  onLocate: _locateDiagnostic,
+                ),
               FlowNodeTree(
                 nodes: _tree,
                 selectionMode: _selecting,

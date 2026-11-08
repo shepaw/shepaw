@@ -44,6 +44,7 @@ class _FakeHost {
   late final HubFlow client;
   String editedPrompt = '写';
   bool dropNode = false;
+  List<Map<String, dynamic>> diagnostics = const [];
 
   Map<String, dynamic>? _reply(Map<String, dynamic> frame) {
     switch (frame['type']) {
@@ -97,7 +98,7 @@ class _FakeHost {
               'task': {'prompt': '写'}
             }),
           ],
-          'diagnostics': [],
+          'diagnostics': diagnostics,
         };
       case 'flow_edit_req':
         final deleted = dropNode &&
@@ -474,7 +475,7 @@ void main() {
     await host.bus.close();
   });
 
-  testWidgets('a 700-wide page keeps the tree and overlays the panel',
+  testWidgets('a 700-wide page overlays the properties panel on the tree',
       (tester) async {
     tester.view.physicalSize = const Size(700, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -487,8 +488,39 @@ void main() {
     )));
     await _settle(tester);
     expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
+    expect(find.byKey(const ValueKey('drawer-close')), findsNothing);
+    await tester.tap(find.text('impl'));
+    await _settle(tester);
     expect(find.byKey(const ValueKey('drawer-close')), findsOneWidget);
+    expect(find.byKey(const ValueKey('f:task.prompt')), findsOneWidget);
+    expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
     expect(find.byType(BottomSheet), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await host.bus.close();
+  });
+
+  testWidgets('diagnostics sit above the steps until the flow is clean',
+      (tester) async {
+    final host = _FakeHost()
+      ..diagnostics = [
+        {
+          'severity': 'error',
+          'at': 'impl',
+          'message': '缺提示词',
+        },
+      ];
+    await tester.pumpWidget(_app(FlowDesignScreen(
+      peerId: 'p1',
+      name: 'dev',
+      client: host.client,
+    )));
+    await _settle(tester);
+    expect(find.text('缺提示词'), findsOneWidget);
+    expect(find.text('1 条诊断'), findsOneWidget);
+    expect(find.byKey(const ValueKey('drawer-properties-page')), findsNothing);
+    await tester.tap(find.text('缺提示词'));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('f:task.prompt')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     await host.bus.close();
   });
