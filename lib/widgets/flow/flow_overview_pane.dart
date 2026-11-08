@@ -48,7 +48,12 @@ class FlowOverviewPane extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final description = flow.description?.trim() ?? '';
+    final draft = draftYaml?.trim() ?? '';
+    // 有未保存草稿时，简介跟草稿走。否则这里还显示已保存的那句，
+    // 和下面按草稿列出来的运行参数对不上。
+    final description = draft.isNotEmpty
+        ? FlowHeaderPeek.description(draft).trim()
+        : (flow.description?.trim() ?? '');
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(

@@ -138,6 +138,32 @@ void main() {
     expect(edits.last['ops'].last['op'], 'delete');
   });
 
+  test('在途期间连续两次结构操作都要留下', () async {
+    final harness = _Harness()..delay = const Duration(milliseconds: 200);
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    c.setField('a', 'desc', '一', immediate: true);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final first = c.applyOps([
+      {'op': 'delete', 'node_id': 'a'},
+    ]);
+    final second = c.applyOps([
+      {'op': 'delete', 'node_id': 'b'},
+    ]);
+    await Future.wait([first, second]);
+    await _pastDebounce();
+
+    final deletes = [
+      for (final frame in harness.sent)
+        if (frame['type'] == 'flow_edit_req')
+          for (final op in frame['ops'] as List)
+            if (op['op'] == 'delete') op['node_id'],
+    ];
+    expect(deletes, ['a', 'b']);
+  });
+
   test('flush 失败时保存不发 flow_save_req', () async {
     final harness = _Harness()..rejectEdits = true;
     addTearDown(harness.close);

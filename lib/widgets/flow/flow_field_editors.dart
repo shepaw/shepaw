@@ -352,19 +352,35 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         ];
         value = items.isEmpty ? null : items;
       case FlowFieldShape.mapOf:
-        final map = <String, String>{
+        final named = [
           for (final p in _pairs)
-            if (p.key.text.trim().isNotEmpty)
-              p.key.text.trim(): p.value.text.trim(),
-        };
-        value = map.isEmpty ? null : map;
+            if (p.key.text.trim().isNotEmpty) p,
+        ];
+        final names = [for (final p in named) p.key.text.trim()];
+        if (names.toSet().length != names.length) {
+          // 重名收成 Map 时后一行会盖掉前一行，再发出去就把原值删了。
+          // 交一个列表，校验不会通过，原映射留着。
+          value = names;
+        } else {
+          final map = <String, String>{
+            for (final p in named) p.key.text.trim(): p.value.text.trim(),
+          };
+          value = map.isEmpty ? null : map;
+        }
       case FlowFieldShape.outputMap:
-        final map = <String, Object>{
+        final namedRows = [
           for (final row in _outputs)
-            if (row.key.text.trim().isNotEmpty)
-              row.key.text.trim(): row.encode(),
-        };
-        value = map.isEmpty ? null : map;
+            if (row.key.text.trim().isNotEmpty) row,
+        ];
+        final outputNames = [for (final row in namedRows) row.key.text.trim()];
+        if (outputNames.toSet().length != outputNames.length) {
+          value = outputNames;
+        } else {
+          final map = <String, Object>{
+            for (final row in namedRows) row.key.text.trim(): row.encode(),
+          };
+          value = map.isEmpty ? null : map;
+        }
       case FlowFieldShape.flowRef:
         value = _scalar.text.trim().isEmpty ? null : _scalar.text.trim();
       case FlowFieldShape.duration:

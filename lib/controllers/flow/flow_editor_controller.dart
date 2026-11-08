@@ -300,7 +300,12 @@ class FlowEditorController extends ChangeNotifier {
     // 结果决定要不要继续。等它结束再重新评估。
     final inFlight = _inFlightDone;
     if (inFlight != null) {
-      if (extra.isNotEmpty) _queuedOps = List<Map<String, dynamic>>.of(extra);
+      // 在途时又来的结构操作要接在后面，不能让后一次把前一次盖掉。
+      if (extra.isNotEmpty) {
+        final queued = _queuedOps ?? <Map<String, dynamic>>[];
+        queued.addAll(extra);
+        _queuedOps = queued;
+      }
       _rearmDebounce();
       final ok = await inFlight.future;
       if (!ok) return false;

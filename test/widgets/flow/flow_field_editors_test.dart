@@ -67,6 +67,22 @@ void main() {
     expect(value, {'n': '{{ inputs.goal }}'});
   });
 
+  testWidgets('mapOf 重名时不把两行收成一个值', (tester) async {
+    Object? value;
+    await _pump(
+      tester,
+      FlowFieldEditor(
+        spec: _spec('set.vars', FlowFieldShape.mapOf),
+        current: {'keep': '1', 'other': '2'},
+        onChanged: (v) => value = v,
+      ),
+    );
+    await tester.enterText(find.byKey(const ValueKey('f:set.vars-k1')), 'keep');
+    await tester.pump();
+    expect(value, isA<List>());
+    expect(value, isNot(isA<Map>()));
+  });
+
   testWidgets('boolean 三态：不选 / true / false', (tester) async {
     Object? value = 'unset';
     await _pump(

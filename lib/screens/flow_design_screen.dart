@@ -547,6 +547,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   void _onDrop(String dragId, FlowDropTarget target) {
     if (!_confirmHeaderLeave()) return;
+    if (dragId != _selectedId && !_confirmLeave()) return;
     unawaited(_controller.applyOps(FlowOutlineOps.moveTo(target)));
     setState(() => _selectedId = dragId);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1647,9 +1648,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     final before = c.yaml;
     if (!await c.flush()) return;
     if (!mounted) return;
+    if (edited != before && edited != c.yaml) {
+      final ok = await c.applySource(edited, checked);
+      if (!mounted || !ok) return;
+    }
     setState(() => _panelOpen = false);
-    if (edited == before || edited == c.yaml) return;
-    await c.applySource(edited, checked);
   }
 
   Widget _sourcePage(AppLocalizations l10n, ThemeData theme) {
