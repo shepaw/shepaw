@@ -219,8 +219,8 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     _condIsJudge = cond != null && cond.containsKey('judge');
     _judge = TextEditingController(text: cond?['judge']?.toString() ?? '');
     _ask = TextEditingController(text: cond?['ask']?.toString() ?? '');
-    _enumValue =
-        widget.spec.options.contains(c?.toString()) ? c!.toString() : '';
+    // 不在选项表里的值也要留着。收成空字符串之后，失焦会把它当成「清空」发出去。
+    _enumValue = c is String ? c : '';
     _boolean = c is bool ? c : null;
     // 模板值（`{{ inputs.model }}`）走文本模式；其余用下拉，空值 = 跟随默认。
     final raw = c is String ? c : '';
@@ -620,8 +620,9 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
 
   Widget _enumControl(FlowFieldSpec spec, bool zh) {
     final includeDefault = spec.defaultValue != null;
+    final extra = _enumValue.isNotEmpty && !spec.options.contains(_enumValue);
     final count = spec.options.length + (includeDefault ? 1 : 0);
-    if (count <= 3 && spec.options.length <= 3) {
+    if (!extra && count <= 3 && spec.options.length <= 3) {
       final selected = <String>{
         if (_enumValue.isEmpty && includeDefault)
           ''
@@ -664,6 +665,11 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
           value: '',
           child: Text(includeDefault ? _defaultLabel(spec, zh) : '—'),
         ),
+        if (_enumValue.isNotEmpty && !spec.options.contains(_enumValue))
+          DropdownMenuItem<String>(
+            value: _enumValue,
+            child: Text(_enumValue),
+          ),
         for (final option in spec.options)
           DropdownMenuItem<String>(
             value: option,

@@ -5698,5 +5698,6 @@
   "flow_noRuntimeInputs": "Nothing to fill in when you run",
   "flow_runtimeOutputs": "Outputs",
   "flow_inputRequiredShort": "Required",
-  "flow_headerNamesBlocked": "A name is empty or duplicated, so this group is not saved yet"
+  "flow_headerNamesBlocked": "A name is empty or duplicated, so this group is not saved yet",
+  "flow_headerLimitsBlocked": "Max tasks or timeout is not a valid value, so the limit is not saved yet"
 }

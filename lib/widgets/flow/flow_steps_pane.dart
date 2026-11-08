@@ -49,6 +49,7 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
   final StringBuffer _reply = StringBuffer();
   bool _talking = false;
   int _loadGen = 0;
+  Timer? _flashTimer;
 
   bool get _canTalk => widget.scope.startsWith('group:');
 
@@ -75,6 +76,7 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
 
   @override
   void dispose() {
+    _flashTimer?.cancel();
     _composer.dispose();
     super.dispose();
   }
@@ -202,7 +204,14 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
           setState(() {
             _flash
               ..clear()
-              ..addAll(after.keys.where((id) => before[id] != after[id]));
+              ..addAll([
+                ...after.keys.where((id) => before[id] != after[id]),
+                ...before.keys.where((id) => !after.containsKey(id)),
+              ]);
+          });
+          _flashTimer?.cancel();
+          _flashTimer = Timer(const Duration(milliseconds: 1500), () {
+            if (mounted) setState(_flash.clear);
           });
         },
       );

@@ -48,6 +48,8 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
   bool _inputsBlocked = false;
   bool _rolesBlocked = false;
   bool _outputsBlocked = false;
+  bool _limitsBlocked = false;
+  bool _formFocused = false;
 
   /// 表单里任何一个输入框有焦点时，不拿主机回包覆盖正在打的字。
   final FocusNode _formFocus = FocusNode(
@@ -68,7 +70,12 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
   }
 
   void _onFormFocus() {
-    if (!_formFocus.hasFocus) _flushNow();
+    final focused = _formFocus.hasFocus;
+    final wasFocused = _formFocused;
+    _formFocused = focused;
+    // 只有真正从输入框离开才提交。焦点节点挂上时也会通知一次「没有焦点」，
+    // 那一次不能把表单里的旧值再发一遍。
+    if (wasFocused && !focused) _flushNow();
   }
 
   void _onController() {
@@ -109,6 +116,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     _inputsBlocked = false;
     _rolesBlocked = false;
     _outputsBlocked = false;
+    _limitsBlocked = false;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final row in previousInputs) {
         if (!_inputs.contains(row)) row.dispose();
@@ -175,19 +183,33 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     }
 
     final encodedLimits = <String, dynamic>{..._rawLimits};
-    final maxTasks = int.tryParse(_maxTasks.text.trim()) ?? 0;
-    if (maxTasks > 0) {
-      encodedLimits['max_tasks'] = maxTasks;
-    } else {
-      encodedLimits.remove('max_tasks');
+    final maxRaw = _maxTasks.text.trim();
+    final maxTasks = int.tryParse(maxRaw);
+    // 「2a」不是数字。以前会当成 0，把已经保存的上限删掉。
+    final maxInvalid = maxRaw.isNotEmpty && maxTasks == null;
+    if (!maxInvalid) {
+      if (maxTasks != null && maxTasks > 0) {
+        encodedLimits['max_tasks'] = maxTasks;
+      } else {
+        encodedLimits.remove('max_tasks');
+      }
     }
     final timeout = _timeout.text.trim();
-    if (timeout.isNotEmpty) {
-      encodedLimits['timeout'] = timeout;
-    } else {
-      encodedLimits.remove('timeout');
+    final previousTimeout = _rawLimits['timeout']?.toString() ?? '';
+    final timeoutOk = timeout.isEmpty ||
+        timeout == previousTimeout ||
+        RegExp(r'^\d+\s*[smh]$').hasMatch(timeout);
+    if (timeoutOk) {
+      if (timeout.isNotEmpty) {
+        encodedLimits['timeout'] = timeout;
+      } else {
+        encodedLimits.remove('timeout');
+      }
     }
-    if (!_sameJson(_rawLimits, encodedLimits)) next['limits'] = encodedLimits;
+    final limitsBlocked = maxInvalid || !timeoutOk;
+    if (!limitsBlocked && !_sameJson(_rawLimits, encodedLimits)) {
+      next['limits'] = encodedLimits;
+    }
 
     final inputNames = [
       for (final row in _inputs)
@@ -233,11 +255,13 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
 
     if (inputsBlocked != _inputsBlocked ||
         rolesBlocked != _rolesBlocked ||
-        outputsBlocked != _outputsBlocked) {
+        outputsBlocked != _outputsBlocked ||
+        limitsBlocked != _limitsBlocked) {
       setState(() {
         _inputsBlocked = inputsBlocked;
         _rolesBlocked = rolesBlocked;
         _outputsBlocked = outputsBlocked;
+        _limitsBlocked = limitsBlocked;
       });
     }
 
@@ -251,7 +275,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     // 提交过程中又改过的字段不能把快照写成旧值，否则下一次会把新字盖掉。
     if (_description.text.trim() != description) return;
     _rawDescription = description;
-    _rawLimits = encodedLimits;
+    if (!limitsBlocked) _rawLimits = encodedLimits;
     if (!inputsBlocked) _rawInputs = encodedInputs;
     if (!rolesBlocked) _rawRoles = encodedRoles;
       if (!outputsBlocked) _rawOutputs = encodedOutputs;
@@ -331,6 +355,15 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                     ),
                   ],
                 ),
+                if (_limitsBlocked)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      l10n.flow_headerLimitsBlocked,
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: scheme.error),
+                    ),
+                  ),
               ]),
               _section(l10n.flow_headerInputs, [
                 if (_inputsBlocked)

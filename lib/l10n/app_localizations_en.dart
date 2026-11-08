@@ -10593,4 +10593,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get flow_headerNamesBlocked =>
       'A name is empty or duplicated, so this group is not saved yet';
+
+  @override
+  String get flow_headerLimitsBlocked =>
+      'Max tasks or timeout is not a valid value, so the limit is not saved yet';
 }

@@ -18532,6 +18532,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'有名称为空或重复，这一组还没保存'**
   String get flow_headerNamesBlocked;
+
+  /// No description provided for @flow_headerLimitsBlocked.
+  ///
+  /// In zh, this message translates to:
+  /// **'最多任务数或超时还不是有效值，运行限制还没保存'**
+  String get flow_headerLimitsBlocked;
 }
 
 class _AppLocalizationsDelegate

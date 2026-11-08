@@ -10184,4 +10184,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_headerNamesBlocked => '有名称为空或重复，这一组还没保存';
+
+  @override
+  String get flow_headerLimitsBlocked => '最多任务数或超时还不是有效值，运行限制还没保存';
 }
