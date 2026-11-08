@@ -22,7 +22,7 @@ class DesktopShortcuts extends StatelessWidget {
     required this.child,
   });
 
-  /// 0..4 对应 聊天 / 通讯录 / 工作流 / 玉简 / 文件。
+  /// 0..4 对应 聊天 / 玉简 / 工作流 / 通讯录 / 文件。
   final ValueChanged<int> onSelectModule;
   final VoidCallback onOpenSettings;
   final VoidCallback onFocusSearch;

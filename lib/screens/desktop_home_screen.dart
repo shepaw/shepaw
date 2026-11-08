@@ -110,7 +110,7 @@ const List<_LeftPanelMode> _middleColumnModes = [
   _LeftPanelMode.settings,
 ];
 
-/// 某个主菜单（消息 / 通讯录 / 工作流 / 玉简 / 文件 / 我的 / 设置）自己的右栏状态。
+/// 某个主菜单（消息 / 玉简 / 工作流 / 通讯录 / 文件 / 我的 / 设置）自己的右栏状态。
 ///
 /// 每个菜单各留一份，切走时不拆掉对应 Navigator，再回来还是上次的页面。
 class _DeskSlot {
@@ -352,7 +352,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       mode: _LeftPanelMode.contacts,
       rightPanel: _RightPanelView.empty,
     ),
-    // 工作流从「我的」里提出来，侧栏排在通讯录和玉简中间；和玉简一样自带
+    // 工作流从「我的」里提出来，侧栏排在玉简和通讯录中间；和玉简一样自带
     // 列表 + 详情两栏，右栏铺满。
     _LeftPanelMode.flows: _DeskSlot(
       mode: _LeftPanelMode.flows,
@@ -909,11 +909,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           case 0:
             _showMode(_LeftPanelMode.conversations);
           case 1:
-            _showMode(_LeftPanelMode.contacts);
+            _showMode(_LeftPanelMode.jade);
           case 2:
             _showMode(_LeftPanelMode.flows);
           case 3:
-            _showMode(_LeftPanelMode.jade);
+            _showMode(_LeftPanelMode.contacts);
           case 4:
             _showMode(_LeftPanelMode.files);
         }
@@ -1175,13 +1175,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: _showConversations,
       ),
       _SidebarItemDef(
-        icon: Icons.contacts_outlined,
-        tooltip: l10n.drawer_contacts,
-        colorBuilder: (_) =>
-            _leftMode == _LeftPanelMode.contacts
-                ? activeColor
-                : iconColor,
-        onTap: _showContacts,
+        icon: Icons.auto_stories_outlined,
+        tooltip: l10n.jadeSlip_title,
+        colorBuilder: (_) => _leftMode == _LeftPanelMode.jade
+            ? activeColor
+            : iconColor,
+        onTap: _showJade,
       ),
       _SidebarItemDef(
         icon: Icons.account_tree_outlined,
@@ -1191,12 +1190,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: _showFlows,
       ),
       _SidebarItemDef(
-        icon: Icons.auto_stories_outlined,
-        tooltip: l10n.jadeSlip_title,
-        colorBuilder: (_) => _leftMode == _LeftPanelMode.jade
-            ? activeColor
-            : iconColor,
-        onTap: _showJade,
+        icon: Icons.contacts_outlined,
+        tooltip: l10n.drawer_contacts,
+        colorBuilder: (_) =>
+            _leftMode == _LeftPanelMode.contacts
+                ? activeColor
+                : iconColor,
+        onTap: _showContacts,
       ),
       _SidebarItemDef(
         icon: Icons.folder_outlined,

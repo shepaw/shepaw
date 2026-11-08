@@ -9,7 +9,7 @@ import 'home_screen.dart';
 import 'jade_slip_screen.dart';
 import 'mine_screen.dart';
 
-/// Mobile root: five bottom-bar tabs (chats, contacts, workflows, jade slips,
+/// Mobile root: five bottom-bar tabs (chats, jade slips, workflows, contacts,
 /// me). Files and settings live inside the "me" tab. Inactive tabs stay mounted
 /// after first open so list scroll position is kept.
 ///
@@ -19,7 +19,7 @@ import 'mine_screen.dart';
 class MobileHomeShell extends StatefulWidget {
   const MobileHomeShell({super.key});
 
-  /// 底栏条目顺序。tab 下标和文案只写一份；工作流排在通讯录和玉简中间。
+  /// 底栏条目顺序。tab 下标和文案只写一份；工作流排在玉简和通讯录中间。
   static List<MobileNavItem> navItems(AppLocalizations l10n) => [
         MobileNavItem(
           icon: Icons.chat_bubble_outline,
@@ -27,9 +27,9 @@ class MobileHomeShell extends StatefulWidget {
           label: l10n.nav_chats,
         ),
         MobileNavItem(
-          icon: Icons.people_outline,
-          selectedIcon: Icons.people,
-          label: l10n.contacts_title,
+          icon: Icons.auto_stories_outlined,
+          selectedIcon: Icons.auto_stories,
+          label: l10n.jadeSlip_title,
         ),
         MobileNavItem(
           icon: Icons.account_tree_outlined,
@@ -37,9 +37,9 @@ class MobileHomeShell extends StatefulWidget {
           label: l10n.nav_flows,
         ),
         MobileNavItem(
-          icon: Icons.auto_stories_outlined,
-          selectedIcon: Icons.auto_stories,
-          label: l10n.jadeSlip_title,
+          icon: Icons.people_outline,
+          selectedIcon: Icons.people,
+          label: l10n.contacts_title,
         ),
         MobileNavItem(
           icon: Icons.person_outline,
@@ -60,9 +60,10 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
   final GlobalKey<NavigatorState> _jadeNavKey = GlobalKey<NavigatorState>();
   final GlobalKey<NavigatorState> _mineNavKey = GlobalKey<NavigatorState>();
 
-  /// 工作流入口提出来，排在通讯录和玉简中间。
+  /// 工作流入口提出来，排在玉简和通讯录中间。
+  static const int _jadeTab = 1;
   static const int _flowsTab = 2;
-  static const int _jadeTab = 3;
+  static const int _contactsTab = 3;
   static const int _mineTab = 4;
 
   void _select(int index) {
@@ -132,7 +133,14 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
                   child: Stack(
                     children: [
                       _tab(0, const HomeScreen()),
-                      _tab(1, const ContactsScreen()),
+                      _tab(
+                        _jadeTab,
+                        _nestedTab(
+                          tab: _jadeTab,
+                          navKey: _jadeNavKey,
+                          root: (_) => const JadeSlipScreen(embedded: true),
+                        ),
+                      ),
                       _tab(
                         _flowsTab,
                         _nestedTab(
@@ -142,14 +150,7 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
                               const FlowWorkspaceScreen(embedded: true),
                         ),
                       ),
-                      _tab(
-                        _jadeTab,
-                        _nestedTab(
-                          tab: _jadeTab,
-                          navKey: _jadeNavKey,
-                          root: (_) => const JadeSlipScreen(embedded: true),
-                        ),
-                      ),
+                      _tab(_contactsTab, const ContactsScreen()),
                       _tab(
                         _mineTab,
                         _nestedTab(

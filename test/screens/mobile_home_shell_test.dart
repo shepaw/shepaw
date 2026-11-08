@@ -5,15 +5,15 @@ import 'package:shepaw/screens/mobile_home_shell.dart';
 import 'package:shepaw/screens/settings/settings_sections.dart';
 import 'package:shepaw/widgets/desktop/mine_list_panel.dart';
 
-/// 玉简 e0f8b574：工作流入口从「我的」里提出来，排在通讯录和玉简中间。
+/// 一级入口：工作流排在玉简和通讯录中间。
 void main() {
-  test('手机底栏顺序：对话 / 通讯录 / 工作流 / 玉简 / 我的', () {
+  test('手机底栏顺序：对话 / 玉简 / 工作流 / 通讯录 / 我的', () {
     final l10n = lookupAppLocalizations(const Locale('zh'));
     expect(MobileHomeShell.navItems(l10n).map((item) => item.label), [
       '对话',
-      '通讯录',
-      '工作流',
       '玉简',
+      '工作流',
+      '通讯录',
       '我的',
     ]);
   });
