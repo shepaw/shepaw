@@ -236,6 +236,7 @@ class FlowNodeInspector extends StatefulWidget {
     this.rehearsalLocked = false,
     this.roles = const [],
     this.onPickAgent,
+    this.agentOf,
     this.tree = const [],
     this.yaml = '',
     this.flowRefs = const [],
@@ -264,6 +265,9 @@ class FlowNodeInspector extends StatefulWidget {
   final bool rehearsalLocked;
   final List<String> roles;
   final Future<String?> Function()? onPickAgent;
+
+  /// 把 `task.agent` 的 id 换成头像和名称。
+  final FlowAgentFace? Function(String id)? agentOf;
   final List<FlowNode> tree;
   final String yaml;
   final List<String> flowRefs;
@@ -681,6 +685,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
               current: _executor,
               roles: widget.roles,
               onPickAgent: _locked ? null : widget.onPickAgent,
+              agentOf: widget.agentOf,
               onChanged: _locked ? (_) {} : _onExecutorChanged,
             ),
           ..._groupFields(group, specs, refCandidates, intInputs),

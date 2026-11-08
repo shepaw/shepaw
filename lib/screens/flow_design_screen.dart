@@ -20,6 +20,7 @@ import '../peer/services/peer_agent_ids.dart';
 import '../models/remote_agent.dart';
 import '../screens/jade_slip_agent_picker.dart';
 import '../services/local_database_service.dart';
+import '../services/she_service.dart';
 import '../services/local_user_identity.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
@@ -1130,12 +1131,40 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     }
   }
 
-  String? _agentLabel(String id) {
+  String? _agentLabel(String id) => _agentFace(id)?.name;
+
+  /// 主机只存 agent id。界面用本机名单里的名字和头像，惜宝单独认。
+  FlowAgentFace? _agentFace(String id) {
+    if (SheService.isSheIdentity(id)) {
+      return FlowAgentFace(
+        name: SheService.resolveDisplayName(
+          null,
+          AppLocalizations.of(context).she_name,
+        ),
+        avatar: SheService.sheAvatar,
+      );
+    }
     for (final agent in _agents) {
-      if (hubAgentIdOf(agent) == id || agent.id == id) {
-        final name = agent.name.trim();
-        if (name.isNotEmpty) return name;
+      if (hubAgentIdOf(agent) != id && agent.id != id) continue;
+      if (SheService.isSheIdentity(agent.id, agent.metadata)) {
+        return FlowAgentFace(
+          name: SheService.resolveDisplayName(
+            agent.name,
+            AppLocalizations.of(context).she_name,
+          ),
+          avatar: SheService.sheAvatar,
+        );
       }
+      final name = agent.name.trim();
+      if (name.isEmpty) return null;
+      return FlowAgentFace(
+        name: name,
+        avatar: SheService.displayAvatar(
+          id: agent.id,
+          stored: agent.avatar,
+          metadata: agent.metadata,
+        ),
+      );
     }
     return null;
   }
@@ -1976,6 +2005,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       rehearsalLocked: c.rehearsal.active,
       roles: peekRoles(c.yaml),
       onPickAgent: _pickAgent,
+      agentOf: _agentFace,
       peerId: widget.peerId,
       tree: c.tree,
       yaml: c.yaml,
@@ -2106,6 +2136,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               readOnly: true,
               yaml: _controller.yaml,
               tree: _controller.tree,
+              agentOf: _agentFace,
             ),
           ],
         ),

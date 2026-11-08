@@ -7,6 +7,14 @@ import 'package:yaml/yaml.dart';
 /// 步就带一条 error。这里收成一个「谁来做」，切换时把另外两个清掉。
 enum FlowExecutorMode { unset, role, agent, she }
 
+/// 界面上怎么画一个 Agent。id 只留给主机，用户看到的是名字和头像。
+class FlowAgentFace {
+  const FlowAgentFace({required this.name, this.avatar = ''});
+
+  final String name;
+  final String avatar;
+}
+
 class FlowExecutor {
   const FlowExecutor._(this.mode, this.value);
 

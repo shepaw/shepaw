@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../controllers/flow/flow_executor.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
+import '../agent_list_avatar.dart';
 
 /// 「谁来做」选择器（方案 M4）。
 ///
@@ -17,6 +18,7 @@ class FlowExecutorField extends StatelessWidget {
     required this.roles,
     required this.onChanged,
     this.onPickAgent,
+    this.agentOf,
   });
 
   final FlowNode node;
@@ -33,6 +35,9 @@ class FlowExecutorField extends StatelessWidget {
 
   /// 打开 Agent 选择器。为 null 时「Agent」退化成手输。
   final Future<String?> Function()? onPickAgent;
+
+  /// 把主机上的 agent id 换成头像和名称。对不上就不要把 id 画出来。
+  final FlowAgentFace? Function(String id)? agentOf;
 
   @override
   Widget build(BuildContext context) {
@@ -90,26 +95,11 @@ class FlowExecutorField extends StatelessWidget {
               current: selected.value,
               onChanged: (v) => onChanged(FlowExecutor.role(v)),
             ),
-          FlowExecutorMode.agent => ListTile(
-              key: const ValueKey('exec-value'),
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.smart_toy_outlined),
-              title: Text(
-                selected.value?.isNotEmpty == true
-                    ? selected.value!
-                    : l10n.flow_executorPickAgent,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: selected.value?.isNotEmpty == true
-                      ? null
-                      : scheme.onSurfaceVariant,
-                ),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () async {
-                final picked = await onPickAgent?.call();
-                if (picked == null || picked.isEmpty || !context.mounted) return;
-                onChanged(FlowExecutor.agent(picked));
-              },
+          FlowExecutorMode.agent => _AgentTile(
+              id: selected.value ?? '',
+              agentOf: agentOf,
+              onPickAgent: onPickAgent,
+              onChanged: onChanged,
             ),
           _ => const SizedBox.shrink(),
         },
@@ -118,6 +108,58 @@ class FlowExecutorField extends StatelessWidget {
   }
 
   String _firstRole() => roles.isEmpty ? '' : roles.first;
+}
+
+class _AgentTile extends StatelessWidget {
+  const _AgentTile({
+    required this.id,
+    required this.agentOf,
+    required this.onPickAgent,
+    required this.onChanged,
+  });
+
+  final String id;
+  final FlowAgentFace? Function(String id)? agentOf;
+  final Future<String?> Function()? onPickAgent;
+  final void Function(FlowExecutor executor) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final face = id.isEmpty ? null : agentOf?.call(id);
+    final name = face?.name.trim() ?? '';
+    final titled = name.isNotEmpty;
+    final title = id.isEmpty
+        ? l10n.flow_executorPickAgent
+        : (titled ? name : l10n.flow_executorAgent);
+    return ListTile(
+      key: const ValueKey('exec-value'),
+      contentPadding: EdgeInsets.zero,
+      leading: id.isEmpty
+          ? const Icon(Icons.smart_toy_outlined)
+          : AgentListAvatar(
+              avatar: face?.avatar ?? '',
+              name: titled ? name : title,
+              size: 32,
+            ),
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: id.isEmpty ? scheme.onSurfaceVariant : null,
+        ),
+      ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () async {
+        final picked = await onPickAgent?.call();
+        if (picked == null || picked.isEmpty || !context.mounted) return;
+        onChanged(FlowExecutor.agent(picked));
+      },
+    );
+  }
 }
 
 class _RolePicker extends StatelessWidget {

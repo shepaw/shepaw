@@ -70,6 +70,7 @@ Widget _inspector({
   required _FakeChoices fake,
   required void Function(Map<String, Object?>) onApply,
   Future<String?> Function()? onPickAgent,
+  FlowAgentFace? Function(String id)? agentOf,
 }) {
   return _app(FlowNodeInspector(
     node: FlowNode(key: 'impl', id: 'impl', kind: 'task', fields: fields),
@@ -78,12 +79,33 @@ Widget _inspector({
     roles: const [],
     choiceLoader: fake.load,
     onPickAgent: onPickAgent,
+    agentOf: agentOf,
     onExecutorChanged: onApply,
     onFieldChanged: (_, __, {required immediate}) {},
   ));
 }
 
 void main() {
+  testWidgets('执行者显示 Agent 头像和名称，不显示 id', (tester) async {
+    const id = 'fb1d3f94-78f6-43fc-9ea6-07207c604a2d';
+    final fake = _FakeChoices(_models());
+    await tester.pumpWidget(_inspector(
+      fields: {
+        'task': {'prompt': '写', 'agent': id}
+      },
+      bundle: fake.bundle,
+      fake: fake,
+      onApply: (_) {},
+      agentOf: (agentId) => agentId == id
+          ? const FlowAgentFace(name: '审稿', avatar: '🦊')
+          : null,
+    ));
+    await _settle(tester);
+    expect(find.text('审稿'), findsOneWidget);
+    expect(find.text(id), findsNothing);
+    expect(find.text('🦊'), findsOneWidget);
+  });
+
   testWidgets('换 agent 会重新拉模型并清空已选的 model', (tester) async {
     final fake = _FakeChoices(_models());
     Map<String, Object?>? applied;
