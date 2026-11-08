@@ -554,7 +554,32 @@ class _SessionListContentState extends State<_SessionListContent> {
   /// `while (endScrollOffset < scrollOffset)`），滑得越深首帧越重，正好砸在
   /// 250ms 划入动画上。给了等高原型后 Sliver 能由偏移 O(1) 算出首个可见行，
   /// 只建可视行。
+
+  /// 列表上这一行的标题：首条消息的第一句，没有就用会话名。
+  String _sessionListTitle(Channel session) {
+    final preview = _entryFor(session.id).data;
+    final rawFirst = preview?.$1?['content'] as String?;
+    final firstContent = SessionUtils.sessionTitleFromMessageContent(rawFirst);
+    final firstTitle = firstContent == null
+        ? null
+        : SessionUtils.splitFirstSentence(firstContent).first;
+    return SessionUtils.cleanClaudeSessionTitle(firstTitle ?? session.name) ??
+        session.name;
+  }
+
   Widget _buildList() {
+    // 工作流派给这个 Agent 的节点会话收进「工作流」折叠组。没有折叠组
+    // （本机 Agent、群）或正在批量选择时，仍留在平铺列表里。
+    final nestFlowTasks = !_isSelectionMode && _foldersTarget != null;
+    final flowTasks = nestFlowTasks
+        ? [for (final session in widget.sessions) if (session.isFlowTaskSession) session]
+        : const <Channel>[];
+    final listed = nestFlowTasks
+        ? [
+            for (final session in widget.sessions)
+              if (!session.isFlowTaskSession) session,
+          ]
+        : widget.sessions;
     // 群聊 / 工作流 / 引擎客户端等来源的会话收进折叠组（折叠方案 §2.1）。
     // 展开态放在这一层：上方固定的那一行折叠组要能收起它。
     final folders = !_isSelectionMode && _foldersTarget != null
@@ -565,10 +590,19 @@ class _SessionListContentState extends State<_SessionListContent> {
             client: widget.foldersClient,
             expandedKind: _expanded?.kind,
             expandedTileKey: _expandedTileKey,
+            flowTasks: flowTasks,
+            flowLatestTitle:
+                flowTasks.isEmpty ? '' : _sessionListTitle(flowTasks.first),
+            flowTaskTile: (session) => _sessionTile(context, session),
             onToggle: _toggleExpanded,
             onExpandedChanged: (summary) {
               if (summary == null) {
                 // 主机那边这一组没了（会话被删等），顺手收起。
+                // 工作流组是本机节点会话，主机没有这一组也不收起。
+                if (_expanded?.kind == SessionFolderKind.flow &&
+                    flowTasks.isNotEmpty) {
+                  return;
+                }
                 _collapseExpanded();
                 return;
               }
@@ -594,37 +628,10 @@ class _SessionListContentState extends State<_SessionListContent> {
               if (folders != null) SliverToBoxAdapter(child: folders),
               SliverPrototypeExtentList.builder(
                 prototypeItem: const _SessionTilePrototype(),
-                itemCount: widget.sessions.length,
+                itemCount: listed.length,
                 itemBuilder: (context, index) {
-                  final session = widget.sessions[index];
-                  final isCurrent = session.id == widget.currentChannelId;
-                  final preview = _entryFor(session.id).data;
-                  final firstMessage = preview?.$1;
-                  final latestMessage = preview?.$2;
-                  // 当前会话渲染时未读归零（缓存存原始未读数）。
-                  final unreadCount = isCurrent ? 0 : preview?.$3 ?? 0;
-                  // 行级 repaint 隔离：某会话「输入中」翻转时只重画该行。
                   return RepaintBoundary(
-                    child: _buildSessionTile(
-                      context,
-                      session,
-                      isCurrent,
-                      firstMessage,
-                      latestMessage,
-                      unreadCount: unreadCount,
-                      selectionMode: _isSelectionMode,
-                      selected: _selectedIds.contains(session.id),
-                      selectionEnabled: !isCurrent,
-                      onSelectionToggle: isCurrent
-                          ? null
-                          : () => setState(() {
-                                if (_selectedIds.contains(session.id)) {
-                                  _selectedIds.remove(session.id);
-                                } else {
-                                  _selectedIds.add(session.id);
-                                }
-                              }),
-                    ),
+                    child: _sessionTile(context, listed[index]),
                   );
                 },
               ),
@@ -716,6 +723,32 @@ class _SessionListContentState extends State<_SessionListContent> {
     final unreadCount =
         await _databaseService.getUnreadCountByChannel(channelId);
     return (firstMessage, latestMessage, unreadCount);
+  }
+
+  Widget _sessionTile(BuildContext context, Channel session) {
+    final isCurrent = session.id == widget.currentChannelId;
+    final preview = _entryFor(session.id).data;
+    final unreadCount = isCurrent ? 0 : preview?.$3 ?? 0;
+    return _buildSessionTile(
+      context,
+      session,
+      isCurrent,
+      preview?.$1,
+      preview?.$2,
+      unreadCount: unreadCount,
+      selectionMode: _isSelectionMode,
+      selected: _selectedIds.contains(session.id),
+      selectionEnabled: !isCurrent,
+      onSelectionToggle: isCurrent
+          ? null
+          : () => setState(() {
+                if (_selectedIds.contains(session.id)) {
+                  _selectedIds.remove(session.id);
+                } else {
+                  _selectedIds.add(session.id);
+                }
+              }),
+    );
   }
 
   Widget _buildSessionTile(

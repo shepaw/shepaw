@@ -124,6 +124,21 @@ class Channel {
   bool get isSheBoundSession =>
       isDM && sourceSheChannelId != null && sourceSheChannelId!.isNotEmpty;
 
+  /// 工作流派给这个 Agent 的节点会话。
+  ///
+  /// 主机用 private 来源落库（才能当普通私聊打开），标题固定以「工作流 ·」开头，
+  /// 会话 id 是 `flow_…`。抽屉里它们归进「工作流」折叠组，不和平铺私聊混在一起；
+  /// 运行本身去工作流的运行记录里看。
+  bool get isFlowTaskSession {
+    if (!isDM) return false;
+    final trimmed = name.trim();
+    if (trimmed.startsWith('工作流 ·') || trimmed.startsWith('工作流·')) {
+      return true;
+    }
+    final raw = id.startsWith('psess_') ? id.substring('psess_'.length) : id;
+    return raw.startsWith('flow_');
+  }
+
   /// Factory constructor that accepts memberIds for convenience
   factory Channel.withMemberIds({
     required String id,

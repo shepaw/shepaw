@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
+import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/peer/models/folded_sessions.dart';
 import 'package:shepaw/screens/session_history_screen.dart';
-import 'package:shepaw/peer/services/flow_session_open.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/widgets/chat/agent_session_folders.dart';
@@ -176,7 +176,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 20));
     }
     expect(find.text('群聊 · 6'), findsOneWidget);
-    expect(find.text('工作流 · 2'), findsOneWidget);
+    // 主机按运行汇总的「工作流」组不进这个抽屉，运行记录在工作流页面看。
+    expect(find.text('工作流 · 2'), findsNothing);
+    expect(find.text('review'), findsNothing);
     expect(find.text('周会'), findsOneWidget);
     await bus.close();
   });
@@ -318,76 +320,55 @@ void main() {
     await bus.close();
   });
 
-  testWidgets('A7-9: 折叠会话用 fromAgent，而不是抽屉的 agent', (tester) async {
+  testWidgets('工作流折叠组展开的是这个 agent 的节点会话，不是运行名称', (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
-    final client = HubFoldedSessions(
-      events: bus.stream,
-      send: (peerId, frame) async {
-        final id = frame['request_id'];
-        if (frame['folder'] != null) {
-          bus.add(PeerControlEvent(peerId: peerId, data: {
-            'type': 'agent_sessions_resp',
-            'request_id': id,
-            'agent_id': 'a1',
-            'folder': frame['folder'],
-            'sessions': [
-              {
-                'session_id': 'flow_deadbe12_impl',
-                'title': '节点会话',
-                'updated_at': 1,
-                'origin': {
-                  'kind': 'flow',
-                  'run_id': 'deadbe12',
-                  'node_key': 'impl',
-                  'from_agent': 'agent-node',
-                },
-              },
-            ],
-          }));
-          return true;
-        }
-        bus.add(PeerControlEvent(peerId: peerId, data: {
-          'type': 'agent_sessions_resp',
-          'request_id': id,
-          'agent_id': 'a1',
-          'sessions': [],
-          'folders': [
-            {'kind': 'flow', 'count': 1, 'latest_title': '最新一条'},
-          ],
-        }));
-        return true;
-      },
-    );
-    final opened = <({String channelId, String? agentId})>[];
-    debugOpenFlowSessionChannel = (channelId, agentId) async {
-      opened.add((channelId: channelId, agentId: agentId));
-    };
-    addTearDown(() => debugOpenFlowSessionChannel = null);
-
+    final tasks = [
+      Channel.withMemberIds(
+        id: 'psess_flow_deadbe12_impl',
+        name: '工作流 · review-loop · impl',
+        type: 'dm',
+        memberIds: const ['u', 'a'],
+      ),
+    ];
+    SessionFolderSummary? expanded;
     await tester.pumpWidget(MaterialApp(
       locale: const Locale('zh'),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
-        body: _WithExpandedState(
-          peerId: 'p1',
-          remoteAgentId: 'a1',
-          client: client,
+        body: StatefulBuilder(
+          builder: (context, setState) => AgentSessionFolders(
+            peerId: 'p1',
+            remoteAgentId: 'a1',
+            client: _host(bus, [
+              {
+                'kind': 'flow',
+                'count': 1,
+                'latest_title': '工作流的每个组件之间能否支持拖拽',
+              },
+            ]),
+            expandedKind: expanded?.kind,
+            flowTasks: tasks,
+            flowLatestTitle: '【任务】工作流页面设计哪些地方不合理',
+            flowTaskTile: (session) => ListTile(title: Text(session.name)),
+            onToggle: (summary) => setState(() {
+              expanded = expanded?.kind == summary.kind ? null : summary;
+            }),
+          ),
         ),
       ),
     ));
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 20));
     }
-    await tester.tap(find.text('工作流 · 1'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('节点会话'));
-    await tester.pump();
+    expect(find.text('工作流 · 1'), findsOneWidget);
+    expect(find.text('【任务】工作流页面设计哪些地方不合理'), findsOneWidget);
+    expect(find.text('工作流的每个组件之间能否支持拖拽'), findsNothing);
+    expect(find.text('工作流 · review-loop · impl'), findsNothing);
 
-    expect(opened, hasLength(1));
-    expect(opened.single.channelId, 'psess_flow_deadbe12_impl');
-    expect(opened.single.agentId, 'agent-node',
-        reason: '多 agent 流程里 fromAgent 才是该节点的 agent');
+    await tester.tap(find.text('工作流 · 1'));
+    await tester.pump();
+    expect(find.text('工作流 · review-loop · impl'), findsOneWidget);
     await bus.close();
   });
 

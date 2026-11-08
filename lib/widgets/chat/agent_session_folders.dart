@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../models/channel.dart';
 import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/flow_session_open.dart';
 import '../../peer/services/hub_folded_sessions.dart';
@@ -17,6 +18,9 @@ import 'folded_session_open.dart' show flowFoldedSessionId, pushFlowRunScreen;
 ///
 /// 主机是权威：这里自己向主机要摘要，主机没回（离线、旧版本不认折叠视图）就
 /// 什么都不画，不影响原来的列表。
+///
+/// 「工作流」例外：主机那一组列的是运行（开跑时的那句话），运行记录在工作流
+/// 页面看。抽屉里这一组改放这个 Agent 自己的节点会话（[flowTasks]）。
 class AgentSessionFolders extends StatefulWidget {
   const AgentSessionFolders({
     super.key,
@@ -30,6 +34,9 @@ class AgentSessionFolders extends StatefulWidget {
     this.expandedTileKey,
     this.onToggle,
     this.onExpandedChanged,
+    this.flowTasks = const [],
+    this.flowLatestTitle = '',
+    this.flowTaskTile,
   });
 
   final String peerId;
@@ -60,6 +67,16 @@ class AgentSessionFolders extends StatefulWidget {
   /// 停在旧数字上。收起时给空。
   final void Function(SessionFolderSummary? summary)? onExpandedChanged;
 
+  /// 这个 Agent 在工作流里的节点会话。非空时画「工作流」折叠组，展开后是这些
+  /// 会话，而不是主机按运行汇总的那一条。
+  final List<Channel> flowTasks;
+
+  /// 折叠组副标题：最近一条节点会话在列表上的标题（通常是「【任务】…」）。
+  final String flowLatestTitle;
+
+  /// 展开后画一条节点会话。和下面平铺私聊用同一套行。
+  final Widget Function(Channel session)? flowTaskTile;
+
   @override
   State<AgentSessionFolders> createState() => _AgentSessionFoldersState();
 }
@@ -87,6 +104,8 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
     setState(() => _folders = summary.folders);
     // 条数可能变了：让外层固定那一行跟着更新（收着的时候不用管）。
     final kind = widget.expandedKind;
+    // 「工作流」由本机节点会话组成，主机没这一组也不代表该收起。
+    if (kind == SessionFolderKind.flow && widget.flowTasks.isNotEmpty) return;
     if (kind != null) widget.onExpandedChanged?.call(_summaryOf(kind));
   }
 
@@ -178,9 +197,34 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
     );
   }
 
+  /// 主机的「工作流」组是按运行汇总的入口，运行记录不放在这个抽屉里。
+  List<SessionFolderSummary> _visibleFolders() {
+    final folders = [
+      for (final folder in _folders)
+        if (folder.kind != SessionFolderKind.flow) folder,
+    ];
+    if (widget.flowTasks.isEmpty || widget.flowTaskTile == null) return folders;
+    final flow = SessionFolderSummary(
+      kind: SessionFolderKind.flow,
+      count: widget.flowTasks.length,
+      updatedAt: 0,
+      latestTitle: widget.flowLatestTitle,
+    );
+    var at = folders.length;
+    for (var i = 0; i < folders.length; i++) {
+      final kind = folders[i].kind;
+      if (kind == SessionFolderKind.ide || kind == SessionFolderKind.terminal) {
+        at = i;
+        break;
+      }
+    }
+    return [...folders.sublist(0, at), flow, ...folders.sublist(at)];
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_folders.isEmpty) return const SizedBox.shrink();
+    final folders = _visibleFolders();
+    if (folders.isEmpty) return const SizedBox.shrink();
     final expanded = widget.expandedKind;
     // 折叠组按主机给的顺序排，展开的那组就在自己那行下面铺会话行 —— 不把它
     // 挪到最上面，否则展开「引擎终端」时它会跳到「引擎客户端」前面，顺序乱。
@@ -188,14 +232,16 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final folder in _folders) ...[
+        for (final folder in folders) ...[
           SessionFolderTile(
             key: folder.kind == expanded ? widget.expandedTileKey : null,
             summary: folder,
             expanded: folder.kind == expanded,
             onTap: () => widget.onToggle?.call(folder),
           ),
-          if (folder.kind == expanded)
+          if (folder.kind == expanded && folder.kind == SessionFolderKind.flow)
+            for (final session in widget.flowTasks) widget.flowTaskTile!(session)
+          else if (folder.kind == expanded)
             SessionFolderItems(
               key: ValueKey<SessionFolderKind>(folder.kind),
               peerId: widget.peerId,
