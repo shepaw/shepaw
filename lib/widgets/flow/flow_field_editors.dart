@@ -1001,26 +1001,107 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     }
   }
 
-  Future<void> _pickRef(BuildContext context) async {
-    if (LayoutUtils.isDesktopLayout(context)) return;
-    final picked = await showModalBottomSheet<String>(
+  static final RegExp _bracedRef = RegExp(r'^\{\{\s*(.*?)\s*\}\}$');
+
+  /// `{{ path }}` 收成表达式能用的裸路径。本来就没包花括号的原样返回。
+  static String _bareRef(String ref) {
+    final match = _bracedRef.firstMatch(ref.trim());
+    return match?.group(1) ?? ref;
+  }
+
+  /// 表达式上的「插入引用」。桌面在按钮旁展开变量树；手机逐级底部菜单。
+  /// 点到叶子才写入，写的是裸路径。
+  Widget? _exprRefButton(AppLocalizations l10n) {
+    final roots = widget.varRoots;
+    final refs = [for (final ref in widget.refCandidates) _bareRef(ref)];
+    if (roots.isEmpty && refs.isEmpty) return null;
+    if (roots.isEmpty) {
+      return _choiceMenu(
+        buttonKey: 'ref:${widget.spec.path}',
+        tooltip: l10n.flow_refInsert,
+        icon: Icons.data_object,
+        items: refs,
+        itemKey: (item) => 'ref-item-$item',
+        onPick: (picked) => setState(() => _insertRef(picked)),
+        sheetTitle: l10n.flow_refInsert,
+      );
+    }
+    if (LayoutUtils.isDesktopLayout(context)) {
+      return MenuAnchor(
+        builder: (context, controller, child) => IconButton(
+          key: ValueKey('ref:${widget.spec.path}'),
+          tooltip: l10n.flow_refInsert,
+          icon: const Icon(Icons.data_object, size: 18),
+          onPressed: () {
+            if (controller.isOpen) {
+              controller.close();
+            } else {
+              controller.open();
+            }
+          },
+        ),
+        menuChildren: _varMenu(roots, ''),
+      );
+    }
+    return IconButton(
+      key: ValueKey('ref:${widget.spec.path}'),
+      tooltip: l10n.flow_refInsert,
+      icon: const Icon(Icons.data_object, size: 18),
+      onPressed: () => unawaited(_pickVarLevel(roots, '')),
+    );
+  }
+
+  List<Widget> _varMenu(List<FlowVarNode> nodes, String prefix) {
+    return [
+      for (final node in nodes)
+        if (node.hasChildren)
+          SubmenuButton(
+            key: ValueKey('var-menu-$prefix${node.segment}'),
+            menuChildren: _varMenu(node.children, '$prefix${node.segment}.'),
+            child: Text(_varLabel(node)),
+          )
+        else
+          MenuItemButton(
+            key: ValueKey('var-menu-$prefix${node.segment}'),
+            onPressed: () => setState(() {
+              _insertRef('$prefix${node.segment}');
+            }),
+            child: Text(_varLabel(node)),
+          ),
+    ];
+  }
+
+  String _varLabel(FlowVarNode node) =>
+      node.hint.isEmpty ? node.segment : '${node.segment}  ${node.hint}';
+
+  /// 手机上逐级点进变量树，叶子写入裸路径。
+  Future<void> _pickVarLevel(List<FlowVarNode> nodes, String prefix) async {
+    final picked = await showModalBottomSheet<FlowVarNode>(
       context: context,
       builder: (sheet) => SafeArea(
         child: ListView(
           shrinkWrap: true,
           children: [
-            for (final candidate in widget.refCandidates)
+            for (final node in nodes)
               ListTile(
-                key: ValueKey('ref-item-$candidate'),
-                title: Text(candidate),
-                onTap: () => Navigator.pop(sheet, candidate),
+                key: ValueKey('var-menu-$prefix${node.segment}'),
+                title: Text(node.segment),
+                subtitle: node.hint.isEmpty ? null : Text(node.hint),
+                trailing: node.hasChildren
+                    ? const Icon(Icons.chevron_right)
+                    : null,
+                onTap: () => Navigator.pop(sheet, node),
               ),
           ],
         ),
       ),
     );
     if (picked == null || !mounted) return;
-    setState(() => _insertRef(picked));
+    if (picked.hasChildren) {
+      await _pickVarLevel(picked.children, '$prefix${picked.segment}.');
+      return;
+    }
+    setState(() => _insertRef('$prefix${picked.segment}'));
   }
 
   Widget _choiceMenu({
@@ -1133,15 +1214,11 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
             fieldKey: ValueKey('f:${widget.spec.path}'),
             controller: _scalar,
             roots: widget.varRoots,
+            // 「总是执行」没有表达式。选中表达式时，焦点即弹出变量，写入裸路径。
+            expression: !_condAlways,
             decoration: InputDecoration(
               isDense: true,
-              suffixIcon: widget.refCandidates.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: l10n.flow_refInsert,
-                      icon: const Icon(Icons.data_object, size: 18),
-                      onPressed: () => unawaited(_pickRef(context)),
-                    ),
+              suffixIcon: _exprRefButton(l10n),
             ),
             onChanged: (_) => setState(() => _emit()),
           ),

@@ -36,6 +36,10 @@ void main() {
         ),
       ),
     ));
+    await tester.tap(find.byKey(const ValueKey('f:task.prompt')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('var-suggest')), findsNothing);
+
     await tester.enterText(find.byKey(const ValueKey('f:task.prompt')), '{{');
     await tester.pump();
     expect(find.byKey(const ValueKey('var-opt-prev')), findsOneWidget);
@@ -49,7 +53,67 @@ void main() {
     expect(find.byKey(const ValueKey('var-opt-review')), findsOneWidget);
   });
 
-  testWidgets('条件表达式输入 {{ 也列出变量', (tester) async {
+  testWidgets('条件表达式获得焦点就列出变量，点选写入裸路径', (tester) async {
+    await _pumpSuggest(
+      tester,
+      const FlowFieldSpec(
+        path: 'loop.until',
+        shape: FlowFieldShape.cond,
+        group: 'loop',
+        labelZh: '直到',
+        labelEn: 'Until',
+      ),
+      '',
+    );
+    expect(find.byKey(const ValueKey('var-suggest')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('f:loop.until')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('var-opt-prev')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('var-opt-prev')));
+    await tester.pump();
+    final field = tester.widget<TextField>(find.byKey(const ValueKey('f:loop.until')));
+    expect(field.controller!.text, 'prev.');
+    expect(find.byKey(const ValueKey('var-opt-review')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('var-opt-review')));
+    await tester.pump();
+    expect(field.controller!.text, 'prev.review');
+    expect(find.byKey(const ValueKey('var-suggest')), findsNothing);
+  });
+
+  testWidgets('表达式的插入引用弹出变量菜单，点选写入裸路径', (tester) async {
+    await _pumpSuggest(
+      tester,
+      const FlowFieldSpec(
+        path: 'loop.until',
+        shape: FlowFieldShape.cond,
+        group: 'loop',
+        labelZh: '直到',
+        labelEn: 'Until',
+      ),
+      '',
+    );
+    await tester.tap(find.byKey(const ValueKey('ref:loop.until')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('var-menu-prev')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('var-menu-prev')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('var-menu-prev.review')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('f:loop.until')))
+          .controller!
+          .text,
+      'prev.review',
+    );
+  });
+
+  testWidgets('何时切到表达式后，焦点同样列出变量', (tester) async {
     await _pumpSuggest(
       tester,
       const FlowFieldSpec(
@@ -61,7 +125,13 @@ void main() {
       ),
       '',
     );
-    await tester.enterText(find.byKey(const ValueKey('f:when')), '{{');
+    await tester.tap(find.byKey(const ValueKey('f:when')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('var-suggest')), findsNothing);
+
+    await tester.tap(find.text('表达式'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('f:when')));
     await tester.pump();
     expect(find.byKey(const ValueKey('var-opt-prev')), findsOneWidget);
   });
