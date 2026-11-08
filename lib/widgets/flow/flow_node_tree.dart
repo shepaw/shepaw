@@ -293,6 +293,7 @@ class FlowNodeCard extends StatelessWidget {
                       ? _ParallelChildren(
                           nodes: node.children,
                           onTapNode: onTapNode,
+                          selectionMode: selectionMode,
                           onOpenSession: onOpenSession,
                           onAnswerGate: onAnswerGate,
                           badgeFor: badgeFor,
@@ -323,6 +324,7 @@ class _ParallelChildren extends StatelessWidget {
   const _ParallelChildren({
     required this.nodes,
     this.onTapNode,
+    this.selectionMode = false,
     this.onOpenSession,
     this.onAnswerGate,
     this.badgeFor,
@@ -332,6 +334,7 @@ class _ParallelChildren extends StatelessWidget {
 
   final List<FlowNode> nodes;
   final void Function(FlowNode node)? onTapNode;
+  final bool selectionMode;
   final void Function(FlowNode node)? onOpenSession;
   final void Function(FlowNode node, String choice)? onAnswerGate;
   final (String, Color)? Function(FlowNode node)? badgeFor;
@@ -347,6 +350,7 @@ class _ParallelChildren extends StatelessWidget {
             FlowNodeCard(
               node: node,
               onTapNode: onTapNode,
+              selectionMode: selectionMode,
               onOpenSession: onOpenSession,
               onAnswerGate: onAnswerGate,
               badgeFor: badgeFor,

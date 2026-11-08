@@ -463,13 +463,22 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           }
           _selectedId = nodeId;
           _flashId = nodeId;
+          _flashField = _fieldForHint(
+            _nodeById(nodeId),
+            target.field,
+          );
           _panelTab = 'properties';
           _panelOpen = true;
           _leaveArmed = false;
         });
         _flashTimer?.cancel();
         _flashTimer = Timer(const Duration(milliseconds: 1500), () {
-          if (mounted) setState(() => _flashId = null);
+          if (mounted) {
+            setState(() {
+              _flashId = null;
+              _flashField = null;
+            });
+          }
         });
         // 展开后等一帧，大纲重排完了再滚过去。
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -778,6 +787,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       _selectedId = node.id;
       _panelTab = 'properties';
       _leaveArmed = false;
+      _flashId = null;
+      _flashField = null;
       if (_overlay) _panelOpen = true;
     });
     _outlineFocus.requestFocus();
@@ -787,10 +798,35 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     if (!_confirmLeave()) return;
     setState(() {
       _selectedId = null;
+      _selected.clear();
       _panelTab = 'properties';
       _panelOpen = true;
       _leaveArmed = false;
+      _flashId = null;
+      _flashField = null;
     });
+  }
+
+  /// 点大纲空白：取消选中，属性页回到流程设置。
+  void _onOutlineBlank() {
+    if (_selectedId == null && _selected.isEmpty) return;
+    _showFlowSettings();
+  }
+
+  /// 诊断文案里的 `prompt` / `loop.max` 对上这个节点的字段路径。
+  String? _fieldForHint(FlowNode? node, String? hint) {
+    if (node == null || hint == null || hint.isEmpty) return null;
+    final schema = _controller.schema;
+    if (schema == null) return null;
+    final specs = FlowFieldCatalog.specsFor(node.kind, schema);
+    for (final spec in specs) {
+      if (spec.path == hint) return spec.path;
+    }
+    final matches = [
+      for (final spec in specs)
+        if (spec.path.endsWith('.$hint')) spec.path,
+    ];
+    return matches.length == 1 ? matches.single : null;
   }
 
   void _moveSelection({required bool up}) {
@@ -1223,7 +1259,16 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     // 节点树独占首屏：问题 / 对比 / 演练 / 源码都搬进右侧抽屉，不再作为
     // 卡片插在树上面把它挤下去。抽屉开合只改 Row 的分割，树的滚动位置由
     // 同一个 ListView 自己保留。
-    final treePane = ListView(
+    final treePane = Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            key: const ValueKey('outline-blank'),
+            behavior: HitTestBehavior.opaque,
+            onTap: _onOutlineBlank,
+          ),
+        ),
+        ListView(
       key: const ValueKey('flow-node-tree'),
       padding: const EdgeInsets.all(12),
       children: [
@@ -1324,6 +1369,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               style: theme.textTheme.labelMedium,
             ),
           ),
+      ],
+        ),
       ],
     );
     final staleSelection =
@@ -1436,11 +1483,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         },
       );
     }
-    final problems = [
+    final nodeDiags = [
       for (final d in c.diagnostics)
         if (resolveDiagnostic(d, c.tree) case NodeTarget(:final nodeId))
-          if (nodeId == selected.id) d.message,
+          if (nodeId == selected.id) d,
     ];
+    final problems = [for (final d in nodeDiags) d.message];
     return FlowNodeInspector(
       key: ValueKey('inspector-${selected.id}'),
       node: selected,
@@ -1456,6 +1504,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       yaml: c.yaml,
       flowRefs: _flowRefs,
       problems: problems,
+      problemIsError: nodeDiags.isEmpty || nodeDiags.any((d) => d.isError),
       rejections: {
         for (final spec in FlowFieldCatalog.specsFor(selected.kind, schema))
           if (c.rejection(selected.id, spec.path) case final reason?)

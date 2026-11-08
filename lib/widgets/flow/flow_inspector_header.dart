@@ -15,6 +15,7 @@ class FlowInspectorHeader extends StatefulWidget {
     this.row,
     this.canRetype = false,
     this.problems = const [],
+    this.problemIsError = true,
     this.onDescCommitted,
     this.onMenuChoice,
     this.onLocate,
@@ -25,6 +26,9 @@ class FlowInspectorHeader extends StatefulWidget {
   final FlowOutlineRow? row;
   final bool canRetype;
   final List<String> problems;
+
+  /// 有错误用红色；只有警告时用黄色。
+  final bool problemIsError;
   final void Function(String? desc)? onDescCommitted;
   final void Function(FlowOutlineMenuChoice choice)? onMenuChoice;
   final VoidCallback? onLocate;
@@ -154,13 +158,25 @@ class FlowInspectorHeaderState extends State<FlowInspectorHeader> {
         ),
         if (widget.problems.isNotEmpty)
           Material(
-            color: scheme.errorContainer,
+            color: widget.problemIsError
+                ? scheme.errorContainer
+                : (theme.brightness == Brightness.dark
+                    ? Colors.amber.shade900
+                    : Colors.amber.shade100),
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Row(
                 children: [
-                  Icon(Icons.warning_amber, size: 16, color: scheme.error),
+                  Icon(
+                    Icons.warning_amber,
+                    size: 16,
+                    color: widget.problemIsError
+                        ? scheme.error
+                        : (theme.brightness == Brightness.dark
+                            ? Colors.amber.shade100
+                            : Colors.amber.shade900),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -168,8 +184,13 @@ class FlowInspectorHeaderState extends State<FlowInspectorHeader> {
                         widget.problems.length,
                         widget.problems.first,
                       ),
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: scheme.onErrorContainer),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: widget.problemIsError
+                            ? scheme.onErrorContainer
+                            : (theme.brightness == Brightness.dark
+                                ? Colors.amber.shade100
+                                : Colors.amber.shade900),
+                      ),
                     ),
                   ),
                   if (widget.onLocate != null)

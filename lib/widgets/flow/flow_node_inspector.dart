@@ -242,6 +242,7 @@ class FlowNodeInspector extends StatefulWidget {
     this.peerId = '',
     this.choiceLoader,
     this.problems = const [],
+    this.problemIsError = true,
     this.rejections = const {},
     this.flashField,
     this.showInvalidBanner = false,
@@ -269,6 +270,7 @@ class FlowNodeInspector extends StatefulWidget {
   final String peerId;
   final FlowChoiceLoader? choiceLoader;
   final List<String> problems;
+  final bool problemIsError;
   final Map<String, String> rejections;
   final String? flashField;
   final bool showInvalidBanner;
@@ -282,6 +284,9 @@ class FlowNodeInspector extends StatefulWidget {
 
 class FlowNodeInspectorState extends State<FlowNodeInspector> {
   final GlobalKey<FlowInspectorHeaderState> _headerKey = GlobalKey();
+  final GlobalKey _flashKey = GlobalKey();
+  int _advancedEpoch = 0;
+  bool _advancedOpen = false;
   late List<FlowFieldSpec> _specs;
   late FlowExecutor _executor;
 
@@ -325,6 +330,35 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
         if (mounted) _refreshChoices(_executor);
       });
     }
+    _advancedOpen = _flashInAdvanced;
+    _scheduleFlashScroll();
+  }
+
+  bool get _flashInAdvanced {
+    final field = widget.flashField;
+    if (field == null) return false;
+    for (final spec in _specs) {
+      if (spec.path == field && spec.group == 'advanced') return true;
+      if (spec.path == field &&
+          !FlowFieldCatalog.groupsFor(widget.node.kind).contains(spec.group)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _scheduleFlashScroll() {
+    if (widget.flashField == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _flashKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 250),
+        alignment: 0.2,
+      );
+    });
   }
 
   @override
@@ -333,6 +367,13 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     if (widget.discardNonce != oldWidget.discardNonce) {
       _invalid.clear();
       widget.onValidity?.call(false);
+    }
+    if (widget.flashField != oldWidget.flashField) {
+      if (_flashInAdvanced && !_advancedOpen) {
+        _advancedOpen = true;
+        _advancedEpoch++;
+      }
+      _scheduleFlashScroll();
     }
     if (widget.focusNonce != oldWidget.focusNonce) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -568,6 +609,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
         row: widget.row,
         canRetype: widget.canRetype,
         problems: widget.problems,
+        problemIsError: widget.problemIsError,
         onDescCommitted: _locked ? null : widget.onDescChanged,
         onMenuChoice: _locked ? null : widget.onMenuChoice,
       ),
@@ -641,10 +683,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
               onPickAgent: _locked ? null : widget.onPickAgent,
               onChanged: _locked ? (_) {} : _onExecutorChanged,
             ),
-          for (final spec in specs) ...[
-            _fieldEditor(spec, refCandidates, intInputs),
-            const SizedBox(height: 12),
-          ],
+          ..._groupFields(group, specs, refCandidates, intInputs),
         ],
       ),
     );
@@ -658,11 +697,13 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     ThemeData theme,
   ) {
     if (specs.isEmpty) return const SizedBox.shrink();
+    final forceOpen = specs.any((spec) => spec.path == widget.flashField);
     final summary = _advancedSummary(specs);
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: ExpansionTile(
-        key: const ValueKey('inspector-advanced'),
+        key: ValueKey('inspector-advanced-$_advancedEpoch'),
+        initiallyExpanded: _advancedOpen || forceOpen,
         tilePadding: EdgeInsets.zero,
         title: Text(l10n.flow_groupAdvanced,
             style: theme.textTheme.labelMedium?.copyWith(
@@ -700,6 +741,64 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     return parts.join(' · ');
   }
 
+  List<Widget> _groupFields(
+    String group,
+    List<FlowFieldSpec> specs,
+    List<String> refCandidates,
+    List<String> intInputs,
+  ) {
+    final model = specs.where((spec) => spec.shape == FlowFieldShape.modelRef);
+    final mode = specs.where((spec) => spec.shape == FlowFieldShape.modeRef);
+    final rest = [
+      for (final spec in specs)
+        if (spec.shape != FlowFieldShape.modelRef &&
+            spec.shape != FlowFieldShape.modeRef)
+          spec,
+    ];
+    return [
+      if (group == 'who' && model.isNotEmpty && mode.isNotEmpty)
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 440) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final spec in [...model, ...mode]) ...[
+                    _fieldEditor(spec, refCandidates, intInputs),
+                    const SizedBox(height: 12),
+                  ],
+                ],
+              );
+            }
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _fieldEditor(model.first, refCandidates, intInputs),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _fieldEditor(mode.first, refCandidates, intInputs),
+                  ),
+                ],
+              ),
+            );
+          },
+        )
+      else
+        for (final spec in [...model, ...mode]) ...[
+          _fieldEditor(spec, refCandidates, intInputs),
+          const SizedBox(height: 12),
+        ],
+      for (final spec in rest) ...[
+        _fieldEditor(spec, refCandidates, intInputs),
+        const SizedBox(height: 12),
+      ],
+    ];
+  }
+
   Widget _fieldEditor(
     FlowFieldSpec spec,
     List<String> refCandidates,
@@ -719,6 +818,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
       '${widget.node.id}/${spec.path}${isModel || isMode ? '/$_choiceSeed' : ''}',
     );
     return AnimatedContainer(
+      key: flashing ? _flashKey : null,
       duration: const Duration(milliseconds: 200),
       decoration: flashing
           ? BoxDecoration(

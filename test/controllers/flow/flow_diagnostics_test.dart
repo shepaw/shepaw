@@ -24,6 +24,28 @@ void main() {
     final target =
         resolveDiagnostic(FlowDiagnostic(at: 'l/t', severity: 'error', message: 'x'), tree);
     expect((target as NodeTarget).nodeId, 't');
+    expect(target.field, isNull);
+  });
+
+  test('诊断文案里的字段名会带上，类型名跳过', () {
+    final target = resolveDiagnostic(
+      FlowDiagnostic(
+        at: 'l/t',
+        severity: 'error',
+        message: '`task` 缺少 `prompt`',
+      ),
+      tree,
+    );
+    expect((target as NodeTarget).field, 'prompt');
+    final dotted = resolveDiagnostic(
+      FlowDiagnostic(
+        at: 'l',
+        severity: 'warning',
+        message: '`loop.max` 是 8',
+      ),
+      tree,
+    );
+    expect((dotted as NodeTarget).field, 'loop.max');
   });
 
   test('头部字段认成 HeaderTarget', () {
