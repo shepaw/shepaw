@@ -87,6 +87,14 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   /// PopEntry，外层 PopScope 得靠它让设计页先关整页，不能连详情一起退掉。
   final ValueNotifier<bool> _detailPageOpen = ValueNotifier<bool>(false);
 
+  /// 新建 / 开跑 / 运行记录 / 版本历史。盖在右侧详情上，流程库留在左边。
+  Widget? _pane;
+  Completer<Object?>? _paneDone;
+
+  /// 选 Agent 再盖一层，别把正在填的开跑表单拆掉。
+  Widget? _cover;
+  Completer<Object?>? _coverDone;
+
   final FlowDraftStore _drafts = FlowDraftStore();
 
   /// 最近一次布局是不是宽屏（系统返回键逐级退要用）。
@@ -214,7 +222,62 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     unawaited(_handlePop());
   }
 
+  Future<T?> _showPane<T>(Widget Function(void Function(T? result) finish) build) {
+    final previous = _paneDone;
+    if (previous != null && !previous.isCompleted) previous.complete(null);
+    final done = Completer<Object?>();
+    _paneDone = done;
+    setState(() {
+      _pane = build((result) {
+        if (done.isCompleted) return;
+        setState(() => _pane = null);
+        if (identical(_paneDone, done)) _paneDone = null;
+        done.complete(result);
+      });
+    });
+    return done.future.then((value) => value as T?);
+  }
+
+  void _closePane() {
+    final done = _paneDone;
+    _paneDone = null;
+    setState(() => _pane = null);
+    if (done != null && !done.isCompleted) done.complete(null);
+  }
+
+  Future<T?> _showCover<T>(
+      Widget Function(void Function(T? result) finish) build) {
+    final previous = _coverDone;
+    if (previous != null && !previous.isCompleted) previous.complete(null);
+    final done = Completer<Object?>();
+    _coverDone = done;
+    setState(() {
+      _cover = build((result) {
+        if (done.isCompleted) return;
+        setState(() => _cover = null);
+        if (identical(_coverDone, done)) _coverDone = null;
+        done.complete(result);
+      });
+    });
+    return done.future.then((value) => value as T?);
+  }
+
+  void _closeCover() {
+    final done = _coverDone;
+    _coverDone = null;
+    setState(() => _cover = null);
+    if (done != null && !done.isCompleted) done.complete(null);
+  }
+
   Future<void> _handlePop() async {
+    if (_cover != null) {
+      _closeCover();
+      return;
+    }
+    if (_pane != null) {
+      _closePane();
+      return;
+    }
     // 整页属性开着时，设计页自己的 PopScope 会关掉它；这次返回不能同时
     // 把详情也退回列表（一次 didPop=false 会通知到两个 PopScope）。
     if (_detailPageOpen.value) return;
@@ -248,17 +311,14 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     // 算好传给表单页，页面不再重复解析 YAML。
     var form = FlowRunFormData.parse(yaml,
         requiredRoles: fetched.requiredRoles);
-    var plan = await pushFlowStartScreen(
-      context,
+    var plan = await _openStart(
       flowName: flow.name,
       yaml: yaml,
       roles: form.roles,
       roleDefaults: form.roleDefaults,
       inputSpecs: form.inputs,
       dirty: _editor?.dirty ?? _editorDirty,
-      scope: widget.scope,
       revision: revision,
-      onPickAgent: _pickAgent,
     );
     if (plan == null || !mounted) return;
     final firstPlan = plan;
@@ -292,8 +352,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                 if (!firstPlan.bindings.containsKey(role)) role,
             ];
       if (missing.isNotEmpty) {
-        final again = await pushFlowStartScreen(
-          context,
+        final again = await _openStart(
           flowName: flow.name,
           yaml: yaml,
           roles: form.roles,
@@ -302,9 +361,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
           initialInputs: firstPlan.inputs,
           initialBindings: firstPlan.bindings,
           dirty: false,
-          scope: widget.scope,
           revision: revision,
-          onPickAgent: _pickAgent,
         );
         if (again == null || !mounted) return;
         plan = again;
@@ -330,10 +387,46 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
           : l10n.flow_hostNoReply);
       return;
     }
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) =>
-          FlowRunScreen(peerId: _host, runId: runId, title: flow.name),
-    ));
+    _showRun(runId, flow.name);
+  }
+
+  Future<FlowStartPlan?> _openStart({
+    required String flowName,
+    required String yaml,
+    required List<String> roles,
+    required Map<String, String> roleDefaults,
+    required List<FlowInputSpec> inputSpecs,
+    required bool dirty,
+    required int revision,
+    Map<String, String> initialInputs = const {},
+    Map<String, String> initialBindings = const {},
+  }) {
+    return _showPane<FlowStartPlan>((finish) => FlowStartScreen(
+          flowName: flowName,
+          yaml: yaml,
+          roles: roles,
+          roleDefaults: roleDefaults,
+          inputSpecs: inputSpecs,
+          dirty: dirty,
+          scope: widget.scope,
+          revision: revision,
+          initialInputs: initialInputs,
+          initialBindings: initialBindings,
+          onPickAgent: _pickAgent,
+          onSubmit: finish,
+          onDismiss: () => finish(null),
+        ));
+  }
+
+  void _showRun(String runId, String title) {
+    setState(() {
+      _pane = FlowRunScreen(
+        peerId: _host,
+        runId: runId,
+        title: title,
+        onClose: _closePane,
+      );
+    });
   }
 
   /// 拉取并缓存某台主机的 agent 候选。换主机时调用方会先把缓存清空。
@@ -368,11 +461,41 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       if (!mounted) return null;
     }
     final agents = _agents;
-    final picked = await showJadeSlipAgentPicker(
-      context,
-      agents: agents,
-      title: AppLocalizations.of(context).flow_executorPickAgent,
-    );
+    final picked = await _showCover<JadeSlipAgentPick>((finish) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: kToolbarHeight,
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: AppLocalizations.of(context).common_back,
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => finish(null),
+                ),
+                Expanded(
+                  child: Text(
+                    AppLocalizations.of(context).flow_executorPickAgent,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: JadeSlipAgentList(
+                agents: agents,
+                onPick: finish,
+              ),
+            ),
+          ),
+        ],
+      );
+    });
     if (picked == null) return null;
     final agent = agents.where((a) => a.id == picked.id).firstOrNull;
     // 选择弹层里还有惜宝那条（不在 _agents 里）：原样返回，沿用旧行为。
@@ -386,13 +509,24 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     // 工作台进页面时已经取过 flow_list，画廊文案直接用那份结果生成：离线时点
     // 「新建」不该再等一个 10 秒超时的往返，内置文案本来就能兜底。
     final templates = FlowTemplateCatalog.fromFlows(_flows);
-    final request = await showNewFlowDialog(
-      context,
-      existing: _flows?.map((f) => f.name) ?? const [],
-      templates: templates,
-      initialSource: initialSource,
-      initialSourceName: initialSourceName,
-    );
+    final existing = _flows?.map((f) => f.name) ?? const <String>[];
+    final source = templates.isEmpty && initialSource == FlowNewSource.template
+        ? FlowNewSource.blank
+        : initialSource;
+    final request = await _showPane<FlowNewRequest>((finish) => FlowNewFlowForm(
+          existingLower: existing.map((e) => e.toLowerCase()).toSet(),
+          existingNames: existing.toList(),
+          templates: templates,
+          initialSource: source,
+          initialSourceName: initialSourceName ??
+              (source == FlowNewSource.copy
+                  ? existing.firstOrNull
+                  : (source == FlowNewSource.template
+                      ? templates.firstOrNull?.id
+                      : null)),
+          onResult: finish,
+          onCancel: () => finish(null),
+        ));
     if (request == null || !mounted) return;
     // 新建会换掉详情区（_detailToken++），和 _select 一样要先问未保存的草稿。
     if (!await _guardDirty()) return;
@@ -519,14 +653,15 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   /// 列表行 `⋯` 里的「查看历史」：看旧版本，选中某一版就存成本地草稿，
   /// 概览页顶部会出现恢复横幅（不阻塞、不直接改库里的定义）。
   Future<void> _showHistory(FlowSummary flow) async {
-    final choice = await showFlowHistorySheet(
-      context,
-      client: _client,
-      peerId: _host,
-      scope: widget.scope,
-      name: flow.name,
-      latest: flow.latest,
-    );
+    final choice = await _showPane<FlowHistoryChoice>((finish) => FlowHistorySheet(
+          client: _client,
+          peerId: _host,
+          scope: widget.scope,
+          name: flow.name,
+          latest: flow.latest,
+          onChosen: finish,
+          onClose: () => finish(null),
+        ));
     if (choice == null || !mounted) return;
     await _drafts.save(
       peerId: _host,
@@ -551,7 +686,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       builder: (context, constraints) {
         final wide = _wideFor(constraints);
         _wide = wide;
-        final showingNarrowDetail = !wide && _selectedName != null;
+        final showingNarrowDetail = !wide &&
+            (_selectedName != null || _pane != null || _cover != null);
         final hideOuterAppBar = widget.embedded && wide;
         // 只有真的要自己处理时才拦返回：窄屏详情（先退回列表）或编辑区
         // 有未保存改动。列表态且干净就放行，别无条件吃掉 iOS 侧滑 / 原生 pop。
@@ -589,32 +725,60 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                       ),
                     ],
                   ),
-            body: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? _buildError(l10n)
-                    : wide
-                        ? Row(
-                            children: [
-                              SizedBox(
-                                width: _listPaneWidth,
-                                child: _buildListPane(l10n,
-                                    showHeader: hideOuterAppBar),
+            body: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: _loading
+                                ? const Center(child: CircularProgressIndicator())
+                                : _error != null
+                                    ? _buildError(l10n)
+                                    : wide
+                                ? Row(
+                                    children: [
+                                      SizedBox(
+                                        width: _listPaneWidth,
+                                        child: _buildListPane(l10n,
+                                            showHeader: hideOuterAppBar),
+                                      ),
+                                      VerticalDivider(
+                                        width: 1,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .outlineVariant,
+                                      ),
+                                      Expanded(
+                                          child: _buildDetail(l10n,
+                                              showHeader: true)),
+                                    ],
+                                  )
+                                : showingNarrowDetail
+                                    ? _buildDetail(l10n, showHeader: false)
+                                    : _buildListPane(l10n, showHeader: false),
+                          ),
+                          if (_pane != null)
+                            Positioned(
+                              left: wide ? _listPaneWidth + 1 : 0,
+                              right: 0,
+                              top: 0,
+                              bottom: 0,
+                              child: Material(
+                                color: Theme.of(context).colorScheme.surface,
+                                child: _pane,
                               ),
-                              VerticalDivider(
-                                width: 1,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .outlineVariant,
+                            ),
+                          if (_cover != null)
+                            Positioned(
+                              left: wide ? _listPaneWidth + 1 : 0,
+                              right: 0,
+                              top: 0,
+                              bottom: 0,
+                              child: Material(
+                                color: Theme.of(context).colorScheme.surface,
+                                child: _cover,
                               ),
-                              Expanded(
-                                  child:
-                                      _buildDetail(l10n, showHeader: true)),
-                            ],
-                          )
-                        : showingNarrowDetail
-                            ? _buildDetail(l10n, showHeader: false)
-                            : _buildListPane(l10n, showHeader: false),
+                            ),
+                        ],
+                      ),
           ),
         );
       },
@@ -776,11 +940,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     );
   }
 
-  void _openRun(String runId, String title) {
-    unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => FlowRunScreen(peerId: _host, runId: runId, title: title),
-    )));
-  }
+  void _openRun(String runId, String title) => _showRun(runId, title);
 
   Widget _buildDetail(AppLocalizations l10n, {required bool showHeader}) {
     final name = _selectedName;

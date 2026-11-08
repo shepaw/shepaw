@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import '../../controllers/flow/flow_editor_controller.dart';
 import '../../controllers/flow/flow_executor.dart';
 import '../../controllers/flow/flow_names.dart';
-import '../../controllers/flow/flow_references.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
 import '../../screens/flow_start_screen.dart';
@@ -19,6 +18,7 @@ class FlowHeaderForm extends StatefulWidget {
     required this.controller,
     this.readOnly = false,
     this.onPickAgent,
+    this.onPreviewStart,
     this.agentLabel,
     this.tree = const [],
     this.onBlocked,
@@ -27,6 +27,13 @@ class FlowHeaderForm extends StatefulWidget {
   final FlowEditorController controller;
   final bool readOnly;
   final Future<String?> Function()? onPickAgent;
+
+  /// 把开跑预览放到工作流右侧，而不是再推一个全屏路由。
+  final Future<void> Function({
+    required List<FlowInputSpec> inputSpecs,
+    required List<String> roles,
+    required Map<String, String> roleDefaults,
+  })? onPreviewStart;
 
   /// 把存下来的 Hub agent id 换成界面上的名字。没有就显示 id。
   final String? Function(String id)? agentLabel;
@@ -611,6 +618,13 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
             (row.agentDefault?.isNotEmpty ?? false))
           row.key.text.trim(): row.agentDefault!,
     };
+    if (widget.onPreviewStart != null) {
+      return widget.onPreviewStart!(
+        inputSpecs: specs,
+        roles: roles,
+        roleDefaults: defaults,
+      );
+    }
     return pushFlowStartScreen(
       context,
       flowName: widget.controller.name,

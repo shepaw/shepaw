@@ -370,7 +370,7 @@ void main() {
 
     await tester.tap(find.byTooltip('新建'));
     await _settleSheet(tester);
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(AlertDialog), findsNothing);
     await tester.enterText(
         find.byKey(const ValueKey('new-flow-name')), 'mobile_flow');
     await tester.tap(find.byKey(const ValueKey('new-flow-create')));

@@ -75,6 +75,7 @@ class FlowRunScreen extends StatefulWidget {
     this.client,
     this.onOpenSession,
     this.onDeleted,
+    this.onClose,
   });
 
   final String peerId;
@@ -90,6 +91,9 @@ class FlowRunScreen extends StatefulWidget {
 
   /// 这次运行被删掉了：调用方退回上一层（列表里也不该再有它）。
   final VoidCallback? onDeleted;
+
+  /// 嵌在工作流右侧时，返回关掉这一层，而不是 pop 整个工作流。
+  final VoidCallback? onClose;
 
   @override
   State<FlowRunScreen> createState() => _FlowRunScreenState();
@@ -283,7 +287,12 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       return;
     }
     widget.onDeleted?.call();
-    if (mounted && Navigator.of(context).canPop()) {
+    if (!mounted) return;
+    if (widget.onClose != null) {
+      widget.onClose!();
+      return;
+    }
+    if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
   }
@@ -554,6 +563,10 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     final run = _run;
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: widget.onClose == null,
+        leading: widget.onClose == null
+            ? null
+            : BackButton(onPressed: widget.onClose),
         title: Text(widget.title ?? AppLocalizations.of(context).flow_runTitle),
         actions: [
           // 运行相关的动作都在顶部状态条上：取消在明处，删除收进 `⋯`，

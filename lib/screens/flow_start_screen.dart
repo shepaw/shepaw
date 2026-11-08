@@ -84,6 +84,8 @@ class FlowStartScreen extends StatefulWidget {
     this.initialBindings = const {},
     this.onPickAgent,
     this.preview = false,
+    this.onSubmit,
+    this.onDismiss,
   });
 
   final String flowName;
@@ -116,6 +118,10 @@ class FlowStartScreen extends StatefulWidget {
 
   /// 流程设置里的预览：表单只读，不会开始运行。
   final bool preview;
+
+  /// 嵌在工作流右侧时不走路由：提交和返回都回调给外层。
+  final ValueChanged<FlowStartPlan>? onSubmit;
+  final VoidCallback? onDismiss;
 
   @override
   State<FlowStartScreen> createState() => _FlowStartScreenState();
@@ -171,7 +177,7 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
         }
       }
     }
-    Navigator.of(context).pop(FlowStartPlan(
+    final plan = FlowStartPlan(
       inputs: {
         for (final entry in _inputs.entries)
           if (entry.value.text.trim().isNotEmpty)
@@ -184,7 +190,20 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
                 if (entry.value != null) entry.key: entry.value!,
             },
       saveFirst: _saveFirst,
-    ));
+    );
+    if (widget.onSubmit != null) {
+      widget.onSubmit!(plan);
+      return;
+    }
+    Navigator.of(context).pop(plan);
+  }
+
+  void _dismiss() {
+    if (widget.onDismiss != null) {
+      widget.onDismiss!();
+      return;
+    }
+    Navigator.of(context).pop();
   }
 
   @override
@@ -194,6 +213,10 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
     final scheme = theme.colorScheme;
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: widget.onDismiss == null,
+        leading: widget.onDismiss == null
+            ? null
+            : BackButton(onPressed: _dismiss),
         title: Text(l10n.flow_startTitle(widget.flowName)),
       ),
       // 底部安全区由下面的 bottomNavigationBar 处理，这里只避左右/顶部。
@@ -350,7 +373,7 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: _dismiss,
                     child: Text(widget.preview
                         ? l10n.flow_stepsDone
                         : l10n.common_cancel),

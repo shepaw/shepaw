@@ -35,7 +35,7 @@ Future<FlowNewRequest?> showNewFlowDialog(
 }) {
   return showDialog<FlowNewRequest>(
     context: context,
-    builder: (dialogContext) => _NewFlowDialog(
+    builder: (dialogContext) => FlowNewFlowForm(
       // 查重不区分大小写，但复制源必须保留原始大小写（流程名允许大写）。
       existingLower:
           existing.map((e) => e.toLowerCase()).toSet(),
@@ -54,14 +54,21 @@ Future<FlowNewRequest?> showNewFlowDialog(
   );
 }
 
-class _NewFlowDialog extends StatefulWidget {
-  const _NewFlowDialog({
+class FlowNewFlowForm extends StatefulWidget {
+  const FlowNewFlowForm({
+    super.key,
     required this.existingLower,
     required this.existingNames,
     required this.templates,
     this.initialSource = FlowNewSource.blank,
     this.initialSourceName,
+    this.onResult,
+    this.onCancel,
   });
+
+  /// 嵌在工作流右侧时走回调，不再包一层对话框。
+  final void Function(FlowNewRequest request)? onResult;
+  final VoidCallback? onCancel;
 
   final Set<String> existingLower;
   final List<String> existingNames;
@@ -72,10 +79,10 @@ class _NewFlowDialog extends StatefulWidget {
   final String? initialSourceName;
 
   @override
-  State<_NewFlowDialog> createState() => _NewFlowDialogState();
+  State<FlowNewFlowForm> createState() => _FlowNewFlowFormState();
 }
 
-class _NewFlowDialogState extends State<_NewFlowDialog> {
+class _FlowNewFlowFormState extends State<FlowNewFlowForm> {
   final TextEditingController _name = TextEditingController();
   final GlobalKey<FormState> _form = GlobalKey<FormState>();
   late FlowNewSource _source = widget.initialSource;
@@ -113,9 +120,7 @@ class _NewFlowDialogState extends State<_NewFlowDialog> {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    return AlertDialog(
-      title: Text(l10n.flow_newTitle),
-      content: Form(
+    final form = Form(
         key: _form,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -203,19 +208,71 @@ class _NewFlowDialogState extends State<_NewFlowDialog> {
             ],
           ],
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(l10n.common_cancel),
-        ),
-        FilledButton(
-          key: const ValueKey('new-flow-create'),
-          onPressed: _submit,
-          child: Text(l10n.flow_new),
-        ),
-      ],
     );
+    final actions = <Widget>[
+      TextButton(
+        onPressed: _cancel,
+        child: Text(l10n.common_cancel),
+      ),
+      FilledButton(
+        key: const ValueKey('new-flow-create'),
+        onPressed: _submit,
+        child: Text(l10n.flow_new),
+      ),
+    ];
+    if (widget.onResult != null) {
+      return Material(
+        color: scheme.surface,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: kToolbarHeight,
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: l10n.common_back,
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: _cancel,
+                  ),
+                  Expanded(
+                    child: Text(l10n.flow_newTitle,
+                        style: theme.textTheme.titleMedium),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: form,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: actions,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return AlertDialog(
+      title: Text(l10n.flow_newTitle),
+      content: form,
+      actions: actions,
+    );
+  }
+
+  void _cancel() {
+    if (widget.onCancel != null) {
+      widget.onCancel!();
+      return;
+    }
+    Navigator.pop(context);
   }
 
   void _submit() {
@@ -225,14 +282,16 @@ class _NewFlowDialogState extends State<_NewFlowDialog> {
         (_sourceName == null || _sourceName!.isEmpty)) {
       return;
     }
-    Navigator.pop(
-      context,
-      FlowNewRequest(
-        name: _name.text.trim(),
-        source: _source,
-        sourceName: _source == FlowNewSource.blank ? null : _sourceName,
-      ),
+    final request = FlowNewRequest(
+      name: _name.text.trim(),
+      source: _source,
+      sourceName: _source == FlowNewSource.blank ? null : _sourceName,
     );
+    if (widget.onResult != null) {
+      widget.onResult!(request);
+      return;
+    }
+    Navigator.pop(context, request);
   }
 }
 

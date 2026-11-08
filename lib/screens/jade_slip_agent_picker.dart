@@ -57,6 +57,48 @@ class _JadeSlipAgentPickerDialog extends StatefulWidget {
 
 class _JadeSlipAgentPickerDialogState
     extends State<_JadeSlipAgentPickerDialog> {
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return AlertDialog(
+      title: Text(widget.title ?? l10n.jadeSlip_pickAgent),
+      content: SizedBox(
+        width: 420,
+        height: 380,
+        child: JadeSlipAgentList(
+          agents: widget.agents,
+          currentAgentId: widget.currentAgentId,
+          onPick: (pick) => Navigator.pop(context, pick),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(l10n.common_cancel),
+        ),
+      ],
+    );
+  }
+}
+
+/// 选 Agent 的名单。对话框和流程右侧栏共用。
+class JadeSlipAgentList extends StatefulWidget {
+  const JadeSlipAgentList({
+    super.key,
+    required this.agents,
+    required this.onPick,
+    this.currentAgentId,
+  });
+
+  final List<RemoteAgent> agents;
+  final String? currentAgentId;
+  final ValueChanged<JadeSlipAgentPick> onPick;
+
+  @override
+  State<JadeSlipAgentList> createState() => _JadeSlipAgentListState();
+}
+
+class _JadeSlipAgentListState extends State<JadeSlipAgentList> {
   final _query = TextEditingController();
 
   @override
@@ -77,79 +119,59 @@ class _JadeSlipAgentPickerDialogState
       return device.toLowerCase().contains(q);
     }).toList();
     final sheMatches = q.isEmpty || l10n.she_name.toLowerCase().contains(q);
-
-    return AlertDialog(
-      title: Text(widget.title ?? l10n.jadeSlip_pickAgent),
-      content: SizedBox(
-        width: 420,
-        height: 380,
-        child: Column(
-          children: [
-            TextField(
-              controller: _query,
-              autofocus: true,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: l10n.jadeSlip_searchAgent,
-                prefixIcon: Icon(Icons.search,
-                    size: 18, color: scheme.onSurfaceVariant),
-                isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
+    return Column(
+      children: [
+        TextField(
+          controller: _query,
+          autofocus: true,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            hintText: l10n.jadeSlip_searchAgent,
+            prefixIcon:
+                Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
+            isDense: true,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
             ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: agents.isEmpty && !sheMatches
-                  ? Center(child: Text(l10n.jadeSlip_noAgentMatch(_query.text)))
-                  : ListView(
-                      children: [
-                        if (sheMatches)
-                          _AgentOptionRow(
-                            avatar: SheService.sheAvatar,
-                            name: l10n.she_name,
-                            selected: widget.currentAgentId == SheService.sheId,
-                            onTap: () => Navigator.pop(
-                              context,
-                              JadeSlipAgentPick(
-                                id: SheService.sheId,
-                                name: l10n.she_name,
-                                avatar: SheService.sheAvatar,
-                              ),
-                            ),
-                          ),
-                        for (final agent in agents)
-                          if (agent.id != SheService.sheId)
-                            _AgentOptionRow(
-                              avatar: agent.avatar,
-                              name: agent.name,
-                              deviceLabel: agent.isPeerAgent
-                                  ? null
-                                  : l10n.jadeSlip_deviceLocal,
-                              badge: agent.isPeerAgent
-                                  ? PeerSourceBadge.fromAgent(agent)
-                                  : null,
-                              selected: widget.currentAgentId == agent.id,
-                              onTap: () => Navigator.pop(
-                                context,
-                                JadeSlipAgentPick(
-                                  id: agent.id,
-                                  name: agent.name,
-                                  avatar: agent.avatar,
-                                ),
-                              ),
-                            ),
-                      ],
-                    ),
-            ),
-          ],
+          ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(l10n.common_cancel),
+        const SizedBox(height: 8),
+        Expanded(
+          child: agents.isEmpty && !sheMatches
+              ? Center(child: Text(l10n.jadeSlip_noAgentMatch(_query.text)))
+              : ListView(
+                  children: [
+                    if (sheMatches)
+                      _AgentOptionRow(
+                        avatar: SheService.sheAvatar,
+                        name: l10n.she_name,
+                        selected: widget.currentAgentId == SheService.sheId,
+                        onTap: () => widget.onPick(JadeSlipAgentPick(
+                          id: SheService.sheId,
+                          name: l10n.she_name,
+                          avatar: SheService.sheAvatar,
+                        )),
+                      ),
+                    for (final agent in agents)
+                      if (agent.id != SheService.sheId)
+                        _AgentOptionRow(
+                          avatar: agent.avatar,
+                          name: agent.name,
+                          deviceLabel: agent.isPeerAgent
+                              ? null
+                              : l10n.jadeSlip_deviceLocal,
+                          badge: agent.isPeerAgent
+                              ? PeerSourceBadge.fromAgent(agent)
+                              : null,
+                          selected: widget.currentAgentId == agent.id,
+                          onTap: () => widget.onPick(JadeSlipAgentPick(
+                            id: agent.id,
+                            name: agent.name,
+                            avatar: agent.avatar,
+                          )),
+                        ),
+                  ],
+                ),
         ),
       ],
     );

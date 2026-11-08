@@ -18,6 +18,7 @@ import '../peer/pouch_turn_relay.dart';
 import '../peer/services/hub_flow.dart';
 import '../peer/services/peer_agent_ids.dart';
 import '../models/remote_agent.dart';
+import '../screens/flow_start_screen.dart';
 import '../screens/jade_slip_agent_picker.dart';
 import '../services/local_database_service.dart';
 import '../services/she_service.dart';
@@ -34,6 +35,8 @@ import '../widgets/flow/flow_node_tree.dart';
 import '../widgets/flow/flow_outline_menu.dart';
 import '../widgets/flow/flow_outline_tree.dart';
 import '../widgets/flow/flow_yaml_editor.dart';
+
+enum _RightView { properties, source, history, agent, preview }
 
 /// 流程设计视图（方案 C.3–C.5）：节点树 + 检查器改字段 + 与上一版的差异 + 演练。
 ///
@@ -113,8 +116,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   /// 右侧只放属性。默认收起，点一个组件或「流程设置」再展开。
   bool _panelOpen = false;
 
-  /// 源码编辑不占侧栏，盖在画布上，应用后马上收起。
-  bool _sourceOpen = false;
+  /// 源码、历史、选人和开跑预览都开在右侧栏，不再盖一层弹窗。
+  _RightView _rightView = _RightView.properties;
+  Completer<String?>? _agentWait;
+  List<FlowInputSpec> _previewSpecs = const [];
+  List<String> _previewRoles = const [];
+  Map<String, String> _previewDefaults = const {};
   double _panelWidth = 380;
   bool _overlay = false;
 
@@ -298,7 +305,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     // 拦截态带过来，否则新流程一进来就停在别人的表单上。
     _pageOpen = false;
     _panelOpen = false;
-    _sourceOpen = false;
+    _rightView = _RightView.properties;
+    _agentWait?.complete(null);
+    _agentWait = null;
     _selecting = false;
     _showSelectHint = false;
     _leaveArmed = false;
@@ -760,19 +769,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   Future<void> _openHistory() async {
     if (!_confirmHeaderLeave()) return;
     if (!_confirmLeave()) return;
-    final choice = await showFlowHistorySheet(
-      context,
-      client: _controller.client,
-      peerId: widget.peerId,
-      scope: widget.scope,
-      name: widget.name,
-      latest: _controller.revision,
-    );
-    if (choice == null || !mounted) return;
-    final checked =
-        await _controller.client.validate(widget.peerId, choice.yaml);
-    if (!mounted) return;
-    await _controller.applySource(choice.yaml, checked);
+    _openRight(_RightView.history);
   }
 
   Future<void> _rowMenu(
@@ -1172,16 +1169,41 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   Future<String?> _pickAgent() async {
     await _loadAgents();
     if (!mounted) return null;
-    final l10n = AppLocalizations.of(context);
-    final picked = await showJadeSlipAgentPicker(
-      context,
-      agents: _agents,
-      title: l10n.flow_executorPickAgent,
-    );
-    if (picked == null) return null;
-    final agent = _agents.where((a) => a.id == picked.id).firstOrNull;
-    // 选择弹层里还有惜宝那条（不在 _agents 里）：原样返回，沿用旧行为。
-    return agent == null ? picked.id : hubAgentIdOf(agent);
+    final wait = Completer<String?>();
+    _agentWait?.complete(null);
+    _agentWait = wait;
+    _openRight(_RightView.agent);
+    final pickedId = await wait.future;
+    if (pickedId == null || !mounted) return null;
+    if (pickedId == SheService.sheId) return SheService.sheId;
+    final agent = _agents.where((a) => a.id == pickedId).firstOrNull;
+    return agent == null ? pickedId : hubAgentIdOf(agent);
+  }
+
+  void _openRight(_RightView view) {
+    setState(() {
+      _rightView = view;
+      if (_phoneMode) {
+        _pageOpen = true;
+      } else {
+        _panelOpen = true;
+      }
+    });
+  }
+
+  void _closeRight() {
+    final wait = _agentWait;
+    _agentWait = null;
+    setState(() => _rightView = _RightView.properties);
+    if (wait != null && !wait.isCompleted) wait.complete(null);
+  }
+
+  Future<void> _useHistory(FlowHistoryChoice choice) async {
+    _closeRight();
+    final checked =
+        await _controller.client.validate(widget.peerId, choice.yaml);
+    if (!mounted) return;
+    await _controller.applySource(choice.yaml, checked);
   }
 
   Future<void> _talk() async {
@@ -1262,8 +1284,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                   if (_talkBar(l10n) case final bar?) bar,
                 ],
               ),
-              if (_sourceOpen)
-                Positioned.fill(child: _sourceOverlay(l10n, Theme.of(context))),
               // 属性整页盖住工具条、大纲和说话条：编辑时只面对一张表单。
               if (pageOpen)
                 Positioned.fill(child: _phonePropertiesPage(l10n)),
@@ -1335,7 +1355,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                     key: const ValueKey('phone-editor-close'),
                     tooltip: l10n.common_back,
                     icon: const Icon(Icons.arrow_back),
-                    onPressed: _closePhonePage,
+                    onPressed: _rightView == _RightView.properties
+                        ? _closePhonePage
+                        : _closeRight,
                   ),
                   Expanded(
                     child: Text(title,
@@ -1354,11 +1376,13 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             ),
             Divider(height: 1, color: theme.colorScheme.outlineVariant),
             Expanded(
-              child: ListView(
-                key: const ValueKey('phone-properties-page'),
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-                children: [_propertiesPane(l10n)],
-              ),
+              child: _rightView == _RightView.properties
+                  ? ListView(
+                      key: const ValueKey('phone-properties-page'),
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+                      children: [_propertiesPane(l10n)],
+                    )
+                  : _rightFill(l10n),
             ),
           ],
         ),
@@ -1910,9 +1934,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           });
         }
         final panelWidth = _fitPanelWidth(width);
-        final panel = showPanel
-            ? FlowContextPanel(child: _propertiesPane(l10n))
-            : null;
+        final panel = showPanel ? _rightPanel(l10n) : null;
         final treeStack = Stack(
           children: [
             treePane,
@@ -1981,6 +2003,18 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         controller: c,
         readOnly: !c.caps.canEditHeader || c.rehearsal.active,
         onPickAgent: _pickAgent,
+        onPreviewStart: ({
+          required inputSpecs,
+          required roles,
+          required roleDefaults,
+        }) async {
+          setState(() {
+            _previewSpecs = inputSpecs;
+            _previewRoles = roles;
+            _previewDefaults = roleDefaults;
+          });
+          _openRight(_RightView.preview);
+        },
         agentLabel: _agentLabel,
         tree: c.tree,
         onBlocked: (blocked) {
@@ -2162,31 +2196,94 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   void _openSource() {
     if (!mounted) return;
-    setState(() => _sourceOpen = true);
+    _openRight(_RightView.source);
   }
 
-  Widget _sourceOverlay(AppLocalizations l10n, ThemeData theme) {
-    final c = _controller;
-    final size = MediaQuery.sizeOf(context);
-    // 手机上同样能改源码：面板按屏幕收缩，不再用写死的 720×520。
-    final editable = canEdit;
-    final panelWidth = size.width < 760 ? size.width - 16 : 720.0;
-    final panelHeight = size.height < 600 ? size.height - 32 : 520.0;
+  Widget _rightPanel(AppLocalizations l10n) {
+    if (_rightView == _RightView.properties) {
+      return FlowContextPanel(child: _propertiesPane(l10n));
+    }
     return ColoredBox(
-      color: theme.colorScheme.scrim.withValues(alpha: 0.45),
-      child: Center(
-        child: SizedBox(
-          key: const ValueKey('drawer-source-page'),
-          width: panelWidth,
-          height: panelHeight,
-          child: Material(
-            color: theme.colorScheme.surface,
-            elevation: 6,
-            borderRadius: BorderRadius.circular(12),
-            clipBehavior: Clip.antiAlias,
+      color: Theme.of(context).colorScheme.surface,
+      child: _rightFill(l10n),
+    );
+  }
+
+  Widget _rightFill(AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    return switch (_rightView) {
+      _RightView.source => _sourcePane(l10n, theme),
+      _RightView.history => FlowHistorySheet(
+          client: _controller.client,
+          peerId: widget.peerId,
+          scope: widget.scope,
+          name: widget.name,
+          latest: _controller.revision,
+          onChosen: (choice) => unawaited(_useHistory(choice)),
+          onClose: _closeRight,
+        ),
+      _RightView.agent => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: kToolbarHeight,
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: l10n.common_back,
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: _closeRight,
+                  ),
+                  Expanded(
+                    child: Text(l10n.flow_executorPickAgent,
+                        style: theme.textTheme.titleMedium),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
               child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 8, 16),
-              child: Column(
+                padding: const EdgeInsets.all(12),
+                child: JadeSlipAgentList(
+                  agents: _agents,
+                  onPick: (pick) {
+                    final wait = _agentWait;
+                    _agentWait = null;
+                    setState(() => _rightView = _RightView.properties);
+                    if (wait != null && !wait.isCompleted) {
+                      wait.complete(pick.id);
+                    }
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      _RightView.preview => FlowStartScreen(
+          flowName: widget.name,
+          yaml: _controller.yaml,
+          roles: _previewRoles,
+          roleDefaults: _previewDefaults,
+          inputSpecs: _previewSpecs,
+          dirty: false,
+          scope: widget.scope,
+          revision: _controller.revision,
+          onPickAgent: _pickAgent,
+          preview: true,
+          onDismiss: _closeRight,
+        ),
+      _RightView.properties => const SizedBox.shrink(),
+    };
+  }
+
+  Widget _sourcePane(AppLocalizations l10n, ThemeData theme) {
+    final c = _controller;
+    final editable = canEdit;
+    return Padding(
+      key: const ValueKey('drawer-source-page'),
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 16),
+      child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
@@ -2203,7 +2300,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                         key: const ValueKey('source-close'),
                         tooltip: l10n.flow_drawerClose,
                         icon: const Icon(Icons.close),
-                        onPressed: () => setState(() => _sourceOpen = false),
+                        onPressed: _closeRight,
                       ),
                     ],
                   ),
@@ -2217,15 +2314,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                       applyLabel: l10n.flow_sourceApply,
                       onApply: (edited, checked) => unawaited(() async {
                         final ok = await _applySource(edited, checked);
-                        if (ok && mounted) setState(() => _sourceOpen = false);
+                        if (ok && mounted) _closeRight();
                       }()),
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

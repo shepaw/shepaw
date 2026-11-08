@@ -61,7 +61,13 @@ class FlowHistorySheet extends StatefulWidget {
     required this.scope,
     required this.name,
     required this.latest,
+    this.onChosen,
+    this.onClose,
   });
+
+  /// 嵌在工作流右侧时用回调，不再 pop 对话框。
+  final ValueChanged<FlowHistoryChoice>? onChosen;
+  final VoidCallback? onClose;
 
   final HubFlow client;
   final String peerId;
@@ -115,26 +121,41 @@ class _FlowHistorySheetState extends State<FlowHistorySheet> {
     );
     if (!mounted) return;
     if (got == null) return;
-    Navigator.pop(
-      context,
-      FlowHistoryChoice(revision: revision, yaml: got.yaml),
-    );
+    final choice = FlowHistoryChoice(revision: revision, yaml: got.yaml);
+    if (widget.onChosen != null) {
+      widget.onChosen!(choice);
+      return;
+    }
+    Navigator.pop(context, choice);
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    return SafeArea(
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.7,
-        child: Column(
+    final column = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(l10n.flow_historyTitle,
-                  style: theme.textTheme.titleMedium),
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+              child: Row(
+                children: [
+                  if (widget.onClose != null)
+                    IconButton(
+                      tooltip: l10n.common_back,
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: widget.onClose,
+                    ),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                          left: widget.onClose == null ? 12 : 0),
+                      child: Text(l10n.flow_historyTitle,
+                          style: theme.textTheme.titleMedium),
+                    ),
+                  ),
+                ],
+              ),
             ),
             Expanded(
               child: ListView(
@@ -170,7 +191,12 @@ class _FlowHistorySheetState extends State<FlowHistorySheet> {
               ),
             ),
           ],
-        ),
+    );
+    if (widget.onChosen != null) return column;
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.7,
+        child: column,
       ),
     );
   }
