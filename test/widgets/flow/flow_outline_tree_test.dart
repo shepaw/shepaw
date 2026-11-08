@@ -409,6 +409,42 @@ void main() {
     expect(find.textContaining('until'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('窄大纲列收起行尾按钮，标题不再溢出', (tester) async {
+    tester.view.physicalSize = const Size(280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final tree = [
+      FlowNode(
+        key: 'build',
+        id: 'build',
+        kind: 'loop',
+        children: [
+          FlowNode(
+            key: 'impl',
+            id: 'impl',
+            kind: 'task',
+            desc: '先写一版方案',
+          ),
+        ],
+      ),
+    ];
+    final rows = buildFlowOutline(tree);
+    await tester.pumpWidget(_app(FlowOutlineTree(
+      rows: rows,
+      canEdit: true,
+      dragEnabled: true,
+      tree: tree,
+      onMenu: (_, __) {},
+    )));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('up-impl')), findsNothing);
+    expect(find.byKey(const ValueKey('del-build')), findsNothing);
+    expect(find.byKey(const ValueKey('menu-impl')), findsOneWidget);
+    expect(find.text('impl'), findsOneWidget);
+    expect(find.text('先写一版方案'), findsOneWidget);
+  });
 }
 
 class _ReorderOnDrop extends StatefulWidget {
@@ -448,7 +484,7 @@ class _ReorderOnDropState extends State<_ReorderOnDrop> {
   }
 }
 
-/// 宽一点的窗口，免得可编辑行的五个 IconButton 挤溢出。
+/// 宽一点的窗口，行尾五个按钮才放得下。
 Future<void> _pumpTree(WidgetTester tester, Widget child) async {
   tester.view.physicalSize = const Size(1200, 900);
   tester.view.devicePixelRatio = 1.0;

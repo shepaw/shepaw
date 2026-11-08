@@ -672,10 +672,25 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
             : null,
       );
     }
+    final labels = <String>[
+      includeDefault ? _defaultLabel(spec, zh) : '—',
+      if (_enumValue.isNotEmpty && !spec.options.contains(_enumValue))
+        _enumValue,
+      for (final option in spec.options) spec.optionLabel(option, zh),
+    ];
     return DropdownButtonFormField<String>(
       key: ValueKey('f:${spec.path}'),
       initialValue: _enumValue.isEmpty ? '' : _enumValue,
       isDense: true,
+      isExpanded: true,
+      // 收起态只有一行高。说明留在菜单里和字段下方，不要塞进按钮。
+      selectedItemBuilder: (context) => [
+        for (final label in labels)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+      ],
       items: [
         DropdownMenuItem<String>(
           value: '',

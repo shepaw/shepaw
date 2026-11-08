@@ -784,8 +784,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       row: row,
       canRetype: _controller.caps.canRetype,
       position: position,
-      // 手机 compact 行没有上移 / 下移按钮，补进菜单里。
-      includeMove: _phoneMode,
+      // 窄大纲列会把上移 / 下移收进 ⋯，菜单里始终留着这两项。
+      includeMove: true,
     );
     if (choice == null || !mounted) return;
     await _applyMenuChoice(row, choice);

@@ -386,4 +386,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(value, isNull);
   });
+
+  testWidgets('枚举下拉收起时只显示一行，说明不把按钮撑破', (tester) async {
+    await _pump(
+      tester,
+      const SizedBox(
+        width: 280,
+        child: FlowFieldEditor(
+          spec: FlowFieldSpec(
+            path: 'task.session',
+            shape: FlowFieldShape.enumOf,
+            labelZh: '会话',
+            labelEn: 'Session',
+            options: ['node', 'fresh', 'run'],
+            optionLabels: {
+              'node': ('沿用上次', 'Reuse last'),
+              'fresh': ('新会话', 'Fresh'),
+              'run': ('整次运行共用一个会话', 'One session'),
+            },
+            optionHelp: {
+              'node': ('沿用本步骤上次的会话', 'Continue this step'),
+            },
+            defaultValue: 'node',
+          ),
+          current: 'node',
+          onChanged: _noop,
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('沿用上次'), findsOneWidget);
+    expect(find.text('沿用本步骤上次的会话'), findsOneWidget);
+  });
 }
+
+void _noop(Object? _) {}

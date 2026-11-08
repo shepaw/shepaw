@@ -672,123 +672,170 @@ class _Row extends StatelessWidget {
           onLongPress: onLongPress,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(
-              children: [
-                if (selectionMode)
-                  Checkbox(
-                    key: ValueKey('pick-${node.id}'),
-                    value: talkSelected,
-                    visualDensity: VisualDensity.compact,
-                    onChanged: (_) => onTap?.call(),
-                  )
-                else if (draggable)
-                  _dragHandle(),
-                if (hasChildren)
-                  IconButton(
-                    key: ValueKey('collapse-${node.id}'),
-                    icon: Icon(
-                        collapsed ? Icons.chevron_right : Icons.expand_more),
-                    tooltip: l10n.flow_outlineCollapse,
-                    onPressed: onToggleCollapse,
-                  )
-                else
-                  const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // 大纲列最窄只剩两百多像素。五个 40px 按钮会把标题挤出卡片，
+                // 放不下就只留 ⋯，上移 / 下移 / 删除仍在菜单里。
+                final hideInline = compact ||
+                    !_inlineActionsFit(
+                      constraints.maxWidth,
+                      hasChildren: hasChildren,
+                    );
+                return Row(
+                  children: [
+                    if (selectionMode)
+                      Checkbox(
+                        key: ValueKey('pick-${node.id}'),
+                        value: talkSelected,
+                        visualDensity: VisualDensity.compact,
+                        onChanged: (_) => onTap?.call(),
+                      )
+                    else if (draggable)
+                      _dragHandle(),
+                    if (hasChildren)
+                      _iconButton(
+                        key: ValueKey('collapse-${node.id}'),
+                        tooltip: l10n.flow_outlineCollapse,
+                        icon: Icon(collapsed
+                            ? Icons.chevron_right
+                            : Icons.expand_more),
+                        onPressed: onToggleCollapse,
+                      )
+                    else
+                      const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Flexible(
-                            child: Text(
-                              flowKindTitle(l10n, node),
-                              style: theme.textTheme.titleSmall,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  flowKindTitle(l10n, node),
+                                  style: theme.textTheme.titleSmall,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (row.branch != null) ...[
+                                const SizedBox(width: 6),
+                                Text(
+                                  row.branch == 'else'
+                                      ? l10n.flow_outlineElse
+                                      : l10n.flow_outlineThen,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                              if (errors > 0) ...[
+                                const SizedBox(width: 6),
+                                Icon(Icons.error_outline,
+                                    size: 14, color: scheme.error),
+                              ],
+                              if (badge != null) ...[
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    badge!.$1,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: badge!.$2,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
-                          if (row.branch != null) ...[
-                            const SizedBox(width: 6),
+                          if (node.desc != null && node.desc!.isNotEmpty)
                             Text(
-                              row.branch == 'else'
-                                  ? l10n.flow_outlineElse
-                                  : l10n.flow_outlineThen,
-                              style: theme.textTheme.labelSmall?.copyWith(
+                              node.desc!,
+                              style: theme.textTheme.bodySmall?.copyWith(
                                 color: scheme.onSurfaceVariant,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ],
-                          if (errors > 0) ...[
-                            const SizedBox(width: 6),
-                            Icon(Icons.error_outline,
-                                size: 14, color: scheme.error),
-                          ],
-                          if (badge != null) ...[
-                            const SizedBox(width: 6),
-                            Text(
-                              badge!.$1,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: badge!.$2,
-                              ),
-                            ),
-                          ],
                         ],
                       ),
-                      if (node.desc != null && node.desc!.isNotEmpty)
-                        Text(
-                          node.desc!,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                    ),
+                    if (editable && !selectionMode) ...[
+                      if (!hideInline) ...[
+                        _iconButton(
+                          key: ValueKey('up-${node.id}'),
+                          tooltip: l10n.flow_outlineMoveUp,
+                          icon: const Icon(Icons.arrow_upward, size: 18),
+                          onPressed: row.canMoveUp ? onMoveUp : null,
+                        ),
+                        _iconButton(
+                          key: ValueKey('down-${node.id}'),
+                          tooltip: l10n.flow_outlineMoveDown,
+                          icon: const Icon(Icons.arrow_downward, size: 18),
+                          onPressed: row.canMoveDown ? onMoveDown : null,
+                        ),
+                        _iconButton(
+                          key: ValueKey('after-${node.id}'),
+                          tooltip: l10n.flow_addAfter,
+                          icon: const Icon(Icons.add, size: 18),
+                          onPressed: onAddAfter,
+                        ),
+                      ],
+                      Builder(
+                        builder: (buttonContext) => _iconButton(
+                          key: ValueKey('menu-${node.id}'),
+                          tooltip: l10n.flow_outlineMenu,
+                          icon: const Icon(Icons.more_horiz, size: 18),
+                          onPressed: onMenu == null
+                              ? null
+                              : () => onMenu!(buttonContext),
+                        ),
+                      ),
+                      if (!hideInline)
+                        _iconButton(
+                          key: ValueKey('del-${node.id}'),
+                          tooltip: l10n.flow_inspectorDelete,
+                          icon: Icon(Icons.delete_outline,
+                              size: 18, color: scheme.error),
+                          onPressed: onDelete,
                         ),
                     ],
-                  ),
-                ),
-                if (editable && !selectionMode) ...[
-                  if (!compact) ...[
-                    IconButton(
-                      key: ValueKey('up-${node.id}'),
-                      tooltip: l10n.flow_outlineMoveUp,
-                      icon: const Icon(Icons.arrow_upward, size: 18),
-                      onPressed: row.canMoveUp ? onMoveUp : null,
-                    ),
-                    IconButton(
-                      key: ValueKey('down-${node.id}'),
-                      tooltip: l10n.flow_outlineMoveDown,
-                      icon: const Icon(Icons.arrow_downward, size: 18),
-                      onPressed: row.canMoveDown ? onMoveDown : null,
-                    ),
-                    IconButton(
-                      key: ValueKey('after-${node.id}'),
-                      tooltip: l10n.flow_addAfter,
-                      icon: const Icon(Icons.add, size: 18),
-                      onPressed: onAddAfter,
-                    ),
                   ],
-                  Builder(
-                    builder: (buttonContext) => IconButton(
-                      key: ValueKey('menu-${node.id}'),
-                      tooltip: l10n.flow_outlineMenu,
-                      icon: const Icon(Icons.more_horiz, size: 18),
-                      onPressed: onMenu == null
-                          ? null
-                          : () => onMenu!(buttonContext),
-                    ),
-                  ),
-                  if (!compact)
-                    IconButton(
-                      key: ValueKey('del-${node.id}'),
-                      tooltip: l10n.flow_inspectorDelete,
-                      icon: Icon(Icons.delete_outline,
-                          size: 18, color: scheme.error),
-                      onPressed: onDelete,
-                    ),
-                ],
-              ],
+                );
+              },
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 行尾按钮的边长。默认 48 会在最窄的大纲列里把标题顶出卡片。
+  static const double _actionExtent = 36;
+
+  /// 标题至少留这么宽，再窄就把上移 / 下移 / 新增 / 删除收进 ⋯。
+  static const double _titleMin = 96;
+
+  static bool _inlineActionsFit(double width, {required bool hasChildren}) {
+    const handle = 28.0;
+    final leading = handle + (hasChildren ? _actionExtent : 12);
+    return width >= leading + _titleMin + _actionExtent * 5;
+  }
+
+  Widget _iconButton({
+    required Key key,
+    required String tooltip,
+    required Widget icon,
+    required VoidCallback? onPressed,
+  }) {
+    return IconButton(
+      key: key,
+      tooltip: tooltip,
+      icon: icon,
+      onPressed: onPressed,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(
+        width: _actionExtent,
+        height: _actionExtent,
       ),
     );
   }
