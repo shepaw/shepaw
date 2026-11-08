@@ -3,6 +3,49 @@ import 'flow_edit_ops.dart';
 import 'flow_executor.dart';
 import 'flow_outline.dart';
 
+/// 变量树里的一层。点有子节点的项会接着列出下一级，点叶子才补上 `}}`。
+class FlowVarNode {
+  const FlowVarNode({
+    required this.segment,
+    this.hint = '',
+    this.children = const [],
+  });
+
+  /// 写进 `{{ }}` 的那一段，例如 `prev`、`text`、`goal`。
+  final String segment;
+
+  /// 给界面的短说明（中文）。空字符串表示不展示。
+  final String hint;
+  final List<FlowVarNode> children;
+
+  bool get hasChildren => children.isNotEmpty;
+}
+
+/// 光标停在一个还没写完的 `{{` 里时，该列出哪一层、过滤词是什么。
+class FlowVarSuggest {
+  const FlowVarSuggest({
+    required this.options,
+    required this.filter,
+    required this.replaceFrom,
+    required this.cursor,
+  });
+
+  final List<FlowVarNode> options;
+  final String filter;
+
+  /// 当前这一段在全文里的起点，选中后从这里替换到光标。
+  final int replaceFrom;
+  final int cursor;
+
+  List<FlowVarNode> get matches {
+    if (filter.isEmpty) return options;
+    return [
+      for (final node in options)
+        if (node.segment.startsWith(filter)) node,
+    ];
+  }
+}
+
 /// 「插入引用」的候选（方案 M4）。
 ///
 /// 只列**当前节点之前**的步骤 —— 引用后面的步骤引擎会报「只能引用已经跑过的
@@ -68,6 +111,159 @@ class FlowReferences {
     if (_inside(tree, currentNodeId, 'loop')) {
       out.add('{{ prev.text }}');
     }
+    return out;
+  }
+
+  /// 给输入 `{{` 时逐级展开的变量树。
+  ///
+  /// 第一层是 `inputs`、前面的步骤、循环里的 `prev`、遍历里的 `item` /
+  /// `index`。点进 `prev` 或某个步骤，下一层才是 `text` / `data` / `status`。
+  static List<FlowVarNode> tree({
+    required List<FlowNode> tree,
+    required String currentNodeId,
+    required String yaml,
+  }) {
+    final roots = <FlowVarNode>[];
+    final inputs = peekInputs(yaml);
+    if (inputs.isNotEmpty) {
+      roots.add(FlowVarNode(
+        segment: 'inputs',
+        hint: '流程输入',
+        children: [
+          for (final spec in inputs)
+            FlowVarNode(segment: spec.name, hint: spec.type),
+        ],
+      ));
+    }
+    for (final node in _before(tree, currentNodeId)) {
+      roots.add(_stepVar(node));
+    }
+    if (_inside(tree, currentNodeId, 'map')) {
+      roots.add(const FlowVarNode(segment: 'item', hint: '当前项'));
+      roots.add(const FlowVarNode(segment: 'index', hint: '当前序号'));
+    }
+    if (_inside(tree, currentNodeId, 'loop')) {
+      final inner = _underLoop(tree, currentNodeId);
+      roots.add(FlowVarNode(
+        segment: 'prev',
+        hint: '上一轮',
+        children: [for (final node in inner) _stepVar(node)],
+      ));
+    }
+    return roots;
+  }
+
+  /// 光标在未闭合的 `{{ ...` 里时返回当前这一层；否则 null。
+  static FlowVarSuggest? suggest({
+    required String text,
+    required int cursor,
+    required List<FlowVarNode> roots,
+  }) {
+    if (cursor < 0 || cursor > text.length) return null;
+    final before = text.substring(0, cursor);
+    final open = before.lastIndexOf('{{');
+    if (open < 0) return null;
+    final body = before.substring(open + 2);
+    if (body.contains('}}')) return null;
+    final trimmed = body.trimLeft();
+    final lead = body.length - trimmed.length;
+    final parts = trimmed.split('.');
+    var level = roots;
+    for (var i = 0; i < parts.length - 1; i++) {
+      final name = parts[i].trim();
+      if (name.isEmpty) return null;
+      FlowVarNode? found;
+      for (final node in level) {
+        if (node.segment == name) {
+          found = node;
+          break;
+        }
+      }
+      if (found == null) return null;
+      level = found.children;
+    }
+    final filter = parts.last;
+    return FlowVarSuggest(
+      options: level,
+      filter: filter,
+      replaceFrom: open + 2 + lead + trimmed.length - filter.length,
+      cursor: cursor,
+    );
+  }
+
+  static FlowVarNode _stepVar(FlowNode node) {
+    final keys = _outputKeys(node);
+    return FlowVarNode(
+      segment: node.id,
+      hint: node.kind,
+      children: [
+        const FlowVarNode(segment: 'text', hint: '文字结果'),
+        FlowVarNode(
+          segment: 'data',
+          hint: '结构化字段',
+          children: [
+            for (final key in keys) FlowVarNode(segment: key, hint: '字段'),
+          ],
+        ),
+        const FlowVarNode(segment: 'status', hint: '状态'),
+      ],
+    );
+  }
+
+  static List<String> _outputKeys(FlowNode node) {
+    final task = node.fields?['task'];
+    final output = task is Map ? task['output'] : null;
+    if (output is! Map) return const [];
+    return [for (final key in output.keys) key.toString()];
+  }
+
+  /// 当前节点之前（文档顺序）的步骤，不含它自己。
+  static List<FlowNode> _before(List<FlowNode> tree, String id) {
+    final out = <FlowNode>[];
+    var hit = false;
+    void walk(List<FlowNode> nodes) {
+      for (final node in nodes) {
+        if (node.id == id) {
+          hit = true;
+          return;
+        }
+        out.add(node);
+        if (node.children.isNotEmpty) walk(node.children);
+        if (hit) return;
+      }
+    }
+
+    walk(tree);
+    return out;
+  }
+
+  /// 包住当前节点的那一层 loop 里的全部步骤（上一轮里它们都跑过）。
+  static List<FlowNode> _underLoop(List<FlowNode> tree, String id) {
+    List<FlowNode>? loopKids;
+    bool find(List<FlowNode> nodes, List<FlowNode>? kids) {
+      for (final node in nodes) {
+        final nextKids = node.kind == 'loop' ? node.children : kids;
+        if (node.id == id) {
+          loopKids = nextKids;
+          return true;
+        }
+        if (node.children.isNotEmpty && find(node.children, nextKids)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (!find(tree, null) || loopKids == null) return const [];
+    final out = <FlowNode>[];
+    void collect(List<FlowNode> nodes) {
+      for (final node in nodes) {
+        out.add(node);
+        if (node.children.isNotEmpty) collect(node.children);
+      }
+    }
+
+    collect(loopKids!);
     return out;
   }
 

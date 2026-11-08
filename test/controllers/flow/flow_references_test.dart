@@ -113,6 +113,50 @@ void main() {
     );
   });
 
+  test('输入 {{ 时逐级展开，prev 下面是循环里的步骤', () {
+    final tree = [
+      FlowNode(
+        key: 'retry',
+        id: 'retry',
+        kind: 'loop',
+        children: [
+          FlowNode(
+            key: 'review',
+            id: 'review',
+            kind: 'task',
+            fields: {
+              'task': {
+                'output': {'comments': 'string'}
+              }
+            },
+          ),
+          FlowNode(key: 'impl', id: 'impl', kind: 'task'),
+        ],
+      ),
+    ];
+    final roots = FlowReferences.tree(
+      tree: tree,
+      currentNodeId: 'impl',
+      yaml: 'flow: x\ninputs:\n  goal: {type: string}\n',
+    );
+    final top = FlowReferences.suggest(text: '{{', cursor: 2, roots: roots)!;
+    expect(top.matches.map((n) => n.segment), containsAll(['inputs', 'prev']));
+
+    final underPrev =
+        FlowReferences.suggest(text: '{{ prev.', cursor: '{{ prev.'.length, roots: roots)!;
+    expect(
+      underPrev.matches.map((n) => n.segment),
+      containsAll(['review', 'impl']),
+    );
+
+    final underData = FlowReferences.suggest(
+      text: '{{ prev.review.data.',
+      cursor: '{{ prev.review.data.'.length,
+      roots: roots,
+    )!;
+    expect(underData.matches.map((n) => n.segment), contains('comments'));
+  });
+
   test('哪些字段给插入引用按钮', () {
     expect(FlowReferences.supports('task.prompt'), isTrue);
     expect(FlowReferences.supports('when'), isTrue);

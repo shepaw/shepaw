@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_executor.dart';
+import '../../controllers/flow/flow_references.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_field_schema.dart';
 import '../../utils/layout_utils.dart';
@@ -93,6 +94,7 @@ class FlowFieldEditor extends StatefulWidget {
     required this.onChanged,
     this.onCommitted,
     this.refCandidates = const [],
+    this.varRoots = const [],
     this.intInputNames = const [],
     this.flowRefChoices = const [],
     this.choices,
@@ -116,6 +118,9 @@ class FlowFieldEditor extends StatefulWidget {
 
   /// string / text 的「插入引用」候选。
   final List<String> refCandidates;
+
+  /// 输入 `{{` 时逐级展开的变量树。空列表不提示。
+  final List<FlowVarNode> varRoots;
 
   /// [FlowFieldShape.intOrInput] 能引用的 int 输入名。
   final List<String> intInputNames;
@@ -152,6 +157,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     descendantsAreFocusable: true,
   );
   bool _reseedQueued = false;
+  FlowVarSuggest? _suggest;
 
   bool get _focused => _scope.hasFocus;
 
@@ -184,6 +190,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       final oldOutputs = List<_OutputRow>.of(_outputs);
       setState(_seed);
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        oldScalar.removeListener(_syncSuggest);
         oldScalar.dispose();
         oldJudge.dispose();
         oldAsk.dispose();
@@ -214,7 +221,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     final c = widget.current;
     _scalar = TextEditingController(
       text: c is num ? c.toString() : (c is String ? c : ''),
-    );
+    )..addListener(_syncSuggest);
     final cond = c is Map ? c : null;
     _condIsJudge = cond != null && cond.containsKey('judge');
     _judge = TextEditingController(text: cond?['judge']?.toString() ?? '');
@@ -260,6 +267,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
   }
 
   void _releaseControllers() {
+    _scalar.removeListener(_syncSuggest);
     _scalar.dispose();
     _judge.dispose();
     _ask.dispose();
@@ -440,6 +448,112 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     return null;
   }
 
+  void _syncSuggest() {
+    if (!mounted) return;
+    final next = !FlowReferences.supports(widget.spec.path)
+        ? null
+        : FlowReferences.suggest(
+            text: _scalar.text,
+            cursor: _scalar.selection.extentOffset,
+            roots: widget.varRoots,
+          );
+    if (_sameSuggest(_suggest, next)) return;
+    setState(() => _suggest = next);
+  }
+
+  bool _sameSuggest(FlowVarSuggest? a, FlowVarSuggest? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return a == null && b == null;
+    if (a.filter != b.filter ||
+        a.replaceFrom != b.replaceFrom ||
+        a.cursor != b.cursor ||
+        a.options.length != b.options.length) {
+      return false;
+    }
+    for (var i = 0; i < a.options.length; i++) {
+      if (a.options[i].segment != b.options[i].segment) return false;
+    }
+    return true;
+  }
+
+  /// 点一级变量。有下一级就补上「名字.」并留在列表里，叶子才补 `}}`。
+  void _pickVar(FlowVarNode node) {
+    final suggest = _suggest;
+    if (suggest == null) return;
+    final piece = node.hasChildren ? '${node.segment}.' : '${node.segment} }}';
+    final text = _scalar.text;
+    final from = suggest.replaceFrom.clamp(0, text.length);
+    final to = suggest.cursor.clamp(from, text.length);
+    final next = text.replaceRange(from, to, piece);
+    _scalar.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: from + piece.length),
+    );
+    _emit();
+  }
+
+  Widget _varSuggestList(ThemeData theme, ColorScheme scheme) {
+    final suggest = _suggest;
+    if (suggest == null) return const SizedBox.shrink();
+    final matches = suggest.matches;
+    return Card(
+      key: const ValueKey('var-suggest'),
+      margin: const EdgeInsets.only(top: 4),
+      elevation: 2,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 220),
+        child: matches.isEmpty
+            ? const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text('没有匹配的变量'),
+              )
+            : ListView(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                children: [
+                  for (final node in matches)
+                    InkWell(
+                      key: ValueKey('var-opt-${node.segment}'),
+                      onTapDown: (_) => _pickVar(node),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text.rich(
+                                TextSpan(
+                                  text: node.segment,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontFamily: 'monospace',
+                                  ),
+                                  children: [
+                                    if (node.hint.isNotEmpty)
+                                      TextSpan(
+                                        text: '  ${node.hint}',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                          fontFamily: null,
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            if (node.hasChildren)
+                              Icon(Icons.chevron_right,
+                                  size: 18, color: scheme.onSurfaceVariant),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+      ),
+    );
+  }
+
   /// 插入引用到光标处。
   void _insertRef(String ref) {
     final at = _scalar.selection.baseOffset.clamp(0, _scalar.text.length);
@@ -537,28 +651,40 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
 
     final editor = switch (spec.shape) {
       // 长文本（task.prompt / plan.brief …）随内容自动长高，最少四行。
-      FlowFieldShape.text => wrap(TextField(
-          key: ValueKey('f:${spec.path}'),
-          controller: _scalar,
-          enabled: widget.enabled,
-          minLines: 4,
-          maxLines: null,
-          keyboardType: TextInputType.multiline,
-          textInputAction: TextInputAction.newline,
-          decoration: textDecoration,
-          onChanged: (_) => setState(() => _emit()),
+      FlowFieldShape.text => wrap(Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              key: ValueKey('f:${spec.path}'),
+              controller: _scalar,
+              enabled: widget.enabled,
+              minLines: 4,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              decoration: textDecoration,
+              onChanged: (_) => setState(() => _emit()),
+            ),
+            _varSuggestList(theme, scheme),
+          ],
         )),
       // string 是 id / 短标量（task.uses、call.group、plan.who …），必须单行：
       // 放开多行会把换行原样发给主机，`agent:<id>\n` 就解析不出 Agent 了。
-      FlowFieldShape.string => wrap(TextField(
-          key: ValueKey('f:${spec.path}'),
-          controller: _scalar,
-          enabled: widget.enabled,
-          maxLines: 1,
-          textInputAction: TextInputAction.done,
-          decoration: textDecoration,
-          onChanged: (_) => setState(() => _emit()),
-          onEditingComplete: () => _emit(immediate: true),
+      FlowFieldShape.string => wrap(Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              key: ValueKey('f:${spec.path}'),
+              controller: _scalar,
+              enabled: widget.enabled,
+              maxLines: 1,
+              textInputAction: TextInputAction.done,
+              decoration: textDecoration,
+              onChanged: (_) => setState(() => _emit()),
+              onEditingComplete: () => _emit(immediate: true),
+            ),
+            _varSuggestList(theme, scheme),
+          ],
         )),
       FlowFieldShape.int => wrap(TextField(
           key: ValueKey('f:${spec.path}'),

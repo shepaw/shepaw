@@ -576,6 +576,11 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
       currentNodeId: node.id,
       yaml: widget.yaml,
     );
+    final varRoots = FlowReferences.tree(
+      tree: widget.tree,
+      currentNodeId: node.id,
+      yaml: widget.yaml,
+    );
     final intInputs = [
       for (final spec in peekInputs(widget.yaml))
         if (spec.type == 'int') spec.name,
@@ -627,13 +632,15 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
       else
         for (final group in groups)
           if (group == 'advanced')
-            _advanced(byGroup[group] ?? const [], refCandidates, intInputs, l10n, theme)
+            _advanced(byGroup[group] ?? const [], refCandidates, intInputs,
+                varRoots, l10n, theme)
           else if (byGroup[group]?.isNotEmpty ?? false || (_isTask && group == 'who'))
             _group(
               group,
               byGroup[group] ?? const [],
               refCandidates,
               intInputs,
+              varRoots,
               l10n,
               theme,
             ),
@@ -664,6 +671,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     List<FlowFieldSpec> specs,
     List<String> refCandidates,
     List<String> intInputs,
+    List<FlowVarNode> varRoots,
     AppLocalizations l10n,
     ThemeData theme,
   ) {
@@ -688,7 +696,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
               agentOf: widget.agentOf,
               onChanged: _locked ? (_) {} : _onExecutorChanged,
             ),
-          ..._groupFields(group, specs, refCandidates, intInputs),
+          ..._groupFields(group, specs, refCandidates, intInputs, varRoots),
         ],
       ),
     );
@@ -698,6 +706,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     List<FlowFieldSpec> specs,
     List<String> refCandidates,
     List<String> intInputs,
+    List<FlowVarNode> varRoots,
     AppLocalizations l10n,
     ThemeData theme,
   ) {
@@ -721,7 +730,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         children: [
           for (final spec in specs) ...[
-            _fieldEditor(spec, refCandidates, intInputs),
+            _fieldEditor(spec, refCandidates, intInputs, varRoots),
             const SizedBox(height: 12),
           ],
         ],
@@ -751,6 +760,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     List<FlowFieldSpec> specs,
     List<String> refCandidates,
     List<String> intInputs,
+    List<FlowVarNode> varRoots,
   ) {
     final model = specs.where((spec) => spec.shape == FlowFieldShape.modelRef);
     final mode = specs.where((spec) => spec.shape == FlowFieldShape.modeRef);
@@ -769,7 +779,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (final spec in [...model, ...mode]) ...[
-                    _fieldEditor(spec, refCandidates, intInputs),
+                    _fieldEditor(spec, refCandidates, intInputs, varRoots),
                     const SizedBox(height: 12),
                   ],
                 ],
@@ -781,11 +791,13 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: _fieldEditor(model.first, refCandidates, intInputs),
+                    child: _fieldEditor(
+                        model.first, refCandidates, intInputs, varRoots),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _fieldEditor(mode.first, refCandidates, intInputs),
+                    child: _fieldEditor(
+                        mode.first, refCandidates, intInputs, varRoots),
                   ),
                 ],
               ),
@@ -794,11 +806,11 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
         )
       else
         for (final spec in [...model, ...mode]) ...[
-          _fieldEditor(spec, refCandidates, intInputs),
+          _fieldEditor(spec, refCandidates, intInputs, varRoots),
           const SizedBox(height: 12),
         ],
       for (final spec in rest) ...[
-        _fieldEditor(spec, refCandidates, intInputs),
+        _fieldEditor(spec, refCandidates, intInputs, varRoots),
         const SizedBox(height: 12),
       ],
     ];
@@ -808,6 +820,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     FlowFieldSpec spec,
     List<String> refCandidates,
     List<String> intInputs,
+    List<FlowVarNode> varRoots,
   ) {
     final isModel = spec.shape == FlowFieldShape.modelRef;
     final isMode = spec.shape == FlowFieldShape.modeRef;
@@ -843,6 +856,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
                 : null),
         refCandidates:
             FlowReferences.supports(spec.path) ? refCandidates : const [],
+        varRoots: FlowReferences.supports(spec.path) ? varRoots : const [],
         intInputNames:
             spec.shape == FlowFieldShape.intOrInput ? intInputs : const [],
         flowRefChoices:
