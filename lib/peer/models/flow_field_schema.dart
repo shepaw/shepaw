@@ -144,8 +144,11 @@ bool isFlowFieldValueValid(FlowFieldSpec spec, Object? value) {
         }),
     FlowFieldShape.flowRef ||
     FlowFieldShape.modelRef ||
-    FlowFieldShape.modeRef ||
-    FlowFieldShape.duration =>
+    FlowFieldShape.modeRef =>
       value is String && value.trim().isNotEmpty,
+    // 只接受界面拼出来的 `30s`。读到的旧写法走原样文本框，和节点上的原值
+    // 相同时由调用方放行，不在这里当成合法新值。
+    FlowFieldShape.duration => value is String &&
+        RegExp(r'^\d+\s*[smh]$').hasMatch(value.trim()),
   };
 }

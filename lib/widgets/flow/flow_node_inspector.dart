@@ -295,6 +295,11 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
   Object? _modeSeed;
   bool _modelSeeded = false;
   bool _modeSeeded = false;
+
+  /// 上次从节点上读到的模型 / 模式。和种子不同、又和这个值不同，说明是
+  /// 撤销或主机回包，应该丢掉本地种子，改跟节点走。
+  Object? _seenModel;
+  Object? _seenMode;
   final Set<String> _invalid = {};
 
   bool get _locked => widget.readOnly || widget.rehearsalLocked;
@@ -313,6 +318,8 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     super.initState();
     _executor = FlowExecutor.of(widget.node.fields);
     _specs = _collect(widget.node);
+    _seenModel = flowFieldValue(widget.node.fields, 'task.model');
+    _seenMode = flowFieldValue(widget.node.fields, 'task.mode');
     if (_isTask) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _refreshChoices(_executor);
@@ -336,11 +343,17 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
       _executor = FlowExecutor.of(widget.node.fields);
       _specs = _collect(widget.node);
       _invalid.clear();
+      _modelSeeded = false;
+      _modeSeeded = false;
+      _seenModel = flowFieldValue(widget.node.fields, 'task.model');
+      _seenMode = flowFieldValue(widget.node.fields, 'task.mode');
       _choicesToken++;
       if (_isTask) _refreshChoices(_executor);
       return;
     }
     _specs = _collect(widget.node);
+    _syncChoiceSeed('task.model', model: true);
+    _syncChoiceSeed('task.mode', model: false);
     if (!_sameExecutor(FlowExecutor.of(widget.node.fields), _executor)) {
       // 外部撤销把执行者改回去了，而用户没在改这个控件。
       _executor = FlowExecutor.of(widget.node.fields);
@@ -355,6 +368,21 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
                   spec.path != 'task.uses'))
             spec,
       ];
+
+  /// 节点上的模型 / 模式变了（撤销、主机规范化），不再用换执行者时的本地种子。
+  void _syncChoiceSeed(String path, {required bool model}) {
+    final fromNode = flowFieldValue(widget.node.fields, path);
+    final seen = model ? _seenModel : _seenMode;
+    if (_same(fromNode, seen)) return;
+    if (model) {
+      _seenModel = fromNode;
+      _modelSeeded = false;
+    } else {
+      _seenMode = fromNode;
+      _modeSeeded = false;
+    }
+    _choiceSeed++;
+  }
 
   bool _sameExecutor(FlowExecutor a, FlowExecutor b) =>
       a.mode == b.mode && a.value == b.value;
@@ -448,6 +476,16 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
 
   void _commit(FlowFieldSpec spec, Object? value, {required bool immediate}) {
     if (_locked) return;
+    final before = flowFieldValue(widget.node.fields, spec.path);
+    // 和节点上一样（包括「本来就是空的」）：不是一次失败的编辑，别标红，
+    // 也别发出去。空列表上点「添加」会先交出 null，不能因此拦住切节点。
+    if (_same(before, value)) {
+      if (_invalid.remove(spec.path)) {
+        setState(() {});
+        widget.onValidity?.call(_invalid.isNotEmpty);
+      }
+      return;
+    }
     if (!isFlowFieldValueValid(spec, value)) {
       setState(() => _invalid.add(spec.path));
       widget.onValidity?.call(true);
@@ -455,8 +493,6 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     }
     setState(() => _invalid.remove(spec.path));
     widget.onValidity?.call(_invalid.isNotEmpty);
-    final before = flowFieldValue(widget.node.fields, spec.path);
-    if (_same(before, value)) return;
     widget.onFieldChanged?.call(spec.path, value, immediate: immediate);
   }
 

@@ -6135,5 +6135,6 @@
   "flow_runtimeInputs": "运行时要填的参数",
   "flow_noRuntimeInputs": "运行时不需要填写参数",
   "flow_runtimeOutputs": "结果输出",
-  "flow_inputRequiredShort": "必填"
+  "flow_inputRequiredShort": "必填",
+  "flow_headerNamesBlocked": "有名称为空或重复，这一组还没保存"
 }

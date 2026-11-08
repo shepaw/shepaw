@@ -315,12 +315,20 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       case FlowFieldShape.text:
         value = _scalar.text.trim().isEmpty ? null : _scalar.text;
       case FlowFieldShape.int:
-        // 非数字绝不发出去：主机 M1.5 会因解析失败拒掉**整批**，连带把一起改的
-        // 其他字段全标成 rejected。改成不发（界面标红）。
-        value = _numberOrNull(_scalar.text.trim());
+        // 空是清空。写了但不是整数时，即时提交的调用方要拿到原文以便标红；
+        // 老的 onChanged 路径仍回 null，避免把字符串发给主机。
+        final intRaw = _scalar.text.trim();
+        final parsedInt = int.tryParse(intRaw);
+        value = intRaw.isEmpty
+            ? null
+            : (parsedInt ?? (widget.onCommitted != null ? intRaw : null));
       case FlowFieldShape.intOrInput:
-        // 数字写成 int；引用写成 "{{ inputs.x }}"；别的都不发。
-        value = _intOrInputOrNull(_scalar.text.trim());
+        // 数字写成 int；引用写成 "{{ inputs.x }}"。解析不了时同上。
+        final intRaw = _scalar.text.trim();
+        final parsedOrInput = _intOrInputOrNull(intRaw);
+        value = intRaw.isEmpty
+            ? null
+            : (parsedOrInput ?? (widget.onCommitted != null ? intRaw : null));
       case FlowFieldShape.boolean:
         value = _boolean;
       case FlowFieldShape.enumOf:
@@ -362,10 +370,17 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       case FlowFieldShape.duration:
         if (_durationRaw) {
           value = _scalar.text.trim().isEmpty ? null : _scalar.text.trim();
-        } else if (_durationAmount <= 0) {
-          value = null;
         } else {
-          value = '$_durationAmount$_durationUnit';
+          final raw = _scalar.text.trim();
+          final amount = int.tryParse(raw);
+          if (raw.isEmpty || (amount != null && amount <= 0)) {
+            value = null;
+          } else if (amount == null) {
+            // 数字框里写了非数字：把原文交回去标红，别当成「清空」。
+            value = raw;
+          } else {
+            value = '$amount$_durationUnit';
+          }
         }
       case FlowFieldShape.modelRef:
       case FlowFieldShape.modeRef:

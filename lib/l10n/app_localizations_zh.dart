@@ -10181,4 +10181,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_inputRequiredShort => '必填';
+
+  @override
+  String get flow_headerNamesBlocked => '有名称为空或重复，这一组还没保存';
 }

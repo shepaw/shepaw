@@ -1264,7 +1264,20 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           ),
       ],
     );
-    return LayoutBuilder(
+    if (_selectedId != null && _nodeById(_selectedId!) == null) {
+      final stale = _selectedId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _selectedId == stale) {
+          setState(() => _selectedId = null);
+        }
+      });
+    }
+    return CallbackShortcuts(
+      bindings: {
+        // 面板里按 Esc 把焦点还给大纲；大纲上再按一次才取消选中。
+        const SingleActivator(LogicalKeyboardKey.escape): _onEscape,
+      },
+      child: LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final wide = width >= 900;
@@ -1330,6 +1343,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           ],
         );
       },
+    ),
     );
   }
 

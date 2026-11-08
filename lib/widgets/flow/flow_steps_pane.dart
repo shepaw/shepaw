@@ -21,6 +21,7 @@ class FlowStepsPane extends StatefulWidget {
     required this.name,
     this.scope = '',
     this.draftBanner,
+    this.draftYaml,
   });
 
   final HubFlow client;
@@ -28,6 +29,9 @@ class FlowStepsPane extends StatefulWidget {
   final String name;
   final String scope;
   final Widget? draftBanner;
+
+  /// 有未保存草稿时用它来画树，只展示，不写回。
+  final String? draftYaml;
 
   @override
   State<FlowStepsPane> createState() => _FlowStepsPaneState();
@@ -44,6 +48,7 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
   final TextEditingController _composer = TextEditingController();
   final StringBuffer _reply = StringBuffer();
   bool _talking = false;
+  int _loadGen = 0;
 
   bool get _canTalk => widget.scope.startsWith('group:');
 
@@ -56,6 +61,16 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
     super.initState();
     unawaited(_load());
     unawaited(_hint());
+  }
+
+  @override
+  void didUpdateWidget(covariant FlowStepsPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.draftYaml != widget.draftYaml ||
+        oldWidget.name != widget.name ||
+        oldWidget.peerId != widget.peerId) {
+      unawaited(_load());
+    }
   }
 
   @override
@@ -76,18 +91,24 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
   }
 
   Future<void> _load() async {
-    final got = await widget.client.get(
-      widget.peerId,
-      widget.name,
-      scope: widget.scope,
-    );
+    final gen = ++_loadGen;
     final schema = await widget.client.schema(widget.peerId);
-    if (got == null) {
-      if (mounted) setState(() => _loading = false);
+    if (!mounted || gen != _loadGen) return;
+    final draft = widget.draftYaml;
+    final yaml = (draft != null && draft.isNotEmpty)
+        ? draft
+        : (await widget.client.get(
+            widget.peerId,
+            widget.name,
+            scope: widget.scope,
+          ))
+            ?.yaml;
+    if (yaml == null) {
+      if (mounted && gen == _loadGen) setState(() => _loading = false);
       return;
     }
-    final checked = await widget.client.validate(widget.peerId, got.yaml);
-    if (!mounted) return;
+    final checked = await widget.client.validate(widget.peerId, yaml);
+    if (!mounted || gen != _loadGen) return;
     setState(() {
       _loading = false;
       _schema = schema;
@@ -151,7 +172,7 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
     final text = _composer.text.trim();
     if (text.isEmpty || _talking || !_canTalk) return;
     final before = {
-      for (final node in _flatten(_tree)) node.id: node.desc ?? '',
+      for (final node in _flatten(_tree)) node.id: _nodeSig(node),
     };
     setState(() {
       _talking = true;
@@ -176,7 +197,7 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
           await _load();
           if (!mounted) return;
           final after = {
-            for (final node in _flatten(_tree)) node.id: node.desc ?? '',
+            for (final node in _flatten(_tree)) node.id: _nodeSig(node),
           };
           setState(() {
             _flash
@@ -196,6 +217,8 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
     }
     _composer.clear();
   }
+
+  String _nodeSig(FlowNode node) => '${node.desc ?? ''}|${node.fields}';
 
   List<FlowNode> _flatten(List<FlowNode> nodes) => [
         for (final node in nodes) ...[node, ..._flatten(node.children)],
@@ -253,6 +276,9 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
                 nodes: _tree,
                 selectionMode: _selecting,
                 selectedIds: _selected,
+                badgeFor: (node) => _flash.contains(node.id)
+                    ? (l10n.flow_diffChanged, Colors.amber)
+                    : null,
                 onTapNode: (node) {
                   if (_selecting) {
                     setState(() {

@@ -280,6 +280,7 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
       scope: widget.scope,
       draftBanner:
           _draft == null ? null : _draftBanner(AppLocalizations.of(context)),
+      draftYaml: _draft?.yaml,
     );
     return _desktop
         ? [overview, _editPane ?? const SizedBox.shrink(), runs]

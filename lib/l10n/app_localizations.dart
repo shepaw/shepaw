@@ -18526,6 +18526,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'必填'**
   String get flow_inputRequiredShort;
+
+  /// No description provided for @flow_headerNamesBlocked.
+  ///
+  /// In zh, this message translates to:
+  /// **'有名称为空或重复，这一组还没保存'**
+  String get flow_headerNamesBlocked;
 }
 
 class _AppLocalizationsDelegate
