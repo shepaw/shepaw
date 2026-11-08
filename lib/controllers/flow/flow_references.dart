@@ -167,7 +167,50 @@ class FlowReferences {
     if (body.contains('}}')) return null;
     final trimmed = body.trimLeft();
     final lead = body.length - trimmed.length;
-    final parts = trimmed.split('.');
+    return _fromPath(
+      roots: roots,
+      pathText: trimmed,
+      pathStart: open + 2 + lead,
+      replaceEnd: cursor,
+    );
+  }
+
+  /// 表达式里的路径（没有 `{{ }}`）。
+  ///
+  /// 光标在引号里、或正停在数字上时不提示。其余位置按光标前的路径展开：
+  /// 空路径列出第一层，`review.data.` 列出下一层。替换范围盖住光标所在的
+  /// 整段名字，避免点选后把后半截留下来。
+  static FlowVarSuggest? suggestExpr({
+    required String text,
+    required int cursor,
+    required List<FlowVarNode> roots,
+  }) {
+    if (cursor < 0 || cursor > text.length) return null;
+    if (_inString(text, cursor)) return null;
+    final before = text.substring(0, cursor);
+    final pathStart = _exprPathStart(before);
+    final pathText = before.substring(pathStart);
+    if (pathText.isNotEmpty && _isDigit(pathText.codeUnitAt(0))) return null;
+    var replaceEnd = cursor;
+    while (replaceEnd < text.length &&
+        _isExprPathChar(text.codeUnitAt(replaceEnd))) {
+      replaceEnd++;
+    }
+    return _fromPath(
+      roots: roots,
+      pathText: pathText,
+      pathStart: pathStart,
+      replaceEnd: replaceEnd,
+    );
+  }
+
+  static FlowVarSuggest? _fromPath({
+    required List<FlowVarNode> roots,
+    required String pathText,
+    required int pathStart,
+    required int replaceEnd,
+  }) {
+    final parts = pathText.split('.');
     var level = roots;
     for (var i = 0; i < parts.length - 1; i++) {
       final name = parts[i].trim();
@@ -186,10 +229,47 @@ class FlowReferences {
     return FlowVarSuggest(
       options: level,
       filter: filter,
-      replaceFrom: open + 2 + lead + trimmed.length - filter.length,
-      cursor: cursor,
+      replaceFrom: pathStart + pathText.length - filter.length,
+      cursor: replaceEnd,
     );
   }
+
+  /// 光标在引号里（字符串字面量）。转义的引号不算收尾。
+  static bool _inString(String text, int cursor) {
+    String? quote;
+    for (var i = 0; i < cursor && i < text.length; i++) {
+      final c = text[i];
+      if (quote == null) {
+        if (c == '"' || c == "'") quote = c;
+        continue;
+      }
+      if (c == '\\') {
+        i++;
+        continue;
+      }
+      if (c == quote) quote = null;
+    }
+    return quote != null;
+  }
+
+  static int _exprPathStart(String before) {
+    var i = before.length;
+    while (i > 0 &&
+        (before[i - 1] == '.' || _isExprPathChar(before.codeUnitAt(i - 1)))) {
+      i--;
+    }
+    return i;
+  }
+
+  static bool _isExprPathChar(int rune) {
+    return (rune >= 0x30 && rune <= 0x39) ||
+        (rune >= 0x41 && rune <= 0x5A) ||
+        (rune >= 0x61 && rune <= 0x7A) ||
+        rune == 0x5F ||
+        rune == 0x2D;
+  }
+
+  static bool _isDigit(int rune) => rune >= 0x30 && rune <= 0x39;
 
   static FlowVarNode _stepVar(FlowNode node) {
     final keys = _outputKeys(node);

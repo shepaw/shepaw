@@ -1133,6 +1133,8 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
             fieldKey: ValueKey('f:${widget.spec.path}'),
             controller: _scalar,
             roots: widget.varRoots,
+            // 「总是执行」没有表达式。选中表达式时，焦点即弹出变量，写入裸路径。
+            expression: !_condAlways,
             decoration: InputDecoration(
               isDense: true,
               suffixIcon: widget.refCandidates.isEmpty

@@ -157,6 +157,66 @@ void main() {
     expect(underData.matches.map((n) => n.segment), contains('comments'));
   });
 
+  test('表达式不写花括号：空光标列第一层，点进路径再下钻', () {
+    const roots = [
+      FlowVarNode(
+        segment: 'prev',
+        hint: '上一轮',
+        children: [
+          FlowVarNode(segment: 'review', hint: 'task'),
+        ],
+      ),
+      FlowVarNode(segment: 'inputs', hint: '流程输入'),
+    ];
+    final top = FlowReferences.suggestExpr(text: '', cursor: 0, roots: roots)!;
+    expect(top.matches.map((n) => n.segment), containsAll(['prev', 'inputs']));
+    expect(top.replaceFrom, 0);
+
+    final typed = FlowReferences.suggestExpr(text: 'pre', cursor: 3, roots: roots)!;
+    expect(typed.matches.map((n) => n.segment), ['prev']);
+
+    final under = FlowReferences.suggestExpr(
+      text: 'prev.',
+      cursor: 'prev.'.length,
+      roots: roots,
+    )!;
+    expect(under.matches.map((n) => n.segment), ['review']);
+    expect(under.replaceFrom, 'prev.'.length);
+
+    const expr = 'prev.review == "pass"';
+    expect(
+      FlowReferences.suggestExpr(
+        text: expr,
+        cursor: expr.indexOf('pass') + 1,
+        roots: roots,
+      ),
+      isNull,
+    );
+    final atEnd = FlowReferences.suggestExpr(
+      text: expr,
+      cursor: expr.length,
+      roots: roots,
+    )!;
+    expect(atEnd.matches.map((n) => n.segment), contains('prev'));
+    expect(atEnd.replaceFrom, expr.length);
+
+    const number = 'prev.review > 2';
+    expect(
+      FlowReferences.suggestExpr(text: number, cursor: number.length, roots: roots),
+      isNull,
+    );
+
+    const mid = 'prev.review';
+    final atRev = FlowReferences.suggestExpr(
+      text: mid,
+      cursor: mid.indexOf('review') + 3,
+      roots: roots,
+    )!;
+    expect(atRev.filter, 'rev');
+    expect(atRev.replaceFrom, mid.indexOf('review'));
+    expect(atRev.cursor, mid.length);
+  });
+
   test('哪些字段给插入引用按钮', () {
     expect(FlowReferences.supports('task.prompt'), isTrue);
     expect(FlowReferences.supports('when'), isTrue);
