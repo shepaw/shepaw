@@ -41,6 +41,13 @@ class FlowInspectorHeaderState extends State<FlowInspectorHeader> {
   void initState() {
     super.initState();
     _desc = TextEditingController(text: widget.node.desc ?? '');
+    descFocus.addListener(_onDescFocus);
+  }
+
+  /// 保存和 Esc 都是直接把焦点移走，不会走 onTapOutside。
+  /// 不在这里提交的话，描述只活在输入框里，离开这一步就丢了。
+  void _onDescFocus() {
+    if (!descFocus.hasFocus && !widget.readOnly) _commit();
   }
 
   @override
@@ -53,6 +60,7 @@ class FlowInspectorHeaderState extends State<FlowInspectorHeader> {
 
   @override
   void dispose() {
+    descFocus.removeListener(_onDescFocus);
     _desc.dispose();
     descFocus.dispose();
     super.dispose();

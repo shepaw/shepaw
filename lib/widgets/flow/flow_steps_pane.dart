@@ -119,10 +119,20 @@ class _FlowStepsPaneState extends State<FlowStepsPane> {
       checked = await widget.client.validate(widget.peerId, yaml);
       if (!mounted || gen != _loadGen) return;
     }
+    final tree = checked?.tree ?? const <FlowNode>[];
+    final ids = <String>{};
+    void walk(List<FlowNode> nodes) {
+      for (final node in nodes) {
+        ids.add(node.id);
+        walk(node.children);
+      }
+    }
+    walk(tree);
     setState(() {
       _loading = false;
       _schema = schema;
-      _tree = checked?.tree ?? const [];
+      _tree = tree;
+      _selected.removeWhere((id) => !ids.contains(id));
     });
   }
 

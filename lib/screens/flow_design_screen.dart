@@ -1130,6 +1130,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   void _startRehearsal(FlowEditorController c) {
     // 演练的图标 / 文案与「开始运行」显式区分；演练期间顶部一直挂着提示条。
+    // 先把正在编辑的输入框交出去，否则描述这类只在失焦时提交的字段进不了演练。
+    FocusManager.instance.primaryFocus?.unfocus();
     _openPanel('rehearsal');
     unawaited(c.startRehearsal());
   }
