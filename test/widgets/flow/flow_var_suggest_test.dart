@@ -83,6 +83,36 @@ void main() {
     expect(find.byKey(const ValueKey('var-suggest')), findsNothing);
   });
 
+  testWidgets('表达式的插入引用弹出变量菜单，点选写入裸路径', (tester) async {
+    await _pumpSuggest(
+      tester,
+      const FlowFieldSpec(
+        path: 'loop.until',
+        shape: FlowFieldShape.cond,
+        group: 'loop',
+        labelZh: '直到',
+        labelEn: 'Until',
+      ),
+      '',
+    );
+    await tester.tap(find.byKey(const ValueKey('ref:loop.until')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('var-menu-prev')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('var-menu-prev')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('var-menu-prev.review')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('f:loop.until')))
+          .controller!
+          .text,
+      'prev.review',
+    );
+  });
+
   testWidgets('何时切到表达式后，焦点同样列出变量', (tester) async {
     await _pumpSuggest(
       tester,
