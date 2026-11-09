@@ -10306,6 +10306,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_executionsUntitled => 'Untitled';
 
   @override
+  String get flow_executionsSearchHint => 'Search title or status';
+
+  @override
+  String get flow_executionsFilterAll => 'All';
+
+  @override
+  String get flow_executionsNoMatch => 'No matching runs';
+
+  @override
   String get flow_listDelete => 'Delete flow';
 
   @override

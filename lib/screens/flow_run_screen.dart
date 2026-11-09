@@ -11,6 +11,7 @@ import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../services/approval/pending_approval_hub.dart';
 import '../services/approval/pending_approval_item.dart';
+import '../utils/layout_utils.dart';
 import '../widgets/flow/flow_node_tree.dart';
 import '../widgets/flow/flow_yaml.dart';
 import '../widgets/flow/flow_yaml_editor.dart';
@@ -66,6 +67,8 @@ String? pendingFlowFormMessageId(String channelId) {
 
 /// 工作流运行视图（方案 C.2）：节点树叠状态，随 `flow.*` 事件更新；
 /// 关卡直接点选项作答；点节点看完整输出，有会话的可以"查看会话"。
+///
+/// 宽屏把点开的组件放在右侧栏，树还留在左边；窄屏仍用底部弹层。
 class FlowRunScreen extends StatefulWidget {
   const FlowRunScreen({
     super.key,
@@ -104,6 +107,9 @@ class FlowRunScreen extends StatefulWidget {
 }
 
 class _FlowRunScreenState extends State<FlowRunScreen> {
+  /// 右边还能放下一条组件栏时才分栏。再窄就退回底部弹层，避免把树挤没。
+  static const double _sidePaneMinWidth = 600;
+
   late final HubFlow _client = widget.client ?? HubFlow();
   StreamSubscription<FlowEvent>? _sub;
   StreamSubscription<PeerConnectionEvent>? _connSub;
@@ -122,6 +128,10 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     String? highlightMessageId
   })? _pendingSessionOpen;
 
+  /// 宽屏右侧栏正在看的节点。按 key 跟最新的树对齐，状态刷新后栏里也是新的。
+  String? _selectedKey;
+  double _bodyWidth = 0;
+
   @override
   void initState() {
     super.initState();
@@ -138,6 +148,12 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       });
     }
     unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(FlowRunScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.runId != widget.runId) _selectedKey = null;
   }
 
   @override
@@ -406,19 +422,50 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
 
   FlowNode? _nodeForSession(FlowRunView run, String sessionId) {
     for (final root in run.tree) {
-      final node = root.find(
-          (candidate) => flowFoldedSessionId(candidate.sessionId ?? '') == sessionId);
+      final node = root.find((candidate) =>
+          flowFoldedSessionId(candidate.sessionId ?? '') == sessionId);
       if (node != null) return node;
     }
     return null;
   }
 
+  bool _useSidePane(double width) =>
+      LayoutUtils.isDesktopLayout(context) && width >= _sidePaneMinWidth;
+
+  double _sidePaneWidth(double total) {
+    final preferred = total * 0.38;
+    final width = preferred < 260
+        ? 260.0
+        : preferred > 420
+            ? 420.0
+            : preferred;
+    final max = total - 300;
+    return width > max ? max : width;
+  }
+
+  FlowNode? _nodeByKey(String key) {
+    final run = _run;
+    if (run == null) return null;
+    for (final root in run.tree) {
+      final found = root.find((node) => node.key == key);
+      if (found != null) return found;
+    }
+    return null;
+  }
+
   void _showNode(FlowNode node) {
+    if (_useSidePane(_bodyWidth)) {
+      setState(() => _selectedKey = node.key);
+      return;
+    }
+    _showNodeSheet(node);
+  }
+
+  void _showNodeSheet(FlowNode node) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (context) {
-        final l10n = AppLocalizations.of(context);
+      builder: (sheetContext) {
         return DraggableScrollableSheet(
           expand: false,
           initialChildSize: 0.55,
@@ -427,68 +474,76 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
             controller: controller,
             padding: const EdgeInsets.all(16),
             children: [
-              Text(flowKindTitle(l10n, node),
-                  style: Theme.of(context).textTheme.titleMedium),
-              if (node.status != null) ...[
-                const SizedBox(height: 4),
-                Text(l10n.flow_statusLine(flowStatusLabel(l10n, node.status!)) +
-                    (node.attempt > 1
-                        ? l10n.flow_attemptSuffix(node.attempt)
-                        : '')),
-              ],
-              if (node.error != null) ...[
-                const SizedBox(height: 12),
-                SelectableText(node.error!,
-                    style:
-                        TextStyle(color: Theme.of(context).colorScheme.error)),
-              ],
-              if (node.text != null) ...[
-                const SizedBox(height: 12),
-                SelectableText(node.text!),
-              ],
-              // 底部面板只摆当前适用的 1~2 个动作：等回答时「去回答」优先，
-              // 其余时候才看「查看会话」；两者不再同时出现。
-              if (node.hasSession) ...[
-                const SizedBox(height: 16),
-                if (node.status?.isWaitingForUser == true)
-                  OutlinedButton.icon(
-                    key: const ValueKey('node-goto-answer'),
-                    icon: const Icon(Icons.question_answer_outlined),
-                    label: Text(l10n.flow_gotoAnswer),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _openSession(node);
-                    },
-                  )
-                else
-                  OutlinedButton.icon(
-                    key: const ValueKey('node-view-session'),
-                    icon: const Icon(Icons.forum_outlined),
-                    label: Text(l10n.flow_viewSession),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _openSession(node);
-                    },
-                  ),
-              ],
-              // 运行中改写（F19）：只改还没开始的节点，所以已经开跑或终态的
-              // 不显示这个入口。
-              if (_canPatch(node)) ...[
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  key: const ValueKey('node-patch'),
-                  icon: const Icon(Icons.edit_outlined),
-                  label: Text(l10n.flow_patchNode),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _patchNode(node);
-                  },
-                ),
-              ],
+              _NodeDetailContent(
+                node: node,
+                showTitle: true,
+                canPatch: _canPatch(node),
+                onOpenSession: () {
+                  Navigator.pop(sheetContext);
+                  _openSession(node);
+                },
+                onPatch: () {
+                  Navigator.pop(sheetContext);
+                  unawaited(_patchNode(node));
+                },
+              ),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _sidePane(FlowNode node) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      key: const ValueKey('flow-node-detail-pane'),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(left: BorderSide(color: theme.dividerColor)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: kToolbarHeight,
+            child: Row(
+              children: [
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    flowKindTitle(l10n, node),
+                    style: theme.textTheme.titleMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey('flow-node-detail-close'),
+                  tooltip: l10n.flow_drawerClose,
+                  icon: const Icon(Icons.close),
+                  onPressed: () => setState(() => _selectedKey = null),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _NodeDetailContent(
+                  node: node,
+                  showTitle: false,
+                  canPatch: _canPatch(node),
+                  onOpenSession: () => _openSession(node),
+                  onPatch: () => unawaited(_patchNode(node)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -566,6 +621,15 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   @override
   Widget build(BuildContext context) {
     final run = _run;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _bodyWidth = constraints.maxWidth;
+        return _scaffold(run);
+      },
+    );
+  }
+
+  Widget _scaffold(FlowRunView? run) {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: !widget.embedded && widget.onClose == null,
@@ -595,7 +659,19 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
           child:
               Text(_loadFailed ? l10n.flow_runLoadFailed : l10n.flow_noData));
     }
-    return ListView(
+    final selectedKey = _selectedKey;
+    final selected = _useSidePane(_bodyWidth) && selectedKey != null
+        ? _nodeByKey(selectedKey)
+        : null;
+    if (selectedKey != null && selected == null && _useSidePane(_bodyWidth)) {
+      final missing = selectedKey;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _selectedKey != missing) return;
+        if (_nodeByKey(missing) != null) return;
+        setState(() => _selectedKey = null);
+      });
+    }
+    final list = ListView(
       padding: const EdgeInsets.all(12),
       children: [
         _RunStatusStrip(
@@ -615,7 +691,90 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
           onTapNode: _showNode,
           onOpenSession: _openSession,
           onAnswerGate: _answer,
+          selectedIds: selected == null ? const {} : {selected.id},
         ),
+      ],
+    );
+    if (selected == null) return list;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: list),
+        SizedBox(width: _sidePaneWidth(_bodyWidth), child: _sidePane(selected)),
+      ],
+    );
+  }
+}
+
+/// 点开一个组件后看到的输出和动作。宽屏放进右侧栏，窄屏放进底部弹层。
+class _NodeDetailContent extends StatelessWidget {
+  const _NodeDetailContent({
+    required this.node,
+    required this.showTitle,
+    required this.canPatch,
+    required this.onOpenSession,
+    required this.onPatch,
+  });
+
+  final FlowNode node;
+  final bool showTitle;
+  final bool canPatch;
+  final VoidCallback onOpenSession;
+  final VoidCallback onPatch;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showTitle)
+          Text(flowKindTitle(l10n, node), style: theme.textTheme.titleMedium),
+        if (node.status != null) ...[
+          if (showTitle) const SizedBox(height: 4),
+          Text(l10n.flow_statusLine(flowStatusLabel(l10n, node.status!)) +
+              (node.attempt > 1 ? l10n.flow_attemptSuffix(node.attempt) : '')),
+        ],
+        if (node.error != null) ...[
+          const SizedBox(height: 12),
+          SelectableText(node.error!,
+              style: TextStyle(color: theme.colorScheme.error)),
+        ],
+        if (node.text != null) ...[
+          const SizedBox(height: 12),
+          SelectableText(node.text!),
+        ],
+        // 只摆当前适用的 1~2 个动作：等回答时「去回答」优先，
+        // 其余时候才看「查看会话」；两者不再同时出现。
+        if (node.hasSession) ...[
+          const SizedBox(height: 16),
+          if (node.status?.isWaitingForUser == true)
+            OutlinedButton.icon(
+              key: const ValueKey('node-goto-answer'),
+              icon: const Icon(Icons.question_answer_outlined),
+              label: Text(l10n.flow_gotoAnswer),
+              onPressed: onOpenSession,
+            )
+          else
+            OutlinedButton.icon(
+              key: const ValueKey('node-view-session'),
+              icon: const Icon(Icons.forum_outlined),
+              label: Text(l10n.flow_viewSession),
+              onPressed: onOpenSession,
+            ),
+        ],
+        // 运行中改写（F19）：只改还没开始的节点，所以已经开跑或终态的
+        // 不显示这个入口。
+        if (canPatch) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const ValueKey('node-patch'),
+            icon: const Icon(Icons.edit_outlined),
+            label: Text(l10n.flow_patchNode),
+            onPressed: onPatch,
+          ),
+        ],
       ],
     );
   }
@@ -665,8 +824,8 @@ class _RunStatusStrip extends StatelessWidget {
     };
     final started = run.startedMs;
     final elapsed = started != null && started > 0
-        ? DateTime.now().difference(
-            DateTime.fromMillisecondsSinceEpoch(started))
+        ? DateTime.now()
+            .difference(DateTime.fromMillisecondsSinceEpoch(started))
         : null;
     String? elapsedLabel;
     if (elapsed != null && !run.status.isFinished) {

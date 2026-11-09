@@ -18011,6 +18011,24 @@ abstract class AppLocalizations {
   /// **'未填写标题'**
   String get flow_executionsUntitled;
 
+  /// No description provided for @flow_executionsSearchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索标题或状态'**
+  String get flow_executionsSearchHint;
+
+  /// No description provided for @flow_executionsFilterAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部'**
+  String get flow_executionsFilterAll;
+
+  /// No description provided for @flow_executionsNoMatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有匹配的运行'**
+  String get flow_executionsNoMatch;
+
   /// No description provided for @flow_listDelete.
   ///
   /// In zh, this message translates to:

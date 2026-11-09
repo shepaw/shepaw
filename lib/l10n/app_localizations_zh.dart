@@ -9903,6 +9903,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_executionsUntitled => '未填写标题';
 
   @override
+  String get flow_executionsSearchHint => '搜索标题或状态';
+
+  @override
+  String get flow_executionsFilterAll => '全部';
+
+  @override
+  String get flow_executionsNoMatch => '没有匹配的运行';
+
+  @override
   String get flow_listDelete => '删除流程';
 
   @override

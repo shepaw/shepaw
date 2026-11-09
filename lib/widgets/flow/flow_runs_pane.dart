@@ -48,16 +48,33 @@ class FlowRunsPane extends StatefulWidget {
   final VoidCallback? onClose;
 
   /// 某个流程的执行历史：标题用「执行历史」，每一行优先展示开跑时填的标题。
+  /// 这一页可以按标题 / 状态搜索，也可以按分组筛选。
   final bool executionHistory;
 
   @override
   State<FlowRunsPane> createState() => _FlowRunsPaneState();
 }
 
+enum _ExecFilter {
+  all,
+  attention,
+  running,
+  finished;
+
+  FlowRunGroup? get group => switch (this) {
+        _ExecFilter.all => null,
+        _ExecFilter.attention => FlowRunGroup.attention,
+        _ExecFilter.running => FlowRunGroup.running,
+        _ExecFilter.finished => FlowRunGroup.finished,
+      };
+}
+
 class _FlowRunsPaneState extends State<FlowRunsPane> {
   List<FlowRunSummary>? _runs;
   bool _loading = true;
   StreamSubscription<FlowEvent>? _sub;
+  final TextEditingController _search = TextEditingController();
+  _ExecFilter _filter = _ExecFilter.all;
 
   @override
   void initState() {
@@ -81,6 +98,7 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
 
   @override
   void dispose() {
+    _search.dispose();
     unawaited(_sub?.cancel());
     super.dispose();
   }
@@ -152,6 +170,10 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
               ),
             ),
           ),
+        if (widget.executionHistory) ...[
+          _searchField(l10n),
+          _filterChips(l10n),
+        ],
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
@@ -170,14 +192,151 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
                         ],
                       ),
                     )
-                  : runs.isEmpty
-                      ? Center(child: Text(l10n.flow_runsEmpty))
-                      : ListView(
-                          children: _grouped(runs, l10n, theme, scheme),
-                        ),
+                  : _listBody(runs, l10n, theme, scheme),
         ),
       ],
     );
+  }
+
+  Widget _searchField(AppLocalizations l10n) {
+    final hasQuery = _search.text.trim().isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: TextField(
+        key: const ValueKey('executions-search'),
+        controller: _search,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: l10n.flow_executionsSearchHint,
+          prefixIcon: const Icon(Icons.search),
+          isDense: true,
+          border: const OutlineInputBorder(),
+          suffixIcon: hasQuery
+              ? IconButton(
+                  key: const ValueKey('executions-search-clear'),
+                  tooltip: l10n.common_clear,
+                  icon: const Icon(Icons.close),
+                  onPressed: () {
+                    _search.clear();
+                    setState(() {});
+                  },
+                )
+              : null,
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
+    );
+  }
+
+  Widget _filterChips(AppLocalizations l10n) {
+    final items = <(_ExecFilter, String)>[
+      (_ExecFilter.all, l10n.flow_executionsFilterAll),
+      (_ExecFilter.attention, l10n.flow_runsGroupAttention),
+      (_ExecFilter.running, l10n.flow_runsGroupRunning),
+      (_ExecFilter.finished, l10n.flow_runsGroupFinished),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          for (final (filter, label) in items)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                key: ValueKey('executions-filter-${filter.name}'),
+                label: Text(label),
+                selected: _filter == filter,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onSelected: (_) => setState(() => _filter = filter),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _listBody(
+    List<FlowRunSummary> runs,
+    AppLocalizations l10n,
+    ThemeData theme,
+    ColorScheme scheme,
+  ) {
+    final visible = widget.executionHistory ? _filterRuns(runs, l10n) : runs;
+    if (runs.isEmpty) return Center(child: Text(l10n.flow_runsEmpty));
+    if (visible.isEmpty) {
+      return Center(
+        child: Text(
+          l10n.flow_executionsNoMatch,
+          key: const ValueKey('executions-no-match'),
+        ),
+      );
+    }
+    return ListView(
+      children: _grouped(visible, l10n, theme, scheme),
+    );
+  }
+
+  List<FlowRunSummary> _filterRuns(
+    List<FlowRunSummary> runs,
+    AppLocalizations l10n,
+  ) {
+    final group = _filter.group;
+    final query = _search.text.trim().toLowerCase();
+    return [
+      for (final run in runs)
+        if ((group == null || run.group == group) &&
+            _matchesQuery(run, l10n, query))
+          run,
+    ];
+  }
+
+  bool _matchesQuery(FlowRunSummary run, AppLocalizations l10n, String query) {
+    if (query.isEmpty) return true;
+    final revision = run.revision;
+    final haystack = [
+      _headline(run, l10n),
+      run.inputTitle,
+      run.status,
+      _statusLabel(run, l10n),
+      _groupLabel(run.group, l10n),
+      run.runId,
+      run.flow,
+      if (revision != null) '$revision',
+      if (revision != null) l10n.flow_revisionLabel(revision),
+    ].join('\n').toLowerCase();
+    return haystack.contains(query);
+  }
+
+  String _groupLabel(FlowRunGroup group, AppLocalizations l10n) =>
+      switch (group) {
+        FlowRunGroup.attention => l10n.flow_runsGroupAttention,
+        FlowRunGroup.running => l10n.flow_runsGroupRunning,
+        FlowRunGroup.finished => l10n.flow_runsGroupFinished,
+      };
+
+  String _statusLabel(FlowRunSummary run, AppLocalizations l10n) =>
+      switch (run.status.toLowerCase()) {
+        'running' => l10n.flow_runRunning,
+        'succeeded' => l10n.flow_runSucceeded,
+        'failed' => l10n.flow_runFailed,
+        'cancelled' || 'canceled' => l10n.flow_runCancelled,
+        'waiting_user' ||
+        'waiting' ||
+        'needs_user' ||
+        'needs_approval' ||
+        'blocked' ||
+        'halted' =>
+          l10n.flow_runsGroupAttention,
+        _ => run.status,
+      };
+
+  String _headline(FlowRunSummary run, AppLocalizations l10n) {
+    final titled = run.inputTitle.trim();
+    if (titled.isNotEmpty) return titled;
+    if (widget.executionHistory) return l10n.flow_executionsUntitled;
+    return run.flow.isEmpty ? run.runId : run.flow;
   }
 
   /// 分组后按 attention → running → finished 拼行，组内保留主机给的
@@ -202,11 +361,7 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
     for (final group in FlowRunGroup.values) {
       final items = groups[group]!;
       if (items.isEmpty) continue;
-      final label = switch (group) {
-        FlowRunGroup.attention => l10n.flow_runsGroupAttention,
-        FlowRunGroup.running => l10n.flow_runsGroupRunning,
-        FlowRunGroup.finished => l10n.flow_runsGroupFinished,
-      };
+      final label = _groupLabel(group, l10n);
       out.add(
         Padding(
           key: ValueKey('runs-group-${group.name}'),
@@ -236,11 +391,7 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
   ) {
     final needsAction = run.group == FlowRunGroup.attention;
     final titled = run.inputTitle.trim();
-    final headline = titled.isNotEmpty
-        ? titled
-        : widget.executionHistory
-            ? l10n.flow_executionsUntitled
-            : (run.flow.isEmpty ? run.runId : run.flow);
+    final headline = _headline(run, l10n);
     final when = '${run.status} · ${_when(run.startedMs, l10n)}';
     // 运行记录栏混着多个流程：有标题时把流程名留在副标题，免得只剩一句话不知道是谁的。
     final showFlow = !widget.executionHistory &&
