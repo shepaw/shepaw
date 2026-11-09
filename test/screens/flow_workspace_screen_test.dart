@@ -351,16 +351,15 @@ steps:
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('运行记录栏列主机上的运行，点一条打开运行视图', (tester) async {
+  testWidgets('流程库不再分运行记录标签', (tester) async {
     final harness = _Harness();
     addTearDown(harness.close);
     await _pump(tester, harness.client);
 
-    await tester.tap(find.byKey(const ValueKey('tab-runs')));
-    await _settle(tester);
-    expect(harness.sent.any((f) => f['type'] == 'flow_run_list_req'), isTrue);
-    expect(find.byKey(const ValueKey('run-run_1')), findsOneWidget);
-    expect(find.text('dev'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tab-runs')), findsNothing);
+    expect(find.byKey(const ValueKey('tab-flows')), findsNothing);
+    expect(find.byKey(const ValueKey('flow-search')), findsOneWidget);
+    expect(find.text('运行记录'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -394,6 +393,7 @@ steps:
     await tester.tap(find.byKey(const ValueKey('flow-more-dev')));
     await _settleMenu(tester);
     expect(find.text('执行历史'), findsOneWidget);
+    expect(find.text('历史版本'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('flow-executions-dev')));
     await _settleMenu(tester);
 
@@ -409,7 +409,34 @@ steps:
 
     await tester.tap(find.text('修好登录页'));
     await _settle(tester);
-    expect(find.text('修好登录页'), findsWidgets);
+    expect(find.byKey(const ValueKey('flow-execution-run-run_goal')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsNothing);
+
+    await tester.tap(find.byType(BackButton));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsOneWidget);
+    expect(find.text('修好登录页'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('设计页菜单能打开执行历史', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final harness = _Harness(editable: true);
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('design-more')));
+    await _settleMenu(tester);
+    expect(find.byKey(const ValueKey('executions-open')), findsOneWidget);
+    expect(find.text('历史版本'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('executions-open')));
+    await _settleMenu(tester);
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -904,6 +931,14 @@ class _Harness {
                 'type': 'flow_save_resp',
                 'success': true,
                 'flow': {'name': frame['name'], 'latest': 1},
+              },
+            'flow_run_get_req' => {
+                'type': 'flow_run_get_resp',
+                'success': true,
+                'run_id': frame['run_id'],
+                'status': 'succeeded',
+                'tasks_used': 0,
+                'tree': [],
               },
             'flow_run_start_req' => {
                 'type': 'flow_run_start_resp',

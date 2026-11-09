@@ -16430,7 +16430,7 @@ abstract class AppLocalizations {
   /// No description provided for @flow_historyTitle.
   ///
   /// In zh, this message translates to:
-  /// **'版本历史'**
+  /// **'历史版本'**
   String get flow_historyTitle;
 
   /// No description provided for @flow_historyCurrent.
@@ -16454,7 +16454,7 @@ abstract class AppLocalizations {
   /// No description provided for @flow_historyOpen.
   ///
   /// In zh, this message translates to:
-  /// **'历史'**
+  /// **'历史版本'**
   String get flow_historyOpen;
 
   /// No description provided for @flow_runsTitle.
@@ -17996,7 +17996,7 @@ abstract class AppLocalizations {
   /// No description provided for @flow_listHistory.
   ///
   /// In zh, this message translates to:
-  /// **'查看历史'**
+  /// **'历史版本'**
   String get flow_listHistory;
 
   /// No description provided for @flow_listExecutions.

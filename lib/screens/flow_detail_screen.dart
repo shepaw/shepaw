@@ -16,7 +16,7 @@ import 'flow_design_screen.dart';
 ///
 /// 点进流程就到这里：主机支持编辑就直接改（手机也一样，只是换成整页表单）；
 /// 只有连到不支持编辑操作的旧主机时，手机才退回只读步骤页 + 点选说话。
-/// 运行记录留在流程库自己的「运行记录」里。
+/// 执行历史从列表或这里的菜单打开，不在编辑页里再分一栏。
 ///
 /// 编辑页只创建一次，切走再回来不销毁撤销栈 / 草稿。
 class FlowDetailScreen extends StatefulWidget {
@@ -31,6 +31,7 @@ class FlowDetailScreen extends StatefulWidget {
     this.onDirtyChanged,
     this.onControllerReady,
     this.pageOpen,
+    this.onOpenExecutions,
   });
 
   final String peerId;
@@ -47,6 +48,8 @@ class FlowDetailScreen extends StatefulWidget {
 
   /// 工作台用来判断手机整页属性有没有开（系统返回键的层级）。
   final ValueNotifier<bool>? pageOpen;
+
+  final VoidCallback? onOpenExecutions;
 
   @override
   State<FlowDetailScreen> createState() => _FlowDetailScreenState();
@@ -145,6 +148,7 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
       embedded: true,
       restoreRequests: _restoreRequests,
       pageOpen: widget.pageOpen,
+      onOpenExecutions: widget.onOpenExecutions,
       onDirtyChanged: widget.onDirtyChanged,
       onControllerReady: (controller) {
         _editor = controller;

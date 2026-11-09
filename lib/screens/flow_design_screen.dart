@@ -62,6 +62,7 @@ class FlowDesignScreen extends StatefulWidget {
     this.embedded = false,
     this.restoreRequests,
     this.pageOpen,
+    this.onOpenExecutions,
   });
 
   final String peerId;
@@ -89,6 +90,9 @@ class FlowDesignScreen extends StatefulWidget {
   /// 同时关掉整页和整个详情」——ModalRoute 会把 didPop=false 发给所有
   /// PopEntry，两个 PopScope 都会收到。
   final ValueNotifier<bool>? pageOpen;
+
+  /// 打开这个流程的执行历史。工作台把它盖在右侧；不传就不显示这一项。
+  final VoidCallback? onOpenExecutions;
 
   /// 演练动画每一步的间隔。
   final Duration stepInterval;
@@ -1614,6 +1618,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             child: Text(l10n.flow_rehearse),
           ),
         ],
+        if (widget.onOpenExecutions != null)
+          PopupMenuItem<String>(
+            key: const ValueKey('executions-open'),
+            value: 'executions',
+            child: Text(l10n.flow_listExecutions),
+          ),
         PopupMenuItem<String>(
           key: const ValueKey('history-open'),
           value: 'history',
@@ -1632,6 +1642,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   void _onMenuChoice(String choice, FlowEditorController c) {
     switch (choice) {
+      case 'executions':
+        widget.onOpenExecutions?.call();
       case 'history':
         unawaited(_openHistory());
       case 'source':

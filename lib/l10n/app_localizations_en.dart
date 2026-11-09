@@ -9409,7 +9409,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_refInsert => 'Insert reference';
 
   @override
-  String get flow_historyTitle => 'Revision history';
+  String get flow_historyTitle => 'Version history';
 
   @override
   String get flow_historyCurrent => 'Current';
@@ -9421,7 +9421,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_historyUseAsDraft => 'Use this revision as draft';
 
   @override
-  String get flow_historyOpen => 'History';
+  String get flow_historyOpen => 'Version history';
 
   @override
   String get flow_runsTitle => 'Recent runs';
@@ -10297,7 +10297,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_listCopy => 'Duplicate';
 
   @override
-  String get flow_listHistory => 'View history';
+  String get flow_listHistory => 'Version history';
 
   @override
   String get flow_listExecutions => 'Execution history';

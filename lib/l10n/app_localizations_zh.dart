@@ -9050,7 +9050,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_refInsert => '插入引用';
 
   @override
-  String get flow_historyTitle => '版本历史';
+  String get flow_historyTitle => '历史版本';
 
   @override
   String get flow_historyCurrent => '当前版本';
@@ -9062,7 +9062,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_historyUseAsDraft => '以此版为草稿';
 
   @override
-  String get flow_historyOpen => '历史';
+  String get flow_historyOpen => '历史版本';
 
   @override
   String get flow_runsTitle => '最近运行';
@@ -9894,7 +9894,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_listCopy => '复制';
 
   @override
-  String get flow_listHistory => '查看历史';
+  String get flow_listHistory => '历史版本';
 
   @override
   String get flow_listExecutions => '执行历史';

@@ -19,10 +19,9 @@ import '../widgets/discard_changes_scope.dart';
 import '../widgets/flow/flow_context_panel.dart';
 import '../widgets/flow/flow_history_sheet.dart';
 import '../widgets/flow/flow_new_flow_dialog.dart';
-import '../widgets/flow/flow_runs_pane.dart';
 import '../widgets/flow/flow_summary_tile.dart';
 import 'flow_detail_screen.dart';
-import 'flow_run_screen.dart';
+import 'flow_execution_history_screen.dart';
 import 'flow_start_screen.dart';
 
 /// 流程库工作台：左边列表，右边一个流程的设计视图。
@@ -87,11 +86,13 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   /// 编辑区有没有没保存的改动（由设计页报上来）。
   bool _editorDirty = false;
   FlowEditorController? _editor;
-  bool _showRuns = false;
 
-  /// 运行记录右侧正在看的一条。和流程库的选中一样，点另一条就换内容。
-  String? _viewingRunId;
-  String? _viewingRunTitle;
+  /// 执行历史里正在看某一次运行。系统返回先退回列表，再关掉这一页。
+  bool _executionDetailOpen = false;
+  VoidCallback? _executionBack;
+
+  /// 区分「这一页」和已经被换掉的上一页，避免卸掉时把新页的返回清掉。
+  Object? _executionToken;
 
   /// 手机上的整页属性有没有开。ModalRoute 会把同一次系统返回通知给所有
   /// PopEntry，外层 PopScope 得靠它让设计页先关整页，不能连详情一起退掉。
@@ -229,15 +230,12 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   void _select(FlowSummary flow) {
     final same = _selectedName == flow.name;
     // 新建 / 开跑 / 历史盖在右侧时，点一条流程就回到它的编辑页，不用先按返回。
-    if (same && _pane == null && !_showRuns) return;
+    if (same && _pane == null) return;
     unawaited(() async {
       if (!same && !await _guardDirty()) return;
       if (!mounted) return;
       _dropPane();
       setState(() {
-        _showRuns = false;
-        _viewingRunId = null;
-        _viewingRunTitle = null;
         if (!same) {
           _detailToken++;
           _selectedName = flow.name;
@@ -248,6 +246,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
 
   /// 清掉右侧盖层，并让正在等结果的新建 / 开跑 / 历史结束。
   void _dropPane() {
+    _executionToken = null;
+    _executionDetailOpen = false;
+    _executionBack = null;
     final done = _paneDone;
     _pane = null;
     _paneDone = null;
@@ -257,11 +258,12 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   void _closeDetail() => unawaited(_closeDetailGuarded());
 
   Future<void> _closeDetailGuarded() async {
-    if (_showRuns && _viewingRunId != null) {
-      setState(() {
-        _viewingRunId = null;
-        _viewingRunTitle = null;
-      });
+    if (_executionDetailOpen && _executionBack != null) {
+      _executionBack!();
+      return;
+    }
+    if (_pane != null) {
+      _closePane();
       return;
     }
     if (!await _guardDirty()) return;
@@ -321,6 +323,10 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   Future<void> _handlePop() async {
     if (_cover != null) {
       _closeCover();
+      return;
+    }
+    if (_executionDetailOpen && _executionBack != null) {
+      _executionBack!();
       return;
     }
     if (_pane != null) {
@@ -436,7 +442,24 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
           : l10n.flow_hostNoReply);
       return;
     }
-    _showRun(runId, flow.name);
+    _showExecutions(
+      flow,
+      runId: runId,
+      runTitle: _startedTitle(plan, flow.name),
+    );
+  }
+
+  /// 开跑时填的那句话，拿来当这次运行的标题。
+  String _startedTitle(FlowStartPlan plan, String fallback) {
+    for (final key in const ['title', 'goal', 'task']) {
+      final value = plan.inputs[key]?.trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    for (final value in plan.inputs.values) {
+      final text = value.trim();
+      if (text.isNotEmpty) return text;
+    }
+    return fallback;
   }
 
   Future<FlowStartPlan?> _openStart({
@@ -466,14 +489,6 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
           onDismiss: () => finish(null),
           embedded: true,
         ));
-  }
-
-  void _showRun(String runId, String title) {
-    setState(() {
-      _showRuns = true;
-      _viewingRunId = runId;
-      _viewingRunTitle = title;
-    });
   }
 
   /// 拉取并缓存某台主机的 agent 候选。换主机时调用方会先把缓存清空。
@@ -720,19 +735,27 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     _select(flow);
   }
 
-  /// 列表行 `⋯` 里的「执行历史」：只看这个流程开过的运行，
-  /// 每一行用开跑时填的标题来辨认。点一条就打开那次运行。
-  void _showExecutions(FlowSummary flow) {
-    unawaited(_showPane<void>((finish) => FlowRunsPane(
+  /// 这个流程开过的运行。点一条在同一页打开详情，返回回到列表。
+  void _showExecutions(FlowSummary flow, {String? runId, String? runTitle}) {
+    final token = Object();
+    _executionToken = token;
+    _executionDetailOpen = runId != null;
+    _executionBack = null;
+    unawaited(_showPane<void>((finish) => FlowExecutionHistoryScreen(
           client: _client,
           peerId: _host,
           scope: widget.scope,
-          name: flow.name,
-          executionHistory: true,
+          flowName: flow.name,
+          initialRunId: runId,
+          initialTitle: runTitle,
           onClose: () => finish(null),
-          onOpenRun: (runId, title) {
-            finish(null);
-            _showRun(runId, title);
+          onBindBack: (back) {
+            if (!identical(_executionToken, token)) return;
+            _executionBack = back;
+          },
+          onRunOpenChanged: (open) {
+            if (!identical(_executionToken, token)) return;
+            _executionDetailOpen = open;
           },
         )));
   }
@@ -750,10 +773,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
         final wide = _wideFor(constraints);
         _wide = wide;
         final showingNarrowDetail = !wide &&
-            (_selectedName != null ||
-                _pane != null ||
-                _cover != null ||
-                (_showRuns && _viewingRunId != null));
+            (_selectedName != null || _pane != null || _cover != null);
         final hideOuterAppBar = widget.embedded && wide;
         // 只有真的要自己处理时才拦返回：窄屏详情（先退回列表）或编辑区
         // 有未保存改动。列表态且干净就放行，别无条件吃掉 iOS 侧滑 / 原生 pop。
@@ -891,7 +911,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                if (!_showRuns && _canCreateFlows)
+                if (_canCreateFlows)
                   IconButton(
                     tooltip: l10n.flow_new,
                     icon: const Icon(Icons.add),
@@ -907,44 +927,6 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
               ],
             ),
           ),
-        // 流程库 / 运行记录。运行记录走主机的 flow_run_list_req，不在本地记账。
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          child: Row(
-            children: [
-              ChoiceChip(
-                key: const ValueKey('tab-flows'),
-                label: Text(l10n.flow_libraryTitle),
-                selected: !_showRuns,
-                onSelected: (_) {
-                  _dropPane();
-                  setState(() => _showRuns = false);
-                },
-              ),
-              const SizedBox(width: 8),
-              ChoiceChip(
-                key: const ValueKey('tab-runs'),
-                label: Text(l10n.flow_runsTab),
-                selected: _showRuns,
-                onSelected: (_) {
-                  _dropPane();
-                  setState(() => _showRuns = true);
-                },
-              ),
-            ],
-          ),
-        ),
-        if (_showRuns)
-          Expanded(
-            child: FlowRunsPane(
-              client: _client,
-              peerId: _host,
-              scope: widget.scope,
-              onOpenRun: _openRun,
-              selectedRunId: _viewingRunId,
-            ),
-          )
-        else ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             child: TextField(
@@ -982,12 +964,15 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                           onHistory: () => unawaited(_showHistory(flow)),
                           onApproval: flow.lastRunId == null
                               ? null
-                              : () => _openRun(flow.lastRunId!, flow.name),
+                              : () => _showExecutions(
+                                    flow,
+                                    runId: flow.lastRunId,
+                                    runTitle: flow.name,
+                                  ),
                         ),
                     ],
                   ),
           ),
-        ],
       ],
     );
   }
@@ -1023,10 +1008,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     );
   }
 
-  void _openRun(String runId, String title) => _showRun(runId, title);
-
   Widget _buildDetail(AppLocalizations l10n, {required bool showHeader}) {
-    if (_showRuns) return _buildRunDetail(l10n);
     final name = _selectedName;
     if (name == null) {
       final scheme = Theme.of(context).colorScheme;
@@ -1063,6 +1045,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       draftStore: _drafts,
       showHeader: showHeader,
       pageOpen: _detailPageOpen,
+      onOpenExecutions: () => _showExecutions(flow),
       onDirtyChanged: (dirty) {
         if (_editorDirty == dirty) return;
         _editorDirty = dirty;
@@ -1079,37 +1062,6 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
           setState(() => _selectedName = newName);
           unawaited(_load());
         };
-      },
-    );
-  }
-
-  /// 运行记录的右侧。没有返回层，点左边另一条就换这一页。
-  Widget _buildRunDetail(AppLocalizations l10n) {
-    final id = _viewingRunId;
-    if (id == null) {
-      final scheme = Theme.of(context).colorScheme;
-      return Center(
-        child: Text(
-          l10n.flow_runPickHint,
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: scheme.onSurfaceVariant),
-        ),
-      );
-    }
-    return FlowRunScreen(
-      key: ValueKey('flow-run-$id-$_host'),
-      peerId: _host,
-      runId: id,
-      title: _viewingRunTitle,
-      embedded: true,
-      onDeleted: () {
-        if (!mounted) return;
-        setState(() {
-          _viewingRunId = null;
-          _viewingRunTitle = null;
-        });
       },
     );
   }
