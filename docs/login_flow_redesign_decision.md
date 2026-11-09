@@ -167,22 +167,25 @@ GateEntry resolveGate({
 | 2 | 手机 | 没有 `rememberedHostId` | `GoWelcome` |
 | 3 | 手机 | 有主机，`credentialValid` | `TryRestore(fallback: GoUnlock(expired))` |
 | 4 | 手机 | 有主机 | `GoUnlock(expired)` |
-| 5 | 桌面 | `mode == unset`，CLI `running` | `recordMode = thisComputer`，然后按 9–12 行处理（老用户无感升级，沿用现状） |
+| 5 | 桌面 | `mode == unset`，CLI `running` | `recordMode = thisComputer`，然后按 9.5–12 行处理（老用户无感升级，沿用现状） |
 | 6 | 桌面 | `mode == unset`，CLI 不在跑，有会话且主机不是本机 | `recordMode = remote`，然后按 7–8 行处理 |
 | 7 | 桌面 | `mode == remote`，`credentialValid` | `TryRestore(fallback: GoUnlock(expired))` |
 | 8 | 桌面 | `mode == remote` | 有 `rememberedHostId` → `GoUnlock`；否则 `GoWelcome` |
 | 9 | 桌面 | `mode == unset`（其余情况） | `GoWelcome`（**修 P1**） |
-| 10 | 桌面 | `thisComputer`，CLI 不在 `running` | `GoHostInstall(notInstalled ? firstInstall : notRunning)` |
+| 9.5 | 桌面 | `thisComputer`、或 `unset` 且 CLI `running`；CLI 已装，`localPasswordSet == false` | `GoCreatePassword`（**修首次装机死锁**，见下方后补说明；先于第 10 行命中） |
+| 10 | 桌面 | 9.5 未命中，`thisComputer`，CLI 不在 `running` | `GoHostInstall(notInstalled ? firstInstall : notRunning)` |
 | 11 | 桌面 | `thisComputer`，`running`，`localPasswordSet == null` | `GoHostInstall(unresponsive)`（**不再盲跳解锁页**） |
-| 12 | 桌面 | `thisComputer`，`running`，`localPasswordSet == false` | `GoCreatePassword` |
+| 12 | 桌面 | `thisComputer`，`running`，`localPasswordSet == false` | `GoCreatePassword`（编号保留；实际已由 9.5 提前命中） |
 | 13 | 桌面 | `thisComputer`，`running`，`credentialValid` | `TryRestore(fallback: GoUnlock(expired))` |
 | 14 | 桌面 | `thisComputer`，`running` | `GoUnlock(hostPeerId: 本机主机那行)` |
 
 说明：
 
-- 第 10 行的 `GoHostInstall` 页面会在主机就绪后**自己重新调用 `resolveGate`**，自然落到 11–14 行。
+- 第 10 行的 `GoHostInstall` 页面会在主机就绪后**自己重新调用 `resolveGate`**；还没袋子会先命中 9.5 行去设密码，否则落到 11–14 行。
 - 第 14 行要用到本机主机那一行的 peer id：先 `CliHost.ensurePaired(cli)`，再拿它的 id。这一步放在调用方 `GateNavigator`（3.4）里做，`resolveGate` 只回 `GoUnlock(hostPeerId: '')`，表示「本机主机」，由调用方补上真实 id。
 - 原 `resolveHostEntry` 和 `HostEntry` 系列保留到 PR-L6，届时删除；它们的测试迁移到 `test/onboarding/gate_entry_test.dart`。
+
+**后补 · 9.5 行（首次装机死锁，2026-11-09）**：上面第 10 行在「新电脑、还没有袋子」时是死路——主机 `Router::open` 要求 `hub.json.active_pouch`，而唯一能建袋子 + 设口令的 `host_init` 帧必须发给**运行中**的 Hub，两边互相等，`GoHostInstall` 永远停在启动那一步。因此表中在 10 行之前补上 9.5 行：桌面本机（`thisComputer` 或 `unset` 且 CLI 在跑）、本机 CLI 已装、`localPasswordSet == false` 时直接 `GoCreatePassword`；`notInstalled` 仍走第 10 行先装 CLI，`mode == unset` 且 CLI 没跑仍先 `GoWelcome` 让用户选主机。配套的主机侧改动：`shepaw init` 在 Hub 没跑时离线建袋子 + 设口令并返回 `{"offline":true,...}`，App 随后自己拉起 Hub、再 `shepaw login` 取登录态。`shepaw password status` 是纯文件读取，所以 `GateNavigator` 收集这个输入时**不再要求 CLI 处于 `running`**。
 
 ### 3.4 `GateNavigator`
 
@@ -202,7 +205,9 @@ class GateNavigator {
   - 结果是 `rejected` → `GoUnlock(reason: credentialRejected)`；
   - 结果是 `unreachable` → `GoUnlock(expired)`，并把 `offline: true` 带给解锁页；
   - 结果是 `none` → 走 `fallback`。
-- 输入收集的超时：`CliHost.probe` 3 秒，`CliPouch.passwordIsSet` 3 秒（超时记 `null`）。
+- 输入收集的超时：`CliHost.probe` 5 秒；`CliPouch.passwordIsSet` 进程超时 10 秒，`GateNavigator` 外层 12 秒兜底，超时记 `null`。冷启动的新装 CLI 会比常驻命令慢，3 秒不够，会重新掉进首次装机死锁。
+- `password status` 的输出只认 `set` / `unset` / `missing` / `corrupt`；认不出时 `passwordIsSet` 抛错、由 `GateNavigator` 记 `null`，**不能**当成 `false`，否则 9.5 行会拿「问不出来」去建袋子、重设口令。
+- 探测失败且本机 Hub 没在跑时，再问一次 `account list`（同样是纯文件读取）：空名单才把 `localPasswordSet` 补成 `false` 去 9.5 建袋子，避免「准备主机」因缺 `active_pouch` 死锁；有袋子则保持 `null`，因为那台机器的 Hub 起得来。Hub 已在跑时不覆盖规则 11。两个命令都问不出来时仍是 `null`，交给「准备主机」重装自带 CLI。
 
 ---
 
@@ -221,9 +226,12 @@ flowchart TD
   S -->|要密码| U[解锁]
   S -->|主机连不上 且 曾登录过| U2[解锁 · 离线态] -->|先进主页（离线）| H
 
-  W -->|这台电脑| I
+  W -->|这台电脑| G[统一进门判断]
   W -->|另一台电脑| R[连接另一台电脑上的主机]
-  I -->|还没密码| C[设置主机密码]
+  G -->|没装 CLI| I
+  G -->|已装、没袋子| C[设置主机密码]
+  G -->|其他本机状态| I
+  I -->|还没密码| C
   I -->|有密码| U
   C --> D[完成页：加入码]
   D --> H
@@ -232,7 +240,7 @@ flowchart TD
   U --> H
 ```
 
-首次本机：点「用这台电脑」→ 自动准备 → 输一次密码 → 完成。**点 2 次，输 1 次。**
+首次本机：点「用这台电脑」→ 统一进门判断：没装 CLI 才自动准备，已装但没袋子直接设密码 → 完成。
 
 ### 4.1 Splash 和静默续期
 

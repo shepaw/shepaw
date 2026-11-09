@@ -72,7 +72,7 @@ class GoHostInstall extends GateEntry {
   final HostInstallReason reason;
 }
 
-/// 桌面本机：这台主机还没设过密码。
+/// 桌面本机：还没有可用口令（首次装机，或口令文件丢了 / 坏了）。
 class GoCreatePassword extends GateEntry {
   const GoCreatePassword({super.recordMode});
 }
@@ -175,6 +175,14 @@ GateEntry _local(
   PouchSession? session, {
   HostMode? record,
 }) {
+  // 9.5 还没有可用口令：首次装机（没有袋子），或口令文件丢了 / 坏了（袋子和数据
+  //     都还在，主机侧的 init_pouch_account 会复用原袋重设口令）。
+  //     password status 只读磁盘，Hub 没跑也问得出来。这时候不能进「准备主机」——
+  //     Hub 要 active_pouch 才起得来，而建袋子又要 Hub 在跑，两边互相等就是死路。
+  //     CLI 都没装好时仍然先去准备主机，那里负责装自带的 shepaw。
+  if (localPasswordSet == false && cli != LocalCliStatus.notInstalled) {
+    return GoCreatePassword(recordMode: record);
+  }
   // 10.
   if (cli != LocalCliStatus.running) {
     return GoHostInstall(
@@ -191,8 +199,7 @@ GateEntry _local(
       recordMode: record,
     );
   }
-  // 12.
-  if (!localPasswordSet) return GoCreatePassword(recordMode: record);
+  // 12. 「没设过密码」已在 9.5 处理；走到这里口令一定设过了。
 
   final hostId = session?.hostPeerId.trim() ?? '';
   // 13.

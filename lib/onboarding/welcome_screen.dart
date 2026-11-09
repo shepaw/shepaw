@@ -6,13 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../l10n/app_localizations.dart';
-import '../../services/permission_service.dart';
 import '../../peer/models/paired_peer.dart';
 import '../../peer/models/pairing_payload.dart';
 import '../../peer/pouch_pair.dart';
 import '../../peer/screens/peer_scan_screen.dart';
 import '../../peer/services/peer_connection_manager.dart';
-import '../../services/cli_host.dart';
 import '../../services/logger_service.dart';
 import '../../utils/platform_utils.dart';
 import 'gate_entry.dart';
@@ -94,7 +92,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     try {
       await HostModeStore.write(HostMode.thisComputer);
       if (!mounted) return;
-      await Navigator.of(context).pushReplacementNamed('/host-install');
+      // 交给统一的进门判断：新电脑还没有袋子时要直接去「建袋子 + 设密码」，
+      // 不能先去「准备主机」——Hub 要 active_pouch 才起得来，会卡在启动那步。
+      await GateNavigator.go(context);
     } finally {
       if (mounted) setState(() => _connecting = false);
     }
@@ -536,10 +536,12 @@ class _ConnectRemoteViewState extends State<ConnectRemoteView> {
     } catch (error) {
       LoggerService().error('remote connect failed',
           tag: 'Welcome', error: error);
-      if (mounted) setState(() {
-        _error = l10n.gate_errorGeneric;
-        _busy = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = l10n.gate_errorGeneric;
+          _busy = false;
+        });
+      }
     }
   }
 
@@ -625,7 +627,7 @@ class _ConnectRemoteViewState extends State<ConnectRemoteView> {
                 const SizedBox(height: 8),
                 _CommandRow(text: install),
                 const SizedBox(height: 4),
-                _CommandRow(text: startPair),
+                const _CommandRow(text: startPair),
                 const SizedBox(height: 24),
                 Text(l10n.connect_step2),
                 const SizedBox(height: 8),
@@ -634,9 +636,9 @@ class _ConnectRemoteViewState extends State<ConnectRemoteView> {
                   enabled: !_busy,
                   minLines: 2,
                   maxLines: 4,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     hintText: 'shepaw://peer?...',
-                    border: const OutlineInputBorder(),
+                    border: OutlineInputBorder(),
                   ),
                 ),
                 if (invalid) ...[

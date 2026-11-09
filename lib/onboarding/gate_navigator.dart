@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../l10n/app_localizations.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/pairing_endpoints.dart';
 import '../peer/services/peer_connection_manager.dart';
@@ -15,7 +14,6 @@ import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
 import '../utils/platform_utils.dart';
 import 'credential_restore.dart';
-import 'gate_entry.dart';
 import 'gate_entry.dart';
 import 'host_entry.dart';
 import 'host_install_controller.dart';
@@ -63,21 +61,49 @@ class GateNavigator {
       cli = null;
     }
 
-    // 只有「主机就是这台电脑」时才问密码状态。问不到（超时 / 抛错）留 null，
-    // 交给决策表去进「准备主机」，不要当成「没设过密码」把人推进建袋子页。
+    // 只有「主机就是这台电脑」时才问密码状态。`shepaw password status` 只读
+    // 磁盘，不依赖 Hub 在跑——新电脑上 Hub 恰恰起不来（要先有袋子），正是
+    // 要靠它问出「还没设过密码」。问不到（超时 / 抛错）留 null，交给决策表。
+    // mode 还是 unset 且 CLI 没跑时决策表只回 GoWelcome / 远端那几行，这一问
+    // 的结果用不上，别在冷启动里白跑一次 CLI。
     bool? localPasswordSet;
-    if (isDesktop &&
+    final needPasswordStatus = isDesktop &&
         mode != HostMode.remote &&
-        cli != null &&
-        cliStatus == LocalCliStatus.running) {
+        (mode == HostMode.thisComputer || cliStatus == LocalCliStatus.running);
+    if (needPasswordStatus) {
+      String? binary;
       try {
-        localPasswordSet = await CliPouch.passwordIsSet(cli.binary)
-            .timeout(const Duration(seconds: 3));
+        binary = cli?.binary ?? await CliHost.resolveBinary();
+        if (binary != null) {
+          // 新装的 CLI 冷启动（Windows 首次扫盘、PBKDF2）可能比 3 秒慢；
+          // 这里超时就等于「没问出来」，会把首次装机又推回「准备主机」死锁。
+          // 进程本身给 10 秒，外层再留 2 秒覆盖 Process.start / 解码。
+          localPasswordSet = await CliPouch.passwordIsSet(binary)
+              .timeout(const Duration(seconds: 12));
+        }
       } catch (error) {
         LoggerService().warning(
           'pouch password status failed: $error',
           tag: 'Gate',
         );
+      }
+      // 问不出密码状态时**不猜**，再问一次本机有没有袋子（account list 也是
+      // 纯文件读取）。空名单说明是新电脑，必须去建袋子：Hub 缺 active_pouch
+      // 时「准备主机」永远起不来。有袋子时保持 null，交给准备主机把 Hub 拉起来
+      // ——那台机器有 active_pouch，起得来。Hub 已经在跑时不抢规则 11 的判断。
+      if (localPasswordSet == null &&
+          binary != null &&
+          cliStatus != LocalCliStatus.running) {
+        try {
+          final noPouch = await CliPouch.hasNoPouch(binary)
+              .timeout(const Duration(seconds: 10));
+          if (noPouch) localPasswordSet = false;
+        } catch (error) {
+          LoggerService().warning(
+            'pouch account list failed: $error',
+            tag: 'Gate',
+          );
+        }
       }
     }
 

@@ -224,6 +224,73 @@ void main() {
     });
   });
 
+  group('第 9.5 行 · 桌面本机还没有可用口令', () {
+    test('装了 shepaw 但 Hub 没跑，直接去建袋子设密码', () {
+      expect(
+        resolve(
+          mode: HostMode.thisComputer,
+          cli: LocalCliStatus.installedStopped,
+          localPasswordSet: false,
+        ),
+        isA<GoCreatePassword>(),
+        reason: 'Hub 要 active_pouch 才起得来，准备主机那条路是死循环',
+      );
+    });
+
+    test('CLI 在跑但没设过密码，同样去建袋子', () {
+      expect(
+        resolve(
+          mode: HostMode.thisComputer,
+          cli: LocalCliStatus.running,
+          localPasswordSet: false,
+        ),
+        isA<GoCreatePassword>(),
+      );
+    });
+
+    test('mode 还是 unset、CLI 在跑时记下 thisComputer 再去建袋子', () {
+      final entry = resolve(
+        mode: HostMode.unset,
+        cli: LocalCliStatus.running,
+        localPasswordSet: false,
+      );
+      expect(entry, isA<GoCreatePassword>());
+      expect(entry.recordMode, HostMode.thisComputer);
+    });
+
+    test('没装 shepaw 时先去准备主机装 CLI', () {
+      final entry = resolve(
+        mode: HostMode.thisComputer,
+        cli: LocalCliStatus.notInstalled,
+        localPasswordSet: false,
+      );
+      expect(entry, isA<GoHostInstall>());
+      expect((entry as GoHostInstall).reason, HostInstallReason.firstInstall);
+    });
+
+    test('探测不到密码状态时不猜，仍按原规则走', () {
+      expect(
+        resolve(
+          mode: HostMode.thisComputer,
+          cli: LocalCliStatus.installedStopped,
+          localPasswordSet: null,
+        ),
+        isA<GoHostInstall>(),
+      );
+    });
+
+    test('还没选过主机位置时仍先问主机放哪，不擅自建本机袋子', () {
+      expect(
+        resolve(
+          mode: HostMode.unset,
+          cli: LocalCliStatus.installedStopped,
+          localPasswordSet: false,
+        ),
+        isA<GoWelcome>(),
+      );
+    });
+  });
+
   group('第 10–14 行 · 桌面 thisComputer', () {
     test('没装 shepaw 去准备主机', () {
       final entry = resolve(

@@ -29,6 +29,10 @@ class CliBundleResult {
 const cliPathMarker = '# shepaw-cli';
 
 /// 包内版本不比已安装的新，就保持原样，避免盖掉 `shepaw update` 装上的更新版本。
+///
+/// 因此**每次改了 `shepaw` 的行为（尤其 init/login 协议）都要 bump
+/// `shepaw-cli/Cargo.toml` 的 workspace version**：版本号相同就 `keep` 旧二进制，
+/// 新 App 会配上老 CLI。首次装机死锁那次就是靠 bump 版本才让老机器换掉旧 CLI。
 BundledCliAction planBundledCli({
   required bool bundleExists,
   required String? bundledVersion,
