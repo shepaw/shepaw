@@ -96,9 +96,8 @@ void main() {
       bundle: fake.bundle,
       fake: fake,
       onApply: (_) {},
-      agentOf: (agentId) => agentId == id
-          ? const FlowAgentFace(name: '审稿', avatar: '🦊')
-          : null,
+      agentOf: (agentId) =>
+          agentId == id ? const FlowAgentFace(name: '审稿', avatar: '🦊') : null,
     ));
     await _settle(tester);
     expect(find.text('审稿'), findsOneWidget);
@@ -378,5 +377,47 @@ void main() {
         reason: '模板值仍应只读展示');
     expect(find.text('这个 agent 不支持切换模型'), findsOneWidget);
     expect(emitted, 'unset', reason: '只读展示不该发出任何改动');
+  });
+
+  testWidgets('规划步骤每个设置只出现一次标题，限制项各自成块', (tester) async {
+    await tester.pumpWidget(_app(FlowNodeInspector(
+      node: const FlowNode(
+        key: 'design',
+        id: 'design',
+        kind: 'plan',
+        fields: {
+          'plan': {'who': 'owner', 'brief': 'sssddd'},
+        },
+      ),
+      schema: _schema(),
+      onFieldChanged: (_, __, {required immediate}) {},
+    )));
+    await _settle(tester);
+
+    expect(find.text('谁来规划'), findsOneWidget);
+    expect(find.text('规划要求 *'), findsOneWidget);
+    expect(find.text('规划要求'), findsNothing);
+    expect(find.text('允许的步骤类型'), findsOneWidget);
+    expect(find.text('最多几个任务'), findsOneWidget);
+  });
+
+  testWidgets('任务面板不把分组标题和字段名叠成两行', (tester) async {
+    final fake = _FakeChoices(_models());
+    await tester.pumpWidget(_inspector(
+      fields: {
+        'task': {'prompt': '写', 'agent': 'agent-x'},
+      },
+      bundle: fake.bundle,
+      fake: fake,
+      onApply: (_) {},
+    ));
+    await _settle(tester);
+
+    expect(find.text('谁来做'), findsOneWidget);
+    expect(find.text('做什么 *'), findsOneWidget);
+    expect(find.text('提示词'), findsNothing);
+    expect(find.text('提示词 *'), findsNothing);
+    expect(find.text('什么时候执行'), findsOneWidget);
+    expect(find.text('执行条件'), findsNothing);
   });
 }

@@ -21,6 +21,7 @@ class FlowExecutorField extends StatelessWidget {
     required this.onChanged,
     this.onPickAgent,
     this.agentOf,
+    this.showLabel = true,
   });
 
   final FlowNode node;
@@ -41,6 +42,9 @@ class FlowExecutorField extends StatelessWidget {
   /// 把主机上的 agent id 换成头像和名称。对不上就不要把 id 画出来。
   final FlowAgentFace? Function(String id)? agentOf;
 
+  /// false：不画「谁来做」。外层分组标题已经是这句话时用。
+  final bool showLabel;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -50,13 +54,15 @@ class FlowExecutorField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          l10n.flow_executorLabel,
-          style: theme.textTheme.labelLarge?.copyWith(
-            color: scheme.onSurfaceVariant,
+        if (showLabel) ...[
+          Text(
+            l10n.flow_executorLabel,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
           ),
-        ),
-        const SizedBox(height: 6),
+          const SizedBox(height: 6),
+        ],
         Wrap(
           spacing: 8,
           children: [
@@ -76,9 +82,8 @@ class FlowExecutorField extends StatelessWidget {
               label: Text(l10n.flow_executorAgent),
               selected: selected.mode == FlowExecutorMode.agent,
               // 空 id 主机不收，选中态会被刷掉，选择器也就打不开。点这里直接选人。
-              onSelected: onPickAgent == null
-                  ? null
-                  : (_) => unawaited(_chooseAgent()),
+              onSelected:
+                  onPickAgent == null ? null : (_) => unawaited(_chooseAgent()),
             ),
             ChoiceChip(
               key: const ValueKey('exec-she'),
@@ -186,8 +191,10 @@ class _RolePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final known = {...roles, if (current != null && current!.isNotEmpty) current!}
-        .toList();
+    final known = {
+      ...roles,
+      if (current != null && current!.isNotEmpty) current!
+    }.toList();
     return DropdownButtonFormField<String>(
       initialValue: current?.isNotEmpty == true ? current : null,
       isExpanded: true,

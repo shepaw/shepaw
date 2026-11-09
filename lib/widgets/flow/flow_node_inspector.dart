@@ -216,7 +216,6 @@ Future<FlowChoiceBundle> defaultFlowChoiceLoader(
   );
 }
 
-
 /// 节点属性：嵌在右侧上下文面板里，改动直接交给控制器。
 ///
 /// 不再有「应用」按钮。下拉 / 开关立刻提交；文本在失焦、Enter 或控制器的
@@ -626,7 +625,8 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
         onDescCommitted: _locked ? null : widget.onDescChanged,
         onMenuChoice: _locked ? null : widget.onMenuChoice,
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: 8),
+      Divider(height: 1, color: scheme.outlineVariant),
       if (widget.readOnly)
         for (final group in groups)
           if (byGroup[group]?.isNotEmpty ?? false)
@@ -638,7 +638,8 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
           if (group == 'advanced')
             _advanced(byGroup[group] ?? const [], refCandidates, intInputs,
                 varRoots, l10n, theme)
-          else if (byGroup[group]?.isNotEmpty ?? false || (_isTask && group == 'who'))
+          else if (byGroup[group]?.isNotEmpty ??
+              false || (_isTask && group == 'who'))
             _group(
               group,
               byGroup[group] ?? const [],
@@ -670,6 +671,11 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     );
   }
 
+  /// 一组字段怎么摆。
+  ///
+  /// 分组标题和下面的字段名以前叠成两行灰字（「谁来规划」下面又是「谁来规划」）。
+  /// 标题只在它真的罩住多个不同字段时保留，例如「谁来做」下面的模型和模式。
+  /// 标题其实是在重复某一个字段时，每个字段自己成一块，只留一个名字。
   Widget _group(
     String group,
     List<FlowFieldSpec> specs,
@@ -679,32 +685,93 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     AppLocalizations l10n,
     ThemeData theme,
   ) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            flowGroupTitle(l10n, group),
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (_isTask && group == 'who')
+    final zh = Localizations.localeOf(context).languageCode == 'zh';
+    final title = flowGroupTitle(l10n, group);
+    if (_isBundledSection(group, specs, title, zh)) {
+      return _block(
+        theme,
+        [
+          Text(title, style: _blockTitle(theme)),
+          const SizedBox(height: 10),
+          if (_isTask && group == 'who') ...[
             FlowExecutorField(
               node: widget.node,
               current: _executor,
               roles: widget.roles,
+              showLabel: false,
               onPickAgent: _locked ? null : widget.onPickAgent,
               agentOf: widget.agentOf,
               onChanged: _locked ? (_) {} : _onExecutorChanged,
             ),
+            if (specs.isNotEmpty) const SizedBox(height: 12),
+          ],
           ..._groupFields(group, specs, refCandidates, intInputs, varRoots),
         ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final spec in specs)
+          _block(theme, [
+            _fieldEditor(
+              spec,
+              refCandidates,
+              intInputs,
+              varRoots,
+              prominentLabel: true,
+              labelOverride:
+                  specs.length == 1 ? _soloCaption(title, spec, zh) : null,
+            ),
+          ]),
+      ],
+    );
+  }
+
+  /// 标题说的是这一组，而不是某一个字段的名字。
+  bool _isBundledSection(
+    String group,
+    List<FlowFieldSpec> specs,
+    String title,
+    bool zh,
+  ) {
+    if (_isTask && group == 'who') return true;
+    if (specs.length < 2) return false;
+    return !specs.any((spec) => _captionRepeats(title, spec.label(zh)));
+  }
+
+  /// 单独一块时用哪句文案。分组问句和字段名一样就留字段名；问句更完整就用问句。
+  String? _soloCaption(String title, FlowFieldSpec spec, bool zh) {
+    final field = spec.label(zh);
+    if (_captionRepeats(title, field)) return null;
+    if (title.length >= field.length) return title;
+    return null;
+  }
+
+  Widget _block(ThemeData theme, List<Widget> children) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
       ),
     );
   }
+
+  TextStyle? _blockTitle(ThemeData theme) =>
+      theme.textTheme.titleSmall?.copyWith(
+        fontWeight: FontWeight.w600,
+        color: theme.colorScheme.onSurface,
+      );
 
   Widget _advanced(
     List<FlowFieldSpec> specs,
@@ -718,25 +785,28 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     final forceOpen = specs.any((spec) => spec.path == widget.flashField);
     final summary = _advancedSummary(specs);
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: ExpansionTile(
-        key: ValueKey('inspector-advanced-$_advancedEpoch'),
-        initiallyExpanded: _advancedOpen || forceOpen,
-        tilePadding: EdgeInsets.zero,
-        title: Text(l10n.flow_groupAdvanced,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            )),
-        subtitle: summary.isEmpty
-            ? null
-            : Text(summary,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final spec in specs) ...[
-            _fieldEditor(spec, refCandidates, intInputs, varRoots),
-            const SizedBox(height: 12),
-          ],
+          Divider(height: 1, color: theme.colorScheme.outlineVariant),
+          ExpansionTile(
+            key: ValueKey('inspector-advanced-$_advancedEpoch'),
+            initiallyExpanded: _advancedOpen || forceOpen,
+            tilePadding: EdgeInsets.zero,
+            title: Text(l10n.flow_groupAdvanced, style: _blockTitle(theme)),
+            subtitle: summary.isEmpty
+                ? null
+                : Text(summary,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            children: [
+              for (final spec in specs) ...[
+                _fieldEditor(spec, refCandidates, intInputs, varRoots),
+                const SizedBox(height: 12),
+              ],
+            ],
+          ),
         ],
       ),
     );
@@ -748,7 +818,8 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     for (final spec in specs) {
       final value = flowFieldValue(widget.node.fields, spec.path);
       if (value == null) continue;
-      if (spec.defaultValue != null && value.toString() == spec.defaultValue.toString()) {
+      if (spec.defaultValue != null &&
+          value.toString() == spec.defaultValue.toString()) {
         continue;
       }
       final shown = spec.shape == FlowFieldShape.enumOf && value is String
@@ -774,50 +845,55 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
             spec.shape != FlowFieldShape.modeRef)
           spec,
     ];
-    return [
+    final items = <Widget>[
       if (group == 'who' && model.isNotEmpty && mode.isNotEmpty)
         LayoutBuilder(
           builder: (context, constraints) {
             if (constraints.maxWidth < 440) {
+              final stacked = [...model, ...mode];
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  for (final spec in [...model, ...mode]) ...[
-                    _fieldEditor(spec, refCandidates, intInputs, varRoots),
-                    const SizedBox(height: 12),
+                  for (var i = 0; i < stacked.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 12),
+                    _fieldEditor(
+                      stacked[i],
+                      refCandidates,
+                      intInputs,
+                      varRoots,
+                    ),
                   ],
                 ],
               );
             }
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _fieldEditor(
-                        model.first, refCandidates, intInputs, varRoots),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _fieldEditor(
-                        mode.first, refCandidates, intInputs, varRoots),
-                  ),
-                ],
-              ),
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _fieldEditor(
+                      model.first, refCandidates, intInputs, varRoots),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _fieldEditor(
+                      mode.first, refCandidates, intInputs, varRoots),
+                ),
+              ],
             );
           },
         )
       else
-        for (final spec in [...model, ...mode]) ...[
+        for (final spec in [...model, ...mode])
           _fieldEditor(spec, refCandidates, intInputs, varRoots),
-          const SizedBox(height: 12),
-        ],
-      for (final spec in rest) ...[
+      for (final spec in rest)
         _fieldEditor(spec, refCandidates, intInputs, varRoots),
-        const SizedBox(height: 12),
-      ],
     ];
+    final spaced = <Widget>[];
+    for (var i = 0; i < items.length; i++) {
+      if (i > 0) spaced.add(const SizedBox(height: 12));
+      spaced.add(items[i]);
+    }
+    return spaced;
   }
 
   /// 这些输入框里可以写 `{{ }}`。名字、类型、时长不算。
@@ -839,8 +915,10 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     FlowFieldSpec spec,
     List<String> refCandidates,
     List<String> intInputs,
-    List<FlowVarNode> varRoots,
-  ) {
+    List<FlowVarNode> varRoots, {
+    bool prominentLabel = false,
+    String? labelOverride,
+  }) {
     final isModel = spec.shape == FlowFieldShape.modelRef;
     final isMode = spec.shape == FlowFieldShape.modeRef;
     final current = isModel && _modelSeeded
@@ -848,8 +926,9 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
         : isMode && _modeSeeded
             ? _modeSeed
             : flowFieldValue(widget.node.fields, spec.path);
-    final executorMissing =
-        _isTask && _executor.mode == FlowExecutorMode.unset && (isModel || isMode);
+    final executorMissing = _isTask &&
+        _executor.mode == FlowExecutorMode.unset &&
+        (isModel || isMode);
     final flashing = widget.flashField == spec.path;
     final key = ValueKey(
       '${widget.node.id}/${spec.path}${isModel || isMode ? '/$_choiceSeed' : ''}',
@@ -873,6 +952,9 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
             (executorMissing
                 ? AppLocalizations.of(context).flow_pickExecutorFirst
                 : null),
+        showLabel: true,
+        prominentLabel: prominentLabel,
+        labelOverride: labelOverride,
         refCandidates:
             FlowReferences.supports(spec.path) ? refCandidates : const [],
         varRoots: _offersVarSuggest(spec) ? varRoots : const [],
@@ -895,34 +977,58 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     AppLocalizations l10n,
     ThemeData theme,
   ) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(flowGroupTitle(l10n, group),
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              )),
-          const SizedBox(height: 6),
-          for (final spec in specs)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _readOnlyValue(spec, zh, theme),
-            ),
+    final title = flowGroupTitle(l10n, group);
+    if (_isBundledSection(group, specs, title, zh)) {
+      return _block(theme, [
+        Text(title, style: _blockTitle(theme)),
+        const SizedBox(height: 8),
+        for (var i = 0; i < specs.length; i++) ...[
+          if (i > 0) const SizedBox(height: 10),
+          _readOnlyValue(specs[i], zh, theme),
         ],
-      ),
-    );
-  }
-
-  Widget _readOnlyValue(FlowFieldSpec spec, bool zh, ThemeData theme) {
-    final value = flowFieldValue(widget.node.fields, spec.path);
-    final text = _display(spec, value, zh);
-    final long = spec.shape == FlowFieldShape.text && text.length > 80;
+      ]);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('${spec.label(zh)}：$text', style: theme.textTheme.bodyMedium),
+        for (final spec in specs)
+          _block(theme, [
+            _readOnlyValue(
+              spec,
+              zh,
+              theme,
+              prominent: true,
+              labelOverride:
+                  specs.length == 1 ? _soloCaption(title, spec, zh) : null,
+            ),
+          ]),
+      ],
+    );
+  }
+
+  Widget _readOnlyValue(
+    FlowFieldSpec spec,
+    bool zh,
+    ThemeData theme, {
+    bool prominent = false,
+    String? labelOverride,
+  }) {
+    final value = flowFieldValue(widget.node.fields, spec.path);
+    final text = _display(spec, value, zh);
+    final long = spec.shape == FlowFieldShape.text && text.length > 80;
+    final label =
+        (labelOverride ?? spec.label(zh)) + (spec.required ? ' *' : '');
+    final labelStyle = prominent
+        ? _blockTitle(theme)
+        : theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(label, style: labelStyle),
+        const SizedBox(height: 4),
+        Text(text, style: theme.textTheme.bodyMedium),
         if (long)
           Align(
             alignment: Alignment.centerLeft,
@@ -954,4 +1060,23 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     if (value is Map || value is List) return jsonEncode(value);
     return value.toString();
   }
+}
+
+/// 分组标题和字段名是不是同一句话。
+///
+/// 「的 / 哪个 / 什么」拿掉再比，这样「调用哪个流程」和「调用的流程」算重复。
+/// 英文则认「Planning brief」里的整词「Brief」。
+bool _captionRepeats(String title, String label) {
+  String norm(String s) => s
+      .toLowerCase()
+      .replaceAll(RegExp(r'''[\s*'"“”]'''), '')
+      .replaceAll('哪个', '')
+      .replaceAll('什么', '')
+      .replaceAll('的', '');
+  final a = norm(title);
+  final b = norm(label);
+  if (a.isNotEmpty && a == b) return true;
+  final words = title.toLowerCase().trim().split(RegExp(r'\s+'));
+  final field = label.toLowerCase().trim();
+  return words.length >= 2 && (words.first == field || words.last == field);
 }

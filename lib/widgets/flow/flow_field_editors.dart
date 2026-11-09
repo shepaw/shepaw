@@ -101,6 +101,9 @@ class FlowFieldEditor extends StatefulWidget {
     this.choices,
     this.enabled = true,
     this.errorText,
+    this.showLabel = true,
+    this.prominentLabel = false,
+    this.labelOverride,
   });
 
   final FlowFieldSpec spec;
@@ -116,6 +119,15 @@ class FlowFieldEditor extends StatefulWidget {
 
   /// 主机拒绝等原因。非空时标红，盖过说明文字。
   final String? errorText;
+
+  /// false：不画字段名。分组标题已经说过同一件事时用。
+  final bool showLabel;
+
+  /// true：字段名用标题字号，单独成一块时用。
+  final bool prominentLabel;
+
+  /// 盖过 [FlowFieldSpec] 上的名字。单独一块、分组问句比字段名更清楚时用。
+  final String? labelOverride;
 
   /// string / text 的「插入引用」候选。
   final List<String> refCandidates;
@@ -462,27 +474,30 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     final scheme = theme.colorScheme;
     final zh = Localizations.localeOf(context).languageCode == 'zh';
     final spec = widget.spec;
-    final label = spec.label(zh);
+    final label = widget.labelOverride ?? spec.label(zh);
     final emptyRequired = spec.required && _isEmptyValue();
+    final labelStyle = (widget.prominentLabel
+            ? theme.textTheme.titleSmall
+            : theme.textTheme.labelMedium)
+        ?.copyWith(
+      fontWeight: widget.prominentLabel ? FontWeight.w600 : null,
+      color: emptyRequired
+          ? scheme.error
+          : (widget.prominentLabel
+              ? scheme.onSurface
+              : scheme.onSurfaceVariant),
+    );
 
     Widget wrap(Widget child) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    label + (spec.required ? ' *' : ''),
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: emptyRequired
-                          ? scheme.error
-                          : scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
+            if (widget.showLabel) ...[
+              Text(
+                label + (spec.required ? ' *' : ''),
+                style: labelStyle,
+              ),
+              SizedBox(height: widget.prominentLabel ? 8 : 4),
+            ],
             child,
             if (widget.errorText != null)
               Padding(
@@ -1087,9 +1102,8 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                 key: ValueKey('var-menu-$prefix${node.segment}'),
                 title: Text(node.segment),
                 subtitle: node.hint.isEmpty ? null : Text(node.hint),
-                trailing: node.hasChildren
-                    ? const Icon(Icons.chevron_right)
-                    : null,
+                trailing:
+                    node.hasChildren ? const Icon(Icons.chevron_right) : null,
                 onTap: () => Navigator.pop(sheet, node),
               ),
           ],
