@@ -135,6 +135,46 @@ void main() {
     expect(find.text('先选择执行者'), findsNothing);
   });
 
+  testWidgets('选人时检查器被卸掉，选中的 Agent 仍会写回并清掉角色', (tester) async {
+    final fake = _FakeChoices(_models());
+    final picked = Completer<String?>();
+    Map<String, Object?>? applied;
+    var show = true;
+    Future<void> pump() {
+      return tester.pumpWidget(show
+          ? _inspector(
+              fields: {
+                'task': {'prompt': '写', 'role': 'coder'},
+              },
+              bundle: fake.bundle,
+              fake: fake,
+              onApply: (ops) => applied = ops,
+              onPickAgent: () => picked.future,
+            )
+          : _app(const SizedBox()));
+    }
+
+    await pump();
+    await _settle(tester);
+    expect(
+      tester
+          .widget<ChoiceChip>(find.byKey(const ValueKey('exec-role')))
+          .selected,
+      isTrue,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('exec-agent')));
+    await tester.pump();
+    show = false;
+    await pump();
+    picked.complete('agent-y');
+    await tester.pump();
+
+    expect(applied?['task.agent'], 'agent-y');
+    expect(applied?['task.role'], isNull);
+    expect(applied?['task.uses'], isNull);
+  });
+
   testWidgets('换 agent 会重新拉模型并清空已选的 model', (tester) async {
     final fake = _FakeChoices(_models());
     Map<String, Object?>? applied;

@@ -487,9 +487,11 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     final previousMode = _modeSeeded
         ? _modeSeed
         : flowFieldValue(widget.node.fields, 'task.mode');
-    setState(() => _executor = executor);
+    // 先把选择交给父级。点「Agent」会盖住属性去选人，这一层可能已经卸掉；
+    // 若先 setState，异常会把这次选择吞掉，界面又回到角色。
     if (!changed || !_isTask) {
       widget.onExecutorChanged?.call(executor.ops());
+      if (mounted) setState(() => _executor = executor);
       return;
     }
     final ops = executor.ops();
@@ -497,28 +499,34 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     if (!_isTemplateValue(previousModel)) {
       ops['task.model'] = null;
       cleared = previousModel != null;
-      _modelSeed = null;
-      _modelSeeded = true;
-    } else {
-      _modelSeed = previousModel;
-      _modelSeeded = true;
     }
     if (!_isTemplateValue(previousMode)) {
       ops['task.mode'] = null;
       cleared = cleared || previousMode != null;
-      _modeSeed = null;
-      _modeSeeded = true;
-    } else {
-      _modeSeed = previousMode;
-      _modeSeeded = true;
     }
+    widget.onExecutorChanged?.call(ops);
+    if (!mounted) return;
     setState(() {
+      _executor = executor;
+      if (!_isTemplateValue(previousModel)) {
+        _modelSeed = null;
+        _modelSeeded = true;
+      } else {
+        _modelSeed = previousModel;
+        _modelSeeded = true;
+      }
+      if (!_isTemplateValue(previousMode)) {
+        _modeSeed = null;
+        _modeSeeded = true;
+      } else {
+        _modeSeed = previousMode;
+        _modeSeeded = true;
+      }
       _modelChoices = const FlowModelChoices(loading: true);
       _modeChoices = const FlowModelChoices(loading: true);
       _choiceSeed++;
     });
     _refreshChoices(executor);
-    widget.onExecutorChanged?.call(ops);
     if (!cleared || !mounted) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
     messenger?.showSnackBar(SnackBar(

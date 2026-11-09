@@ -1385,13 +1385,22 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             ),
             Divider(height: 1, color: theme.colorScheme.outlineVariant),
             Expanded(
-              child: _rightView == _RightView.properties
-                  ? ListView(
-                      key: const ValueKey('phone-properties-page'),
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-                      children: [_propertiesPane(l10n)],
-                    )
-                  : _rightFill(l10n),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // 选人时盖住表单，不拆掉。拆掉后人选回来写不回执行者。
+                  ListView(
+                    key: const ValueKey('phone-properties-page'),
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+                    children: [_propertiesPane(l10n)],
+                  ),
+                  if (_rightView != _RightView.properties)
+                    ColoredBox(
+                      color: theme.colorScheme.surface,
+                      child: _rightFill(l10n),
+                    ),
+                ],
+              ),
             ),
           ],
         ),
@@ -2231,12 +2240,18 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   }
 
   Widget _rightPanel(AppLocalizations l10n) {
-    if (_rightView == _RightView.properties) {
-      return FlowContextPanel(child: _propertiesPane(l10n));
-    }
-    return ColoredBox(
-      color: Theme.of(context).colorScheme.surface,
-      child: _rightFill(l10n),
+    // 选 Agent、源码、历史都盖在属性上面。把属性拆掉再盖回来时，
+    // 检查器是新的一份，刚选的 Agent 还没写进节点，芯片又回到角色。
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        FlowContextPanel(child: _propertiesPane(l10n)),
+        if (_rightView != _RightView.properties)
+          ColoredBox(
+            color: Theme.of(context).colorScheme.surface,
+            child: _rightFill(l10n),
+          ),
+      ],
     );
   }
 
