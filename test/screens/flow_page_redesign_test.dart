@@ -92,8 +92,16 @@ class _Host {
             ],
           },
           'ops': editable
-              ? ['set', 'insert', 'move', 'delete', 'wrap', 'unwrap',
-                  'retype', 'header']
+              ? [
+                  'set',
+                  'insert',
+                  'move',
+                  'delete',
+                  'wrap',
+                  'unwrap',
+                  'retype',
+                  'header'
+                ]
               : <String>[],
         },
       'flow_validate_req' => {
@@ -193,8 +201,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('列表行：状态点 / 说明 / 无常驻开跑按钮，空库给模板入口',
-      (tester) async {
+  testWidgets('列表行：状态点 / 说明 / 无常驻开跑按钮，空库给模板入口', (tester) async {
     final host = _Host(flows: [
       {'name': 'dev', 'latest': 2, 'last_run_status': 'running'},
       {
@@ -221,8 +228,8 @@ void main() {
     expect(find.byTooltip('最近失败'), findsOneWidget);
     expect(find.text('待审批'), findsOneWidget);
     // 徽标直接带去那次运行（手机上也能审批）。
-    expect(find.byKey(const ValueKey('flow-approval-needs-me')),
-        findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('flow-approval-needs-me')), findsOneWidget);
     expect(find.text('会失败的流程'), findsOneWidget);
     // 没有说明的流程回退到版本号。
     expect(find.text('第 2 版'), findsOneWidget);
@@ -252,8 +259,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('点进流程直接编辑；开始运行必经确认面板，取消不产生运行',
-      (tester) async {
+  testWidgets('点进流程直接编辑；开始运行必经确认面板，取消不产生运行', (tester) async {
     final host = _Host();
     addTearDown(host.close);
     await _pumpWorkspace(tester, host);
@@ -271,9 +277,7 @@ void main() {
     await _settleMenu(tester);
     expect(find.byType(FlowStartScreen), findsOneWidget);
     expect(find.byKey(const ValueKey('start-confirm-banner')), findsOneWidget);
-    expect(
-        find.text('这会真实调用 Agent 并发送消息；演练不会产生真实调用。'),
-        findsOneWidget);
+    expect(find.text('这会真实调用 Agent 并发送消息；演练不会产生真实调用。'), findsOneWidget);
     expect(find.text('这次要绑定的角色'), findsOneWidget);
 
     await tester.tap(find.text('取消'));
@@ -325,16 +329,15 @@ void main() {
     expect(find.byKey(const ValueKey('redo')), findsOneWidget);
     expect(find.byKey(const ValueKey('design-more')), findsOneWidget);
     expect(find.text('已保存第 2 版'), findsOneWidget);
-    // 低频操作不在主区。
+    // 低频操作不在主区。对比不再是一个开关，有改动时自己出现。
     expect(find.byKey(const ValueKey('history-open')), findsNothing);
+    expect(find.byKey(const ValueKey('diff-toggle')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('design-more')));
     await _settleMenu(tester);
     expect(find.byKey(const ValueKey('history-open')), findsOneWidget);
     expect(find.byKey(const ValueKey('header-open')), findsNothing);
     expect(find.byKey(const ValueKey('flow-title')), findsOneWidget);
-    expect(find.byKey(const ValueKey('diff-toggle')), findsOneWidget);
-    // 流程设置在工具条标题上，对比也在工具条上，都不在 ⋯ 菜单里。
     expect(find.byKey(const ValueKey('yaml-bar')), findsOneWidget);
     // 点弹层外的空白处收起菜单，后面的编辑操作才不会被遮住。
     await tester.tapAt(const Offset(2, 2));
@@ -343,8 +346,7 @@ void main() {
     // 改一个字段 → 未保存；保存 → 已保存第 3 版。
     await tester.tap(find.text('impl'));
     await _settle(tester);
-    await tester.enterText(
-        find.byKey(const ValueKey('f:task.prompt')), '认真写');
+    await tester.enterText(find.byKey(const ValueKey('f:task.prompt')), '认真写');
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pump();
     await _settle(tester);
@@ -374,7 +376,8 @@ void main() {
 
     await tester.tap(find.text('impl'));
     await _settle(tester);
-    expect(find.byKey(const ValueKey('drawer-properties-page')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('drawer-properties-page')), findsOneWidget);
     expect(find.byKey(const ValueKey('f:task.prompt')), findsOneWidget);
     expect(find.text('属性'), findsNothing);
     expect(find.byKey(const ValueKey('drawer-close')), findsNothing);
@@ -404,8 +407,7 @@ void main() {
     await tester.tap(find.text('dev'));
     await _settle(tester);
 
-    expect(find.byType(AlertDialog), findsNothing,
-        reason: '恢复草稿不能再用阻塞式弹窗');
+    expect(find.byType(AlertDialog), findsNothing, reason: '恢复草稿不能再用阻塞式弹窗');
     expect(find.byKey(const ValueKey('draft-banner')), findsOneWidget);
     expect(find.byKey(const ValueKey('draft-restore')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('draft-discard')));
@@ -442,17 +444,13 @@ void main() {
 
   test('运行分组：需要你处理 > 运行中 > 已结束', () {
     expect(
-        FlowRunSummary(
-            runId: 'a', flow: 'dev', status: 'waiting_user').group,
+        FlowRunSummary(runId: 'a', flow: 'dev', status: 'waiting_user').group,
         FlowRunGroup.attention);
-    expect(
-        FlowRunSummary(runId: 'b', flow: 'dev', status: 'running').group,
+    expect(FlowRunSummary(runId: 'b', flow: 'dev', status: 'running').group,
         FlowRunGroup.running);
-    expect(
-        FlowRunSummary(runId: 'c', flow: 'dev', status: 'succeeded').group,
+    expect(FlowRunSummary(runId: 'c', flow: 'dev', status: 'succeeded').group,
         FlowRunGroup.finished);
-    expect(
-        FlowRunSummary(runId: 'd', flow: 'dev', status: 'failed').group,
+    expect(FlowRunSummary(runId: 'd', flow: 'dev', status: 'failed').group,
         FlowRunGroup.finished);
   });
 
@@ -488,9 +486,8 @@ void main() {
     )));
     await _settle(tester);
 
-    final attention = tester
-        .getCenter(find.byKey(const ValueKey('runs-group-attention')))
-        .dy;
+    final attention =
+        tester.getCenter(find.byKey(const ValueKey('runs-group-attention'))).dy;
     final running =
         tester.getCenter(find.byKey(const ValueKey('runs-group-running'))).dy;
     final finished =

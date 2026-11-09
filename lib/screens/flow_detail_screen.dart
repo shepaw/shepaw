@@ -60,6 +60,7 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
   FlowEditorController? _editor;
   FlowDraft? _draft;
   final ValueNotifier<int> _restoreRequests = ValueNotifier<int>(0);
+  VoidCallback? _openSettings;
 
   /// 手机上用哪套界面取决于主机能力（不是设备）：null = 还在问主机。
   bool? _hostEditable;
@@ -107,9 +108,8 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
     final gen = ++_capsGen;
     final schema = await widget.client.schema(widget.peerId);
     if (!mounted || gen != _capsGen) return;
-    setState(() => _hostEditable = schema == null
-        ? null
-        : FlowHostCaps.of(schema, const []).canEdit);
+    setState(() => _hostEditable =
+        schema == null ? null : FlowHostCaps.of(schema, const []).canEdit);
     if (schema == null) {
       // 一次超时不是「主机不支持编辑」的结论：别把详情页永久钉在只读
       // 步骤页上，等下一次依赖变化 / 重新进入时再问一次。
@@ -146,6 +146,8 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
       client: widget.client,
       draftStore: widget.draftStore,
       embedded: true,
+      chromeInParent: widget.showHeader,
+      onBindSettings: (open) => _openSettings = open,
       restoreRequests: _restoreRequests,
       pageOpen: widget.pageOpen,
       onOpenExecutions: widget.onOpenExecutions,
@@ -177,8 +179,17 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
     return Scaffold(
       appBar: widget.showHeader
           ? AppBar(
-              title: Text(widget.flow.name),
               automaticallyImplyLeading: false,
+              title: _settingsTitle(l10n),
+              actions: [
+                if (widget.onOpenExecutions != null)
+                  TextButton.icon(
+                    key: const ValueKey('executions-open'),
+                    onPressed: widget.onOpenExecutions,
+                    icon: const Icon(Icons.history, size: 18),
+                    label: Text(l10n.flow_listExecutions),
+                  ),
+              ],
             )
           : null,
       body: Column(
@@ -186,6 +197,35 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
           if (_draft != null) _draftBanner(l10n),
           Expanded(child: _mainPane()),
         ],
+      ),
+    );
+  }
+
+  Widget _settingsTitle(AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Tooltip(
+      message: l10n.flow_headerOpen,
+      child: InkWell(
+        key: const ValueKey('flow-title'),
+        onTap: () => _openSettings?.call(),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.flow.name,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: scheme.primary,
+                fontWeight: FontWeight.w600,
+                decoration: TextDecoration.underline,
+                decorationColor: scheme.primary,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.tune, size: 18, color: scheme.primary),
+          ],
+        ),
       ),
     );
   }

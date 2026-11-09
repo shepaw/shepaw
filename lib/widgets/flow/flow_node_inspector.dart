@@ -245,6 +245,7 @@ class FlowNodeInspector extends StatefulWidget {
     this.problemIsError = true,
     this.rejections = const {},
     this.flashField,
+    this.changedFields = const {},
     this.showInvalidBanner = false,
     this.focusNonce = 0,
     this.discardNonce = 0,
@@ -276,6 +277,10 @@ class FlowNodeInspector extends StatefulWidget {
   final bool problemIsError;
   final Map<String, String> rejections;
   final String? flashField;
+
+  /// 和上一版相比变过的字段路径（`task.prompt`、`desc`）。
+  final Set<String> changedFields;
+
   final bool showInvalidBanner;
   final int focusNonce;
   final int discardNonce;
@@ -624,6 +629,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
         problemIsError: widget.problemIsError,
         onDescCommitted: _locked ? null : widget.onDescChanged,
         onMenuChoice: _locked ? null : widget.onMenuChoice,
+        descChanged: _changed('desc'),
       ),
       const SizedBox(height: 8),
       Divider(height: 1, color: scheme.outlineVariant),
@@ -688,10 +694,23 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     final zh = Localizations.localeOf(context).languageCode == 'zh';
     final title = flowGroupTitle(l10n, group);
     if (_isBundledSection(group, specs, title, zh)) {
+      final executorChanged = _isTask &&
+          group == 'who' &&
+          (_changed('task.role') ||
+              _changed('task.agent') ||
+              _changed('task.uses'));
       return _block(
         theme,
         [
-          Text(title, style: _blockTitle(theme)),
+          Row(
+            children: [
+              Flexible(child: Text(title, style: _blockTitle(theme))),
+              if (executorChanged) ...[
+                const SizedBox(width: 8),
+                const FlowChangedMark(fieldKey: 'task.agent'),
+              ],
+            ],
+          ),
           const SizedBox(height: 10),
           if (_isTask && group == 'who') ...[
             FlowExecutorField(
@@ -955,6 +974,7 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
         showLabel: true,
         prominentLabel: prominentLabel,
         labelOverride: labelOverride,
+        changed: _changed(spec.path),
         refCandidates:
             FlowReferences.supports(spec.path) ? refCandidates : const [],
         varRoots: _offersVarSuggest(spec) ? varRoots : const [],
@@ -1027,6 +1047,13 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(label, style: labelStyle),
+        if (_changed(spec.path)) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FlowChangedMark(fieldKey: spec.path),
+          ),
+        ],
         const SizedBox(height: 4),
         Text(text, style: theme.textTheme.bodyMedium),
         if (long)
@@ -1060,6 +1087,8 @@ class FlowNodeInspectorState extends State<FlowNodeInspector> {
     if (value is Map || value is List) return jsonEncode(value);
     return value.toString();
   }
+
+  bool _changed(String path) => flowPathChanged(widget.changedFields, path);
 }
 
 /// 分组标题和字段名是不是同一句话。

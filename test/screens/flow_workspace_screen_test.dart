@@ -64,7 +64,8 @@ void main() {
     final harness = _Harness()
       // 定义里一个 role 引用都没有：客户端自己扫描会得到空名单，只有主机
       // 名单被采纳才会出现这一行（模拟主机新增了 App 还不认的节点用法）。
-      ..flowYaml = 'flow: dev\nsteps:\n  - id: impl\n    task: {agent: claude-main, prompt: 写}\n'
+      ..flowYaml =
+          'flow: dev\nsteps:\n  - id: impl\n    task: {agent: claude-main, prompt: 写}\n'
       ..requiredRoles = ['coder'];
     addTearDown(harness.close);
     await _pump(tester, harness.client);
@@ -85,7 +86,8 @@ void main() {
       SharedPreferencesStorePlatform.instance = originalPlatform;
     });
     final harness = _Harness(editable: true)
-      ..flowYaml = 'flow: dev\ninputs:\n  goal: {type: string, required: true}\nsteps:\n- id: impl\n  task: {prompt: 写}\n'
+      ..flowYaml =
+          'flow: dev\ninputs:\n  goal: {type: string, required: true}\nsteps:\n- id: impl\n  task: {prompt: 写}\n'
       ..requiredRoles = [];
     addTearDown(harness.close);
     await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
@@ -104,7 +106,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('save-first')));
     await tester.pump();
     // 保存成的新一版里多了一个 role 节点，主机名单也跟着变了。
-    harness.flowYaml = 'flow: dev\ninputs:\n  goal: {type: string, required: true}\nroles:\n  reviewer: {desc: 审}\nsteps:\n- id: impl\n  task: {role: reviewer, prompt: 写}\n';
+    harness.flowYaml =
+        'flow: dev\ninputs:\n  goal: {type: string, required: true}\nroles:\n  reviewer: {desc: 审}\nsteps:\n- id: impl\n  task: {role: reviewer, prompt: 写}\n';
     harness.requiredRoles = ['reviewer'];
     await tester.tap(find.byKey(const ValueKey('start-go')));
     await _settleRoute(tester);
@@ -113,8 +116,7 @@ void main() {
     expect(find.byType(FlowStartScreen), findsOneWidget);
     expect(
         tester
-            .widget<TextField>(
-                find.byKey(const ValueKey('start-input-goal')))
+            .widget<TextField>(find.byKey(const ValueKey('start-input-goal')))
             .controller
             ?.text,
         '目标');
@@ -142,8 +144,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('模板节点改成 Agent 后，开跑不再要求给声明过的角色选 Agent',
-      (tester) async {
+  testWidgets('模板节点改成 Agent 后，开跑不再要求给声明过的角色选 Agent', (tester) async {
     final harness = _Harness()
       ..flowYaml = '''
 flow: dev
@@ -188,8 +189,8 @@ steps:
     await _settle(tester);
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.byType(FlowStartScreen), findsOneWidget);
-    final field = tester.widget<TextField>(
-        find.byKey(const ValueKey('start-input-goal')));
+    final field = tester
+        .widget<TextField>(find.byKey(const ValueKey('start-input-goal')));
     expect(field.maxLines, isNull, reason: '不能钉死成单行');
     expect(field.minLines, 1);
     await tester.pumpWidget(const SizedBox());
@@ -197,7 +198,8 @@ steps:
 
   testWidgets('roles.default 预填进绑定，不用再手选 Agent', (tester) async {
     final harness = _Harness()
-      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写, default: codex-main}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
+      ..flowYaml =
+          'flow: dev\nroles:\n  coder: {desc: 写, default: codex-main}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
     addTearDown(harness.close);
     await _pump(tester, harness.client);
 
@@ -430,10 +432,12 @@ steps:
 
     await tester.tap(find.text('dev'));
     await _settle(tester);
+    expect(find.byKey(const ValueKey('executions-open')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('design-more')));
     await _settleMenu(tester);
-    expect(find.byKey(const ValueKey('executions-open')), findsOneWidget);
     expect(find.text('历史版本'), findsOneWidget);
+    await tester.tapAt(const Offset(8, 8));
+    await _settleMenu(tester);
     await tester.tap(find.byKey(const ValueKey('executions-open')));
     await _settleMenu(tester);
     expect(find.byKey(const ValueKey('flow-executions-page')), findsOneWidget);
@@ -645,7 +649,8 @@ steps:
     );
 
     final harness = _Harness()
-      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
+      ..flowYaml =
+          'flow: dev\nroles:\n  coder: {desc: 写}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
     addTearDown(harness.close);
     await _pump(tester, harness.client, agents: [agent]);
 
@@ -686,7 +691,8 @@ steps:
       _peerAgent('agent-p2', 'P2 Agent', 'p2'),
     ];
     final harness = _Harness()
-      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
+      ..flowYaml =
+          'flow: dev\nroles:\n  coder: {desc: 写}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
     addTearDown(harness.close);
     await tester.pumpWidget(MaterialApp(
       locale: const Locale('zh'),
@@ -747,7 +753,8 @@ steps:
     addTearDown(tester.view.reset);
 
     final harness = _Harness()
-      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
+      ..flowYaml =
+          'flow: dev\nroles:\n  coder: {desc: 写}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
     addTearDown(harness.close);
     // 开机那一刻 peer agent 还没同步：缓存是一份空列表（非 null）。
     final agents = <RemoteAgent>[];

@@ -11,6 +11,7 @@ import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
 import '../../screens/flow_start_screen.dart';
 import '../discard_changes_scope.dart';
+import 'flow_inspector_header.dart';
 import 'flow_var_text_field.dart';
 
 /// 流程设置：嵌在属性面板里，改动直接 `setHeaders`，没有「应用」按钮。
@@ -308,8 +309,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     final inputsBlocked = _namesBlocked(inputNames);
     final encodedInputs = <String, dynamic>{
       for (final row in _inputs)
-        if (row.name.text.trim().isNotEmpty)
-          row.name.text.trim(): row.encode(),
+        if (row.name.text.trim().isNotEmpty) row.name.text.trim(): row.encode(),
     };
     if (!inputsBlocked && !_sameJson(_rawInputs, encodedInputs)) {
       next['inputs'] = encodedInputs;
@@ -365,12 +365,12 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     try {
       final ok = await c.setHeaders(next);
       if (!ok || !mounted || gen != _applyGen) return;
-    // 提交过程中又改过的字段不能把快照写成旧值，否则下一次会把新字盖掉。
-    if (_description.text.trim() != description) return;
-    _rawDescription = description;
-    if (!limitsBlocked) _rawLimits = encodedLimits;
-    if (!inputsBlocked) _rawInputs = encodedInputs;
-    if (!rolesBlocked) _rawRoles = encodedRoles;
+      // 提交过程中又改过的字段不能把快照写成旧值，否则下一次会把新字盖掉。
+      if (_description.text.trim() != description) return;
+      _rawDescription = description;
+      if (!limitsBlocked) _rawLimits = encodedLimits;
+      if (!inputsBlocked) _rawInputs = encodedInputs;
+      if (!rolesBlocked) _rawRoles = encodedRoles;
       if (!outputsBlocked) _rawOutputs = encodedOutputs;
       _loadedYaml = c.yaml;
     } finally {
@@ -396,135 +396,172 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
       canRequestFocus: false,
       skipTraversal: true,
       child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Text(l10n.flow_headerTitle,
-              style: theme.textTheme.titleMedium),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.controller.name,
-                  key: const ValueKey('flow-name'),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: 'monospace',
-                    color: scheme.onSurfaceVariant,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child:
+                Text(l10n.flow_headerTitle, style: theme.textTheme.titleMedium),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.controller.name,
+                    key: const ValueKey('flow-name'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontFamily: 'monospace',
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
-              ),
-              if (!widget.readOnly)
-                TextButton.icon(
-                  key: const ValueKey('flow-rename'),
-                  onPressed: _renaming ? null : _rename,
-                  icon: const Icon(Icons.edit_outlined, size: 16),
-                  label: Text(l10n.flow_renameAction),
-                ),
-            ],
+                if (!widget.readOnly)
+                  TextButton.icon(
+                    key: const ValueKey('flow-rename'),
+                    onPressed: _renaming ? null : _rename,
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: Text(l10n.flow_renameAction),
+                  ),
+              ],
+            ),
           ),
-        ),
-        if (widget.readOnly)
+          if (widget.readOnly)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(l10n.flow_readOnlyHostHint,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant)),
+            ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(l10n.flow_readOnlyHostHint,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant)),
-          ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _section(l10n.flow_headerBasics, [
-                TextField(
-                  controller: _description,
-                  readOnly: widget.readOnly,
-                  decoration: InputDecoration(
-                      hintText: l10n.flow_descPlaceholder, isDense: true),
-                  onChanged: (_) => _schedule(),
-                  onEditingComplete: _flushNow,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _section(
+                  l10n.flow_headerBasics,
+                  [
+                    TextField(
+                      controller: _description,
+                      readOnly: widget.readOnly,
+                      decoration: InputDecoration(
+                          hintText: l10n.flow_descPlaceholder, isDense: true),
+                      onChanged: (_) => _schedule(),
+                      onEditingComplete: _flushNow,
+                    ),
+                  ],
+                  changed:
+                      _headerChanged('description') || _headerChanged('flow'),
                 ),
-              ]),
-              _section(l10n.flow_headerInputs, [
-                Text(l10n.flow_headerInputsHint,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant)),
-                if (_inputsBlocked)
-                  Text(l10n.flow_headerNamesBlocked,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: scheme.error)),
-                for (var i = 0; i < _inputs.length; i++)
-                  _inputCard(i, l10n),
-                _addRow(l10n.flow_headerAddInput, () {
-                  final row = _InputRow(
-                    name: '',
-                    type: 'string',
-                    draft: true,
-                    expanded: true,
-                  );
-                  setState(() => _inputs.add(row));
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) row.nameFocus.requestFocus();
-                  });
-                }),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    key: const ValueKey('header-preview-start'),
-                    onPressed: _previewStart,
-                    child: Text(l10n.flow_headerPreviewStart),
-                  ),
+                _section(
+                  l10n.flow_headerInputs,
+                  [
+                    Text(l10n.flow_headerInputsHint,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant)),
+                    if (_inputsBlocked)
+                      Text(l10n.flow_headerNamesBlocked,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: scheme.error)),
+                    for (var i = 0; i < _inputs.length; i++)
+                      _inputCard(i, l10n),
+                    _addRow(l10n.flow_headerAddInput, () {
+                      final row = _InputRow(
+                        name: '',
+                        type: 'string',
+                        draft: true,
+                        expanded: true,
+                      );
+                      setState(() => _inputs.add(row));
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) row.nameFocus.requestFocus();
+                      });
+                    }),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        key: const ValueKey('header-preview-start'),
+                        onPressed: _previewStart,
+                        child: Text(l10n.flow_headerPreviewStart),
+                      ),
+                    ),
+                  ],
+                  changed: _headerChanged('inputs'),
                 ),
-              ]),
-              _section(l10n.flow_headerRoles, [
-                if (_rolesBlocked)
-                  Text(l10n.flow_headerNamesBlocked,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: scheme.error)),
-                for (var i = 0; i < _roles.length; i++) _roleCard(i, l10n),
-                _addRow(l10n.flow_headerAddRole, () {
-                  final row = _PairRow('', '', draft: true, expanded: true);
-                  setState(() => _roles.add(row));
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) row.nameFocus.requestFocus();
-                  });
-                }),
-              ]),
-              _limitsSection(l10n, theme),
-              _section(l10n.flow_headerOutputs, [
-                if (_outputsBlocked)
-                  Text(l10n.flow_headerNamesBlocked,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: scheme.error)),
-                for (final row in _outputs)
-                  _pairRow(row, l10n.flow_headerOutputName,
-                      l10n.flow_headerOutputTemplate,
-                      varRoots: outputRoots),
-                _addRow(l10n.flow_headerAddOutput, () => setState(
-                    () => _outputs.add(_PairRow('', '', draft: true)))),
-              ]),
-            ],
+                _section(
+                  l10n.flow_headerRoles,
+                  [
+                    if (_rolesBlocked)
+                      Text(l10n.flow_headerNamesBlocked,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: scheme.error)),
+                    for (var i = 0; i < _roles.length; i++) _roleCard(i, l10n),
+                    _addRow(l10n.flow_headerAddRole, () {
+                      final row = _PairRow('', '', draft: true, expanded: true);
+                      setState(() => _roles.add(row));
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) row.nameFocus.requestFocus();
+                      });
+                    }),
+                  ],
+                  changed: _headerChanged('roles'),
+                ),
+                _limitsSection(l10n, theme),
+                _section(
+                  l10n.flow_headerOutputs,
+                  [
+                    if (_outputsBlocked)
+                      Text(l10n.flow_headerNamesBlocked,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: scheme.error)),
+                    for (final row in _outputs)
+                      _pairRow(row, l10n.flow_headerOutputName,
+                          l10n.flow_headerOutputTemplate,
+                          varRoots: outputRoots),
+                    _addRow(
+                        l10n.flow_headerAddOutput,
+                        () => setState(
+                            () => _outputs.add(_PairRow('', '', draft: true)))),
+                  ],
+                  changed: _headerChanged('outputs'),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
       ),
     );
   }
 
-  Widget _section(String title, List<Widget> children) => Column(
+  bool _headerChanged(String prefix) {
+    final header = widget.controller.diff?.header ?? const <FlowFieldChange>[];
+    return flowPathChanged(
+      [for (final change in header) change.field],
+      prefix,
+    );
+  }
+
+  Widget _section(String title, List<Widget> children,
+          {bool changed = false}) =>
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 12),
-          Text(
-            title,
-            style: Theme.of(context)
-                .textTheme
-                .labelLarge
-                ?.copyWith(color: Theme.of(context).colorScheme.primary),
+          Row(
+            children: [
+              Text(
+                title,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(color: Theme.of(context).colorScheme.primary),
+              ),
+              if (changed) ...[
+                const SizedBox(width: 8),
+                const FlowChangedMark(),
+              ],
+            ],
           ),
           const SizedBox(height: 6),
           ...children,
@@ -546,7 +583,8 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     String valueLabel, {
     Future<void> Function()? onDelete,
     List<FlowVarNode> varRoots = const [],
-  }) => Row(
+  }) =>
+      Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
@@ -554,8 +592,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
               controller: row.key,
               focusNode: row.nameFocus,
               readOnly: widget.readOnly,
-              decoration:
-                  InputDecoration(labelText: keyLabel, isDense: true),
+              decoration: InputDecoration(labelText: keyLabel, isDense: true),
               onChanged: (_) => _schedule(),
               onEditingComplete: _flushNow,
             ),
@@ -567,8 +604,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
               controller: row.value,
               roots: varRoots,
               readOnly: widget.readOnly,
-              decoration:
-                  InputDecoration(labelText: valueLabel, isDense: true),
+              decoration: InputDecoration(labelText: valueLabel, isDense: true),
               onChanged: (_) => _schedule(),
               onEditingComplete: _flushNow,
             ),
@@ -858,16 +894,16 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: widget.readOnly ||
-                                  widget.onPickAgent == null
-                              ? null
-                              : () async {
-                                  final picked =
-                                      await widget.onPickAgent!.call();
-                                  if (picked == null || !mounted) return;
-                                  setState(() => row.agentDefault = picked);
-                                  _schedule();
-                                },
+                          onPressed:
+                              widget.readOnly || widget.onPickAgent == null
+                                  ? null
+                                  : () async {
+                                      final picked =
+                                          await widget.onPickAgent!.call();
+                                      if (picked == null || !mounted) return;
+                                      setState(() => row.agentDefault = picked);
+                                      _schedule();
+                                    },
                           child: Text(
                             agentName.isEmpty
                                 ? l10n.flow_headerRoleDefault
@@ -901,9 +937,18 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     final timeout = _timeout.text.trim();
     final summary =
         '${tasks.isEmpty ? l10n.flow_headerNoLimit : tasks} · ${timeout.isEmpty ? l10n.flow_headerNoLimit : timeout}';
+    final limitsChanged = _headerChanged('limits');
     return ExpansionTile(
       tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-      title: Text(l10n.flow_headerLimitsTitle),
+      title: Row(
+        children: [
+          Text(l10n.flow_headerLimitsTitle),
+          if (limitsChanged) ...[
+            const SizedBox(width: 8),
+            const FlowChangedMark(),
+          ],
+        ],
+      ),
       subtitle: Text(summary, style: theme.textTheme.bodySmall),
       children: [
         Padding(
@@ -939,8 +984,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
   }
 
   Widget _timeoutEditor(AppLocalizations l10n) {
-    final match =
-        RegExp(r'^(\d+)\s*([smh])$').firstMatch(_timeout.text.trim());
+    final match = RegExp(r'^(\d+)\s*([smh])$').firstMatch(_timeout.text.trim());
     final legacy = _timeout.text.trim().isNotEmpty && match == null;
     if (legacy) {
       return TextField(
@@ -992,8 +1036,7 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
                   if (value == null) return;
                   final n = int.tryParse(amount);
                   setState(() {
-                    _timeout.text =
-                        n != null && n > 0 ? '$n$value' : amount;
+                    _timeout.text = n != null && n > 0 ? '$n$value' : amount;
                   });
                   _schedule();
                 },
@@ -1003,92 +1046,89 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
   }
 
   Widget _inputFields(_InputRow row, AppLocalizations l10n) => Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: row.name,
-                      focusNode: row.nameFocus,
-                      readOnly: widget.readOnly,
-                      decoration: InputDecoration(
-                          labelText: l10n.flow_headerInputName,
-                          isDense: true),
-                      onChanged: (_) => _schedule(),
-                      onEditingComplete: _flushNow,
-                    ),
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: row.name,
+                    focusNode: row.nameFocus,
+                    readOnly: widget.readOnly,
+                    decoration: InputDecoration(
+                        labelText: l10n.flow_headerInputName, isDense: true),
+                    onChanged: (_) => _schedule(),
+                    onEditingComplete: _flushNow,
                   ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 110,
-                    child: DropdownButtonFormField<String>(
-                      initialValue: row.type,
-                      isDense: true,
-                      decoration: InputDecoration(
-                          labelText: l10n.flow_headerInputType,
-                          isDense: true),
-                      items: [
-                        for (final type in _inputTypeChoices(row.type))
-                          DropdownMenuItem<String>(
-                            value: type,
-                            child: Text(_inputTypeLabel(l10n, type)),
-                          ),
-                      ],
-                      onChanged: widget.readOnly
-                          ? null
-                          : (v) {
-                              setState(() => row.type = v ?? 'string');
-                              _schedule();
-                            },
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 16),
-                    onPressed: widget.readOnly
-                        ? null
-                        : () {
-                            setState(() {
-                              row.draft = false;
-                              _inputs.remove(row);
-                            });
-                            _schedule();
-                            WidgetsBinding.instance
-                                .addPostFrameCallback((_) => row.dispose());
-                          },
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  Switch(
-                    value: row.required,
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 110,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: row.type,
+                    isDense: true,
+                    decoration: InputDecoration(
+                        labelText: l10n.flow_headerInputType, isDense: true),
+                    items: [
+                      for (final type in _inputTypeChoices(row.type))
+                        DropdownMenuItem<String>(
+                          value: type,
+                          child: Text(_inputTypeLabel(l10n, type)),
+                        ),
+                    ],
                     onChanged: widget.readOnly
                         ? null
                         : (v) {
-                            setState(() => row.required = v);
+                            setState(() => row.type = v ?? 'string');
                             _schedule();
                           },
                   ),
-                  Text(l10n.flow_headerInputRequired),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: row.defaultValue,
-                      readOnly: widget.readOnly,
-                      decoration: InputDecoration(
-                          labelText: l10n.flow_headerInputDefault,
-                          isDense: true),
-                      onChanged: (_) => _schedule(),
-                      onEditingComplete: _flushNow,
-                    ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 16),
+                  onPressed: widget.readOnly
+                      ? null
+                      : () {
+                          setState(() {
+                            row.draft = false;
+                            _inputs.remove(row);
+                          });
+                          _schedule();
+                          WidgetsBinding.instance
+                              .addPostFrameCallback((_) => row.dispose());
+                        },
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                Switch(
+                  value: row.required,
+                  onChanged: widget.readOnly
+                      ? null
+                      : (v) {
+                          setState(() => row.required = v);
+                          _schedule();
+                        },
+                ),
+                Text(l10n.flow_headerInputRequired),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: row.defaultValue,
+                    readOnly: widget.readOnly,
+                    decoration: InputDecoration(
+                        labelText: l10n.flow_headerInputDefault, isDense: true),
+                    onChanged: (_) => _schedule(),
+                    onEditingComplete: _flushNow,
                   ),
-                ],
-              ),
-            ],
-          ),
-        );
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
 }
 
 /// roles / outputs 的一行。`original` 留住原始值，没编辑过的行原样写回，

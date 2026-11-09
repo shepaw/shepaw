@@ -7,6 +7,7 @@ import '../../controllers/flow/flow_references.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_field_schema.dart';
 import '../../utils/layout_utils.dart';
+import 'flow_inspector_header.dart';
 import 'flow_var_text_field.dart';
 
 /// 「跟随 agent 默认」这一项的值。用一个不会和真实模型 / 模式 id 撞上的哨兵。
@@ -104,6 +105,7 @@ class FlowFieldEditor extends StatefulWidget {
     this.showLabel = true,
     this.prominentLabel = false,
     this.labelOverride,
+    this.changed = false,
   });
 
   final FlowFieldSpec spec;
@@ -128,6 +130,9 @@ class FlowFieldEditor extends StatefulWidget {
 
   /// 盖过 [FlowFieldSpec] 上的名字。单独一块、分组问句比字段名更清楚时用。
   final String? labelOverride;
+
+  /// 这一项和上一版不一样，名字旁边标「有改动」。
+  final bool changed;
 
   /// string / text 的「插入引用」候选。
   final List<String> refCandidates;
@@ -492,9 +497,19 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (widget.showLabel) ...[
-              Text(
-                label + (spec.required ? ' *' : ''),
-                style: labelStyle,
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      label + (spec.required ? ' *' : ''),
+                      style: labelStyle,
+                    ),
+                  ),
+                  if (widget.changed) ...[
+                    const SizedBox(width: 8),
+                    FlowChangedMark(fieldKey: spec.path),
+                  ],
+                ],
               ),
               SizedBox(height: widget.prominentLabel ? 8 : 4),
             ],

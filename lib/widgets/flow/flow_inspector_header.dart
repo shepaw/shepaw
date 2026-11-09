@@ -19,6 +19,7 @@ class FlowInspectorHeader extends StatefulWidget {
     this.onDescCommitted,
     this.onMenuChoice,
     this.onLocate,
+    this.descChanged = false,
   });
 
   final FlowNode node;
@@ -32,6 +33,9 @@ class FlowInspectorHeader extends StatefulWidget {
   final void Function(String? desc)? onDescCommitted;
   final void Function(FlowOutlineMenuChoice choice)? onMenuChoice;
   final VoidCallback? onLocate;
+
+  /// 这一步的说明和上一版不一样。
+  final bool descChanged;
 
   @override
   State<FlowInspectorHeader> createState() => FlowInspectorHeaderState();
@@ -141,6 +145,11 @@ class FlowInspectorHeaderState extends State<FlowInspectorHeader> {
             ),
           ],
         ),
+        if (widget.descChanged)
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: FlowChangedMark(fieldKey: 'desc'),
+          ),
         TextField(
           key: const ValueKey('inspector-desc'),
           controller: _desc,
@@ -257,3 +266,40 @@ String flowGroupTitle(AppLocalizations l10n, String group) => switch (group) {
       'brief' => l10n.flow_groupBrief,
       _ => l10n.flow_groupAdvanced,
     };
+
+/// 字段或分组旁的「有改动」小标。
+class FlowChangedMark extends StatelessWidget {
+  const FlowChangedMark({super.key, this.fieldKey});
+
+  /// 用来在测试里点名是哪一处，例如 `task.prompt`。
+  final String? fieldKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    return Container(
+      key: fieldKey == null ? null : ValueKey('diff-field-$fieldKey'),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: dark ? Colors.amber.shade900 : Colors.amber.shade100,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        AppLocalizations.of(context).flow_diffChanged,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: dark ? Colors.amber.shade100 : Colors.amber.shade900,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+/// [fields] 里有没有这条路径，或它下面的子路径。
+bool flowPathChanged(Iterable<String> fields, String path) {
+  for (final field in fields) {
+    if (field == path || field.startsWith('$path.')) return true;
+  }
+  return false;
+}

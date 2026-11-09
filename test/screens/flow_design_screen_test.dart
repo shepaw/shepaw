@@ -290,7 +290,8 @@ void main() {
     await host.bus.close();
   });
 
-  testWidgets('the diff toggle marks changed nodes', (tester) async {
+  testWidgets('a changed field is marked on the step and inside it',
+      (tester) async {
     final host = _FakeHost();
     await tester.pumpWidget(_app(FlowDesignScreen(
       peerId: 'p1',
@@ -298,10 +299,18 @@ void main() {
       client: host.client,
     )));
     await _settle(tester);
-    await tester.tap(find.byKey(const ValueKey('diff-toggle')));
+    expect(find.byKey(const ValueKey('diff-toggle')), findsNothing);
+    await tester.tap(find.text('impl'));
     await _settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('f:task.prompt')), '认真写');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('diff-summary')), findsOneWidget);
     expect(find.text('1 处改动'), findsOneWidget);
-    expect(find.text('有改动'), findsOneWidget);
+    expect(find.text('有改动'), findsWidgets);
+    expect(
+        find.byKey(const ValueKey('diff-field-task.prompt')), findsOneWidget);
     final diff = host.sent.firstWhere((f) => f['type'] == 'flow_diff_req');
     expect(diff['from_yaml'], _baseYaml);
     await tester.pumpWidget(const SizedBox());
@@ -572,7 +581,8 @@ void main() {
       host.sent.any((frame) {
         if (frame['type'] != 'flow_edit_req') return false;
         final ops = frame['ops'];
-        return ops is List && ops.any((op) => op is Map && op['op'] == 'insert');
+        return ops is List &&
+            ops.any((op) => op is Map && op['op'] == 'insert');
       }),
       isTrue,
     );

@@ -139,6 +139,7 @@ class FlowEditorController extends ChangeNotifier {
   List<FlowDiagnostic> _diagnostics = const [];
   FlowDiff? _diff;
   bool _showDiff = false;
+  int _diffToken = 0;
   bool _loading = true;
   bool _loadFailed = false;
   bool _saving = false;
@@ -223,6 +224,8 @@ class FlowEditorController extends ChangeNotifier {
     _rejectReason.clear();
     _queuedOps = null;
     _diff = null;
+    _showDiff = false;
+    _diffToken++;
     _history.clear();
     _resetCoalesce();
     await _lookForDraft();
@@ -410,8 +413,6 @@ class FlowEditorController extends ChangeNotifier {
     }
     _rejected.removeWhere((key, _) => !_pending.containsKey(key));
     _rejectReason.removeWhere((key, _) => !_pending.containsKey(key));
-    if (_showDiff) unawaited(_refreshDiff());
-    // 关页面之后才到的回包也要落草稿，否则最后敲的字会丢。
     await _persistDraft();
     return true;
   }
@@ -452,6 +453,7 @@ class FlowEditorController extends ChangeNotifier {
     _yaml = checked.yaml;
     _tree = checked.tree;
     _diagnostics = checked.diagnostics;
+    _syncDiff();
     _notify();
     return true;
   }
@@ -500,7 +502,6 @@ class FlowEditorController extends ChangeNotifier {
     _rejected.clear();
     _rejectReason.clear();
     _queuedOps = null;
-    if (_showDiff) unawaited(_refreshDiff());
     await _persistDraft();
     return true;
   }
@@ -565,8 +566,7 @@ class FlowEditorController extends ChangeNotifier {
     final latest = flow is Map ? (flow['latest'] as num?)?.toInt() : null;
     _baseYaml = savedYaml;
     _revision = latest ?? _revision + 1;
-    _diff = null;
-    _showDiff = false;
+    _syncDiff();
     _resetCoalesce();
     _emit(FlowEditorNotice(FlowEditorNoticeKind.saved, count: _revision));
     _notify();
@@ -654,8 +654,7 @@ class FlowEditorController extends ChangeNotifier {
     final latest = flow is Map ? (flow['latest'] as num?)?.toInt() : null;
     _revision = latest ?? 1;
     _history.clear();
-    _diff = null;
-    _showDiff = false;
+    _syncDiff();
     _resetCoalesce();
     _pending.clear();
     _rejected.clear();
@@ -706,16 +705,28 @@ class FlowEditorController extends ChangeNotifier {
     return result.ok;
   }
 
-  Future<void> toggleDiff() async {
-    _showDiff = !_showDiff;
-    _notify();
-    if (_showDiff) await _refreshDiff();
+  /// 草稿和已保存版本不一样时自动对比。没有改动就收起。
+  void _syncDiff() {
+    if (_yaml == _baseYaml) {
+      _diffToken++;
+      _showDiff = false;
+      _diff = null;
+      return;
+    }
+    _showDiff = true;
+    unawaited(_refreshDiff());
   }
 
   Future<void> _refreshDiff() async {
-    final got = await _client.diff(peerId, fromYaml: _baseYaml, toYaml: _yaml);
-    if (_disposed) return;
+    final token = ++_diffToken;
+    final from = _baseYaml;
+    final to = _yaml;
+    if (from == to) return;
+    final got = await _client.diff(peerId, fromYaml: from, toYaml: to);
+    if (_disposed || token != _diffToken) return;
+    if (_yaml != to || _baseYaml != from) return;
     _diff = got.diff;
+    _showDiff = true;
     _notify();
   }
 
@@ -751,6 +762,7 @@ class FlowEditorController extends ChangeNotifier {
     _queuedOps = null;
     _generation++;
     _resetCoalesce();
+    _syncDiff();
     _notify();
     if (_tree.isEmpty && _yaml.isNotEmpty) {
       final checked = await _client.validate(peerId, _yaml);
