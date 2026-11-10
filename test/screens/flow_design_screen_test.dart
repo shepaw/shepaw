@@ -354,6 +354,9 @@ void main() {
 
   testWidgets('rehearsal lights the steps in order and can be ended',
       (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     final host = _FakeHost();
     await tester.pumpWidget(_app(FlowDesignScreen(
       peerId: 'p1',
@@ -547,7 +550,7 @@ void main() {
     await _settle(tester);
     expect(find.text('缺提示词'), findsOneWidget);
     expect(find.text('1 条诊断'), findsOneWidget);
-    expect(find.byKey(const ValueKey('drawer-properties-page')), findsNothing);
+    expect(find.text('流程设置'), findsWidgets);
     await tester.tap(find.text('缺提示词'));
     await _settle(tester);
     expect(find.byKey(const ValueKey('f:task.prompt')), findsOneWidget);

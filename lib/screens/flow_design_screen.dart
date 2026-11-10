@@ -137,8 +137,8 @@ class FlowDesignScreen extends StatefulWidget {
 class _FlowDesignScreenState extends State<FlowDesignScreen> {
   late FlowEditorController _controller;
 
-  /// 右侧只放属性。默认收起，点一个组件或「流程设置」再展开。
-  bool _panelOpen = false;
+  /// 右侧放流程设置或当前组件。点进一个流程就打开流程设置；点组件再换成那一项。
+  bool _panelOpen = true;
 
   /// 源码、历史、选人和开跑预览都开在右侧栏，不再盖一层弹窗。
   _RightView _rightView = _RightView.properties;
@@ -330,7 +330,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     // 换主机 / 换流程不能把上一次打开的整页、选择模式和「还有非法值」
     // 拦截态带过来，否则新流程一进来就停在别人的表单上。
     _pageOpen = false;
-    _panelOpen = false;
+    _panelOpen = true;
     _rightView = _RightView.properties;
     _agentWait?.complete(null);
     _agentWait = null;
@@ -1458,7 +1458,16 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Row(
                       children: [
-                        _toolbarLead(l10n, theme, scheme, statusText, c),
+                        if (widget.hasRestorableDraft)
+                          Flexible(
+                            child: _toolbarLead(
+                                l10n, theme, scheme, statusText, c),
+                          )
+                        else
+                          Expanded(
+                            child: _toolbarLead(
+                                l10n, theme, scheme, statusText, c),
+                          ),
                         if (widget.hasRestorableDraft) ...[
                           const SizedBox(width: 12),
                           Flexible(
@@ -1777,20 +1786,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     }
   }
 
-  void _openProperties() {
-    if (!mounted) return;
-    if (_phoneMode) {
-      // 手机上没有「展开右栏」这回事：直接打开当前节点的整页属性。
-      if (_selectedId == null) {
-        _showFlowSettings();
-      } else {
-        setState(() => _pageOpen = true);
-      }
-      return;
-    }
-    setState(() => _panelOpen = true);
-  }
-
   /// 先把焦点移走，让描述和流程设置把当前输入交出来，再看有没有没能提交的。
   bool _flushEditors() {
     FocusManager.instance.primaryFocus?.unfocus();
@@ -2054,29 +2049,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           }
           final panelWidth = _fitPanelWidth(width);
           final panel = showPanel ? _rightPanel(l10n) : null;
-          final treeStack = Stack(
-            children: [
-              treePane,
-              // 手机上点行 / 点「流程设置」就能开整页，不需要展开侧栏的入口。
-              if (canEdit && !showPanel && !_phoneMode)
-                Positioned.directional(
-                  textDirection: Directionality.of(context),
-                  end: 8,
-                  top: 8,
-                  child: IconButton(
-                    key: const ValueKey('drawer-open'),
-                    tooltip: l10n.flow_drawerOpen,
-                    icon: const Icon(Icons.view_sidebar_outlined),
-                    onPressed: _openProperties,
-                  ),
-                ),
-            ],
-          );
           if (wide) {
             return Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(child: treeStack),
+                Expanded(child: treePane),
                 if (panel != null) ...[
                   FlowPaneSplitter(
                     onDrag: (dx) =>
@@ -2095,7 +2072,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               width < 600 ? width : (width * 0.85).clamp(0, 380).toDouble();
           return Stack(
             children: [
-              Positioned.fill(child: treeStack),
+              Positioned.fill(child: treePane),
               if (panel != null)
                 Positioned(
                   right: 0,

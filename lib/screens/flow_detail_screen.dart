@@ -32,6 +32,7 @@ class FlowDetailScreen extends StatefulWidget {
     this.onControllerReady,
     this.pageOpen,
     this.onOpenExecutions,
+    this.onBindSettings,
   });
 
   final String peerId;
@@ -50,6 +51,9 @@ class FlowDetailScreen extends StatefulWidget {
   final ValueNotifier<bool>? pageOpen;
 
   final VoidCallback? onOpenExecutions;
+
+  /// 把「打开流程设置」交给工作台。再点一次当前流程时用它回到流程设置。
+  final void Function(VoidCallback openSettings)? onBindSettings;
 
   @override
   State<FlowDetailScreen> createState() => _FlowDetailScreenState();
@@ -145,7 +149,10 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
       draftStore: widget.draftStore,
       embedded: true,
       chromeInParent: widget.showHeader,
-      onBindSettings: (open) => _openSettings = open,
+      onBindSettings: (open) {
+        _openSettings = open;
+        widget.onBindSettings?.call(open);
+      },
       restoreRequests: _restoreRequests,
       pageOpen: widget.pageOpen,
       onOpenExecutions: widget.onOpenExecutions,

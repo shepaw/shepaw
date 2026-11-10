@@ -87,6 +87,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   bool _editorDirty = false;
   FlowEditorController? _editor;
 
+  /// 再点当前这条流程时，设计页回到流程设置。
+  VoidCallback? _openFlowSettings;
+
   /// 执行历史里正在看某一次运行。系统返回先退回列表，再关掉这一页。
   bool _executionDetailOpen = false;
   VoidCallback? _executionBack;
@@ -230,7 +233,11 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   void _select(FlowSummary flow) {
     final same = _selectedName == flow.name;
     // 新建 / 开跑 / 历史盖在右侧时，点一条流程就回到它的编辑页，不用先按返回。
-    if (same && _pane == null) return;
+    // 已经在看这条流程时，再点一次回到流程设置。
+    if (same && _pane == null) {
+      _openFlowSettings?.call();
+      return;
+    }
     unawaited(() async {
       if (!same && !await _guardDirty()) return;
       if (!mounted) return;
@@ -1046,6 +1053,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       showHeader: showHeader,
       pageOpen: _detailPageOpen,
       onOpenExecutions: () => _showExecutions(flow),
+      onBindSettings: (open) => _openFlowSettings = open,
       onDirtyChanged: (dirty) {
         if (_editorDirty == dirty) return;
         _editorDirty = dirty;

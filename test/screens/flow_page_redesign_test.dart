@@ -373,6 +373,9 @@ void main() {
     expect(find.byKey(const ValueKey('drawer-tab-rehearsal')), findsNothing);
     expect(find.byKey(const ValueKey('drawer-tab-source')), findsNothing);
     expect(find.byKey(const ValueKey('drawer-close')), findsNothing);
+    expect(find.byKey(const ValueKey('drawer-open')), findsNothing);
+    // 点进流程就打开流程设置，不用再点「打开侧栏」。
+    expect(find.text('流程设置'), findsWidgets);
 
     await tester.tap(find.text('impl'));
     await _settle(tester);
