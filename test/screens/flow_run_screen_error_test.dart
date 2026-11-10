@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -60,6 +61,24 @@ Future<void> _settle(WidgetTester tester) async {
   }
 }
 
+/// WCAG 相对亮度 / 对比度。只比较「用了哪个色角色」测不出可读性：
+/// 亮色主题的 `onSurfaceVariant` 被压成 grey500，仍需靠实际比值挡住。
+double _luminance(Color c) {
+  // Flutter 3.41 起 Color.r/g/b 已是 0..1 的 double，不要再除 255。
+  double channel(double v) =>
+      v <= 0.03928 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+
+  return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
+}
+
+double _contrast(Color a, Color b) {
+  final la = _luminance(a);
+  final lb = _luminance(b);
+  final hi = math.max(la, lb);
+  final lo = math.min(la, lb);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
 /// 卡片里的正文 / 图标颜色必须是可读的前景，不能是 `outline`（分隔灰）。
 void _expectReadableForeground(WidgetTester tester, Color expected) {
   final theme = Theme.of(tester.element(find.byType(FlowRunScreen)));
@@ -75,6 +94,15 @@ void _expectReadableForeground(WidgetTester tester, Color expected) {
   expect(icon.color, expected);
   // 显式断言没退回 outline：亮色下 #E3E5E8 当正文色几乎不可见。
   expect(expected, isNot(theme.colorScheme.outline));
+  final card =
+      tester.widget<Container>(find.byKey(const ValueKey('run-error-card')));
+  final surface = (card.decoration! as BoxDecoration).color!;
+  expect(
+    _contrast(expected, surface) >= 4.5,
+    isTrue,
+    reason: '正文对比度要达 WCAG AA：$expected / $surface = '
+        '${_contrast(expected, surface).toStringAsFixed(2)}:1',
+  );
 }
 
 void main() {
@@ -118,7 +146,7 @@ void main() {
           .widget<Container>(find.byKey(const ValueKey('run-error-card')));
       expect((card.decoration! as BoxDecoration).color,
           theme.colorScheme.surfaceContainerHighest);
-      _expectReadableForeground(tester, theme.colorScheme.onSurfaceVariant);
+      _expectReadableForeground(tester, theme.colorScheme.onSurface);
       expect(find.byIcon(Icons.info_outline), findsOneWidget);
       expect(find.byIcon(Icons.error_outline), findsNothing);
       await tester.pumpWidget(const SizedBox());
@@ -143,6 +171,35 @@ void main() {
       await bus.close();
     });
   }
+
+  testWidgets('取消事件到达时先清掉运行中的旧 error，不冒充取消原因', (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    // 初始帧：运行中，但主机已写过预算告警到 run.error。
+    await tester.pumpWidget(_app(_host(
+      bus,
+      status: 'running',
+      error: '超出 max_tasks 上限',
+    )));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('run-error-card')), findsNothing);
+
+    // 主机侧看门狗收敛，只推状态帧；400ms 内 App 还没重拉到真值。
+    bus.add(PeerControlEvent(
+      peerId: 'p1',
+      data: {
+        'type': 'flow.run.changed',
+        'run_id': 'r1',
+        'status': 'cancelled',
+      },
+    ));
+    await tester.pump(const Duration(milliseconds: 30));
+    expect(find.byKey(const ValueKey('run-status-strip')), findsOneWidget);
+    expect(find.byKey(const ValueKey('run-error-card')), findsNothing,
+        reason: '旧告警不能在取消瞬间冒充取消原因');
+    expect(find.text('超出 max_tasks 上限'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await bus.close();
+  });
 
   testWidgets('成功运行没有原因时不渲染错误卡', (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();

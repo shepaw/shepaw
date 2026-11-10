@@ -931,10 +931,11 @@ class _RunErrorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final failed = run.status == FlowRunStatus.failed;
-    // 正文 / 图标用 onSurfaceVariant（可读的次级前景色）；`outline` 只配
-    // 边框，它是分隔灰，拿去当文字色在亮/暗主题下对比度都不到 1.4:1。
+    // 正文 / 图标必须可读：`outline` 是分隔灰（亮色对比度 1.14:1），
+    // `onSurfaceVariant` 在亮色被压成 grey500（2.41:1）也不达标。
+    // 取消态用 onSurface（亮 14.2:1 / 暗 >10:1），failed 仍用 error。
     final foreground =
-        failed ? theme.colorScheme.error : theme.colorScheme.onSurfaceVariant;
+        failed ? theme.colorScheme.error : theme.colorScheme.onSurface;
     final surface = failed
         ? theme.colorScheme.errorContainer
         : theme.colorScheme.surfaceContainerHighest;

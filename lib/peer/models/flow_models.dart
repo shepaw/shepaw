@@ -495,12 +495,16 @@ class FlowRunView {
     );
   }
 
+  /// 运行级状态变了。事件帧只带状态，不带 `error`；主机在非终态也会写
+  /// `run.error`（预算告警 / `on_error: continue`），若这里原样保留，看门狗
+  /// 取消后的 400ms 重拉窗口里，旧告警会冒充「取消原因」显示在原因卡上。
+  /// 切到终态时先清掉本地旧值，由紧接着的 `_load()` 回填主机真值。
   FlowRunView withRunStatus(FlowRunStatus next) => FlowRunView(
         runId: runId,
         status: next,
         tasksUsed: tasksUsed,
         tree: tree,
-        error: error,
+        error: next == FlowRunStatus.running ? error : null,
         children: children,
         yaml: yaml,
         runSessionId: runSessionId,
