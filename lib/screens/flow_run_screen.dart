@@ -685,6 +685,13 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
           onCancel: _cancel,
           onDelete: _deleteRun,
         ),
+        // 运行级失败 / 取消原因。主机把 Failed 的 error 和 Cancel 的 reason
+        // 都写进 `flow_run_get_resp.error`；之前只有节点级 error 被渲染，
+        // 用户主动停止、看门狗按卡住收敛时都只看到「已取消」却不知道为什么。
+        if (run.error != null && run.error!.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _RunErrorCard(run: run),
+        ],
         // 群运行的对话在群里，不画这个入口（runSessionId 为空）。
         // 点进去优先打开节点自己的 agent 会话，而不是惜宝私聊。
         if (run.runSessionId != null) ...[
@@ -904,5 +911,50 @@ class _RunStatusStrip extends StatelessWidget {
     return hours > 0
         ? '${hours.toString().padLeft(2, '0')}:$minutes:$seconds'
         : '$minutes:$seconds';
+  }
+}
+
+/// 运行级失败 / 取消原因。`failed` 用错误色，`cancelled` 用中性色——
+/// 用户主动停止不该渲染成一张红色失败卡。
+class _RunErrorCard extends StatelessWidget {
+  const _RunErrorCard({required this.run});
+
+  final FlowRunView run;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final failed = run.status == FlowRunStatus.failed;
+    final color = failed ? theme.colorScheme.error : theme.colorScheme.outline;
+    final surface = failed
+        ? theme.colorScheme.errorContainer
+        : theme.colorScheme.surfaceContainerHighest;
+    return Container(
+      key: const ValueKey('run-error-card'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            failed ? Icons.error_outline : Icons.info_outline,
+            size: 16,
+            color: color,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SelectableText(
+              run.error!,
+              style: theme.textTheme.bodySmall?.copyWith(color: color),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
