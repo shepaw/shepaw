@@ -91,6 +91,40 @@ enum FlowRunStatus {
   bool get isFinished => this != FlowRunStatus.running;
 }
 
+/// 循环的一轮。`iter` 从 0 开始，和节点键上的 `#N` 一致。
+class FlowIteration {
+  const FlowIteration({
+    required this.iter,
+    this.status,
+    this.children = const [],
+  });
+
+  final int iter;
+  final FlowNodeStatus? status;
+  final List<FlowNode> children;
+
+  FlowIteration copyWith({List<FlowNode>? children}) => FlowIteration(
+        iter: iter,
+        status: status,
+        children: children ?? this.children,
+      );
+
+  factory FlowIteration.fromJson(Map<String, dynamic> json) {
+    final rawChildren = json['children'];
+    return FlowIteration(
+      iter: json['iter'] is num ? (json['iter'] as num).toInt() : 0,
+      status: FlowNodeStatus.parse(json['status']),
+      children: rawChildren is List
+          ? [
+              for (final child in rawChildren)
+                if (child is Map)
+                  FlowNode.fromJson(Map<String, dynamic>.from(child)),
+            ]
+          : const [],
+    );
+  }
+}
+
 class FlowNode {
   const FlowNode({
     required this.key,
@@ -104,6 +138,7 @@ class FlowNode {
     this.text,
     this.error,
     this.children = const [],
+    this.iterations = const [],
     this.session,
     this.sessionId,
     this.agentId,
@@ -126,6 +161,10 @@ class FlowNode {
   final String? text;
   final String? error;
   final List<FlowNode> children;
+
+  /// `loop` 已经跑过的每一轮。树上的 [children] 仍是最后一轮；
+  /// 点开循环时用这个把前面每一轮的结果折开展示。旧主机不下发，就是空。
+  final List<FlowIteration> iterations;
 
   /// 引擎槽位 key（旧字段，`flow:<rid>:<node>`）。主机为兼容仍在下发，
   /// 但它不是会话库里的私聊会话，不能用它拼频道 id。
@@ -168,6 +207,7 @@ class FlowNode {
     FlowNodeStatus? status,
     int? attempt,
     List<FlowNode>? children,
+    List<FlowIteration>? iterations,
     String? sessionId,
     String? agentId,
   }) =>
@@ -183,6 +223,7 @@ class FlowNode {
         text: text,
         error: error,
         children: children ?? this.children,
+        iterations: iterations ?? this.iterations,
         session: session,
         sessionId: sessionId ?? this.sessionId,
         agentId: agentId ?? this.agentId,
@@ -195,6 +236,7 @@ class FlowNode {
     int? asInt(Object? v) => v is num ? v.toInt() : null;
     String? asText(Object? v) => v is String && v.isNotEmpty ? v : null;
     final rawChildren = json['children'];
+    final rawIterations = json['iterations'];
     final rawOptions = json['options'];
     return FlowNode(
       key: (json['key'] as String?) ?? (json['id'] as String? ?? ''),
@@ -214,6 +256,13 @@ class FlowNode {
                   FlowNode.fromJson(Map<String, dynamic>.from(child)),
             ]
           : const [],
+      iterations: rawIterations is List
+          ? [
+              for (final item in rawIterations)
+                if (item is Map)
+                  FlowIteration.fromJson(Map<String, dynamic>.from(item)),
+            ]
+          : const [],
       session: asText(json['session']),
       sessionId: asText(json['session_id']),
       agentId: asText(json['agent_id']),
@@ -228,19 +277,40 @@ class FlowNode {
   }
 
   /// 在这棵树里按 key 改一个节点；找不到原样返回。
+  ///
+  /// 循环的历史轮次不在 [children] 里，也要跟着改，否则侧边栏里的旧轮次
+  /// 会停在打开那一刻的状态。
   FlowNode mapNode(String targetKey, FlowNode Function(FlowNode) change) {
-    if (key == targetKey) return change(this);
-    if (children.isEmpty) return this;
-    var touched = false;
+    final self = key == targetKey ? change(this) : this;
+    if (self.children.isEmpty && self.iterations.isEmpty) return self;
+    var touched = !identical(self, this);
     final next = [
-      for (final child in children)
+      for (final child in self.children)
         () {
           final updated = child.mapNode(targetKey, change);
           if (!identical(updated, child)) touched = true;
           return updated;
         }(),
     ];
-    return touched ? copyWith(children: next) : this;
+    final nextIterations = [
+      for (final round in self.iterations)
+        () {
+          var roundTouched = false;
+          final kids = [
+            for (final child in round.children)
+              () {
+                final updated = child.mapNode(targetKey, change);
+                if (!identical(updated, child)) roundTouched = true;
+                return updated;
+              }(),
+          ];
+          if (!roundTouched) return round;
+          touched = true;
+          return round.copyWith(children: kids);
+        }(),
+    ];
+    if (!touched) return this;
+    return self.copyWith(children: next, iterations: nextIterations);
   }
 
   /// 演练的动画帧：派活顺序里已经走过的叶子是完成，正在走的是进行中，其余等待；
@@ -269,6 +339,7 @@ class FlowNode {
       status: status,
       rounds: rounds,
       children: kids,
+      iterations: iterations,
       session: session,
       sessionId: sessionId,
       agentId: agentId,
@@ -498,8 +569,7 @@ class FlowSummary {
             lastRunStatus: item['last_run_status'] as String?,
             lastRunMs: (item['last_run_ms'] as num?)?.toInt(),
             lastRunId: item['last_run_id'] as String?,
-            lastRunNeedsApproval:
-                item['last_run_needs_approval'] == true,
+            lastRunNeedsApproval: item['last_run_needs_approval'] == true,
           ),
     ];
   }

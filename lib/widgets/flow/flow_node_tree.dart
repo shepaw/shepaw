@@ -195,9 +195,8 @@ class FlowNodeCard extends StatelessWidget {
                     Checkbox(
                       key: ValueKey('step-check-${node.id}'),
                       value: selected,
-                      onChanged: onTapNode == null
-                          ? null
-                          : (_) => onTapNode!(node),
+                      onChanged:
+                          onTapNode == null ? null : (_) => onTapNode!(node),
                     ),
                   Expanded(
                     child: Text(
@@ -231,6 +230,18 @@ class FlowNodeCard extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(node.desc!, style: theme.textTheme.bodySmall),
+                ),
+              if (node.kind == 'loop' && node.iterations.length > 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    AppLocalizations.of(context)
+                        .flow_loopRoundCount(node.iterations.length),
+                    key: ValueKey('loop-round-count-${node.id}'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 ),
               if (node.error != null)
                 Padding(
@@ -278,7 +289,8 @@ class FlowNodeCard extends StatelessWidget {
                     alignment: AlignmentDirectional.centerStart,
                     child: FilledButton.icon(
                       key: ValueKey('flow-node-goto-answer-${node.key}'),
-                      icon: const Icon(Icons.question_answer_outlined, size: 16),
+                      icon:
+                          const Icon(Icons.question_answer_outlined, size: 16),
                       label: Text(AppLocalizations.of(context).flow_gotoAnswer),
                       onPressed: onOpenSession == null
                           ? null

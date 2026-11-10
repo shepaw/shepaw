@@ -18029,6 +18029,24 @@ abstract class AppLocalizations {
   /// **'没有匹配的运行'**
   String get flow_executionsNoMatch;
 
+  /// No description provided for @flow_loopRounds.
+  ///
+  /// In zh, this message translates to:
+  /// **'每一轮'**
+  String get flow_loopRounds;
+
+  /// No description provided for @flow_loopRound.
+  ///
+  /// In zh, this message translates to:
+  /// **'第 {n} 轮'**
+  String flow_loopRound(int n);
+
+  /// No description provided for @flow_loopRoundCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'共 {count} 轮'**
+  String flow_loopRoundCount(int count);
+
   /// No description provided for @flow_listDelete.
   ///
   /// In zh, this message translates to:

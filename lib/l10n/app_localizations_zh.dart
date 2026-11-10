@@ -9912,6 +9912,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_executionsNoMatch => '没有匹配的运行';
 
   @override
+  String get flow_loopRounds => '每一轮';
+
+  @override
+  String flow_loopRound(int n) {
+    return '第 $n 轮';
+  }
+
+  @override
+  String flow_loopRoundCount(int count) {
+    return '共 $count 轮';
+  }
+
+  @override
   String get flow_listDelete => '删除流程';
 
   @override

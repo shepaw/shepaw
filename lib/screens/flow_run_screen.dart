@@ -12,6 +12,7 @@ import '../peer/services/peer_connection_manager.dart';
 import '../services/approval/pending_approval_hub.dart';
 import '../services/approval/pending_approval_item.dart';
 import '../utils/layout_utils.dart';
+import '../widgets/flow/flow_loop_rounds.dart';
 import '../widgets/flow/flow_node_tree.dart';
 import '../widgets/flow/flow_yaml.dart';
 import '../widgets/flow/flow_yaml_editor.dart';
@@ -482,6 +483,10 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
                   Navigator.pop(sheetContext);
                   _openSession(node);
                 },
+                onOpenChildSession: (child) {
+                  Navigator.pop(sheetContext);
+                  _openSession(child);
+                },
                 onPatch: () {
                   Navigator.pop(sheetContext);
                   unawaited(_patchNode(node));
@@ -537,6 +542,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
                   showTitle: false,
                   canPatch: _canPatch(node),
                   onOpenSession: () => _openSession(node),
+                  onOpenChildSession: _openSession,
                   onPatch: () => unawaited(_patchNode(node)),
                 ),
               ],
@@ -714,6 +720,7 @@ class _NodeDetailContent extends StatelessWidget {
     required this.canPatch,
     required this.onOpenSession,
     required this.onPatch,
+    this.onOpenChildSession,
   });
 
   final FlowNode node;
@@ -721,6 +728,7 @@ class _NodeDetailContent extends StatelessWidget {
   final bool canPatch;
   final VoidCallback onOpenSession;
   final VoidCallback onPatch;
+  final void Function(FlowNode node)? onOpenChildSession;
 
   @override
   Widget build(BuildContext context) {
@@ -744,6 +752,13 @@ class _NodeDetailContent extends StatelessWidget {
         if (node.text != null) ...[
           const SizedBox(height: 12),
           SelectableText(node.text!),
+        ],
+        if (node.iterations.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          FlowLoopRounds(
+            node: node,
+            onOpenSession: onOpenChildSession,
+          ),
         ],
         // 只摆当前适用的 1~2 个动作：等回答时「去回答」优先，
         // 其余时候才看「查看会话」；两者不再同时出现。

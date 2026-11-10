@@ -10315,6 +10315,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_executionsNoMatch => 'No matching runs';
 
   @override
+  String get flow_loopRounds => 'Each round';
+
+  @override
+  String flow_loopRound(int n) {
+    return 'Round $n';
+  }
+
+  @override
+  String flow_loopRoundCount(int count) {
+    return '$count rounds';
+  }
+
+  @override
   String get flow_listDelete => 'Delete flow';
 
   @override

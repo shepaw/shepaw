@@ -237,4 +237,104 @@ void main() {
     expect(find.widgetWithText(SelectableText, '写完了'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('点循环时侧边栏按轮次折叠，能看到之前每一轮', (tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    addTearDown(bus.close);
+    final client = HubFlow(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        if (frame['type'] == 'flow_run_get_req') {
+          bus.add(PeerControlEvent(
+            peerId: peerId,
+            data: {
+              'type': 'flow_run_get_resp',
+              'request_id': frame['request_id'],
+              'success': true,
+              'run_id': 'r1',
+              'status': 'succeeded',
+              'tasks_used': 2,
+              'tree': [
+                {
+                  'key': 'again#1',
+                  'id': 'again',
+                  'kind': 'loop',
+                  'status': 'done',
+                  'rounds': 2,
+                  'children': [
+                    {
+                      'key': 'again#1/work',
+                      'id': 'work',
+                      'kind': 'task',
+                      'status': 'done',
+                      'text': '第二轮',
+                    },
+                  ],
+                  'iterations': [
+                    {
+                      'iter': 0,
+                      'status': 'done',
+                      'children': [
+                        {
+                          'key': 'again#0/work',
+                          'id': 'work',
+                          'kind': 'task',
+                          'status': 'done',
+                          'text': '第一轮',
+                        },
+                      ],
+                    },
+                    {
+                      'iter': 1,
+                      'status': 'done',
+                      'children': [
+                        {
+                          'key': 'again#1/work',
+                          'id': 'work',
+                          'kind': 'task',
+                          'status': 'done',
+                          'text': '第二轮',
+                          'session_id': 'flow_deadbe12_work',
+                          'agent_id': 'agent-7',
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ));
+        }
+        return true;
+      },
+    );
+    await tester.pumpWidget(_runApp(client));
+    await _settle(tester);
+
+    expect(
+        find.byKey(const ValueKey('loop-round-count-again')), findsOneWidget);
+    await tester.tap(find.text('循环 · 第 2 轮'));
+    await _settle(tester);
+
+    expect(find.byKey(const ValueKey('flow-node-detail-pane')), findsOneWidget);
+    expect(find.text('每一轮'), findsOneWidget);
+    expect(find.byKey(const ValueKey('loop-round-again#1-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('loop-round-again#1-1')), findsOneWidget);
+    // 最近一轮默认展开，能看到这一轮的产出和会话入口。
+    expect(find.byKey(const ValueKey('loop-round-text-again#1/work')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('loop-round-session-again#1/work')),
+        findsOneWidget);
+    // 更早的一轮收着，点开才看到当时的结果。
+    expect(find.byKey(const ValueKey('loop-round-text-again#0/work')),
+        findsNothing);
+    await tester.tap(find.text('第 1 轮'));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('loop-round-text-again#0/work')),
+        findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
 }
