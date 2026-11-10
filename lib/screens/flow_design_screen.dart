@@ -65,6 +65,9 @@ class FlowDesignScreen extends StatefulWidget {
     this.restoreRequests,
     this.pageOpen,
     this.onOpenExecutions,
+    this.hasRestorableDraft = false,
+    this.onRestoreDraft,
+    this.onDiscardDraft,
   });
 
   final String peerId;
@@ -101,6 +104,15 @@ class FlowDesignScreen extends StatefulWidget {
 
   /// 打开这个流程的执行历史。工作台把它盖在右侧；不传就不显示这一项。
   final VoidCallback? onOpenExecutions;
+
+  /// 本地还有一份上次没保存的草稿。提示放进工具条，不另占一行。
+  final bool hasRestorableDraft;
+
+  /// 把那份草稿载入当前编辑。
+  final VoidCallback? onRestoreDraft;
+
+  /// 丢掉那份草稿。
+  final VoidCallback? onDiscardDraft;
 
   /// 演练动画每一步的间隔。
   final Duration stepInterval;
@@ -1444,7 +1456,20 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: _toolbarLead(l10n, theme, scheme, statusText, c),
+                    child: Row(
+                      children: [
+                        _toolbarLead(l10n, theme, scheme, statusText, c),
+                        if (widget.hasRestorableDraft) ...[
+                          const SizedBox(width: 12),
+                          Flexible(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: _draftPrompt(l10n),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
                 if (split) ...[
@@ -1594,6 +1619,71 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       onPressed: widget.onOpenExecutions,
       icon: const Icon(Icons.history, size: 18),
       label: Text(l10n.flow_listExecutions),
+    );
+  }
+
+  /// 上次没保存的草稿。收成工具条里的一粒提示，和保存状态、操作按钮同一行。
+  Widget _draftPrompt(AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final onTint = scheme.onErrorContainer;
+    final actionStyle = TextButton.styleFrom(
+      foregroundColor: onTint,
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      minimumSize: const Size(0, 28),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: DecoratedBox(
+        key: const ValueKey('draft-banner'),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 2, 2, 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.history, size: 16, color: onTint),
+              const SizedBox(width: 6),
+              Text(
+                l10n.flow_draftBannerTitle,
+                style: theme.textTheme.labelMedium?.copyWith(color: onTint),
+              ),
+              if (widget.onRestoreDraft != null)
+                TextButton(
+                  key: const ValueKey('draft-restore'),
+                  style: actionStyle.copyWith(
+                    textStyle: WidgetStatePropertyAll(
+                      theme.textTheme.labelMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  onPressed: widget.onRestoreDraft,
+                  child: Text(l10n.flow_draftBannerRestore),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    l10n.flow_draftBannerReadOnly,
+                    style: theme.textTheme.labelSmall?.copyWith(color: onTint),
+                  ),
+                ),
+              TextButton(
+                key: const ValueKey('draft-discard'),
+                style: actionStyle,
+                onPressed: widget.onDiscardDraft,
+                child: Text(l10n.flow_draftBannerDiscard),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

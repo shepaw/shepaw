@@ -56,7 +56,6 @@ class FlowDetailScreen extends StatefulWidget {
 }
 
 class _FlowDetailScreenState extends State<FlowDetailScreen> {
-  Widget? _editPane;
   FlowEditorController? _editor;
   FlowDraft? _draft;
   final ValueNotifier<int> _restoreRequests = ValueNotifier<int>(0);
@@ -93,7 +92,6 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
     if (oldWidget.flow.name != widget.flow.name ||
         oldWidget.peerId != widget.peerId ||
         oldWidget.scope != widget.scope) {
-      _editPane = null;
       _editor = null;
       _hostEditable = null;
       _capsRequested = !_desktop;
@@ -156,6 +154,9 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
         _editor = controller;
         widget.onControllerReady?.call(controller);
       },
+      hasRestorableDraft: _draft != null,
+      onRestoreDraft: _restoreDraft,
+      onDiscardDraft: () => unawaited(_discardDraft()),
     );
   }
 
@@ -194,7 +195,8 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
           : null,
       body: Column(
         children: [
-          if (_draft != null) _draftBanner(l10n),
+          // 编辑页把这条提示收进工具条。只有退回只读步骤页时才单独占一行。
+          if (_draft != null && !_editorVisible) _draftBanner(l10n),
           Expanded(child: _mainPane()),
         ],
       ),
@@ -230,6 +232,8 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
     );
   }
 
+  bool get _editorVisible => _desktop || _hostEditable != false;
+
   Widget _mainPane() {
     if (_desktop) return _editorPane();
     // 能力探测还没回来（或这一问超时了）也直接进编辑页：它自己有 loading /
@@ -239,7 +243,8 @@ class _FlowDetailScreenState extends State<FlowDetailScreen> {
     return _editorPane();
   }
 
-  Widget _editorPane() => _editPane ??= _buildEditPane();
+  /// 编辑页每次按当前草稿状态重建配置；State 还是原来那份，撤销栈不会丢。
+  Widget _editorPane() => _buildEditPane();
 
   Widget _stepsPane() {
     return FlowStepsPane(
