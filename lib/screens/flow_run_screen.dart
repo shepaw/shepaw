@@ -108,6 +108,18 @@ class FlowRunScreen extends StatefulWidget {
   /// 作为工作流右侧的当前记录。没有返回按钮，换一条记录就换这一页。
   final bool embedded;
 
+  /// 是否订阅连接事件流。真实 [HubFlow] 的 `send` 为 null（走连接管理器），
+  /// 测试 stub 一定注入了 `send`。只有「注入 stub 又不给连接流」才跳过订阅，
+  /// 避免测试碰到真实单例；工作台把真实 client 透传下来时也必须订阅，否则
+  /// 终态重拉失败后没有重连兜底，取消/失败原因永远补不回来。
+  @visibleForTesting
+  static bool shouldListenToConnectionEvents({
+    required bool hasClient,
+    required bool clientHasInjectedSend,
+    required bool hasConnectionEvents,
+  }) =>
+      hasConnectionEvents || !hasClient || !clientHasInjectedSend;
+
   @override
   State<FlowRunScreen> createState() => _FlowRunScreenState();
 }
@@ -126,6 +138,11 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   Future<void>? _inFlightLoad;
   bool _reloadQueued = false;
 
+  /// 终态真值重拉失败后的自带退避重试次数。只等 `connected` 不够：连接可能
+  /// 一直健康（主机回 success:false / 帧不合法），也可能重连早于失败落地。
+  static const int _maxTerminalRefetchRetries = 3;
+  int _terminalRefetchRetries = 0;
+
   /// 事件里只有 session_id、没有 agent：先别建空壳频道，等 refetch 补上
   /// agent 再打开（A8-3）。
   ({
@@ -142,9 +159,14 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   void initState() {
     super.initState();
     _sub = _client.runEvents(widget.peerId).listen(_onEvent);
-    // 测试注入了假客户端、又没给连接事件流时不要碰真实连接管理器。
+    // 注入了假传输（send 非空）又不给连接事件流时不要碰真实连接管理器；
+    // 其余情况（含工作台透传下来的真实 client）都要订阅。
     final connectionEvents = widget.connectionEvents;
-    if (connectionEvents != null || widget.client == null) {
+    if (FlowRunScreen.shouldListenToConnectionEvents(
+      hasClient: widget.client != null,
+      clientHasInjectedSend: widget.client?.send != null,
+      hasConnectionEvents: connectionEvents != null,
+    )) {
       _connSub = (connectionEvents ?? PeerConnectionManager.instance.events)
           .listen((event) {
         if (!mounted || event.peerId != widget.peerId) return;
@@ -196,13 +218,31 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       if (run != null) {
         _run = run;
         _loadFailed = false;
+        _terminalRefetchRetries = 0;
+        // 真值拿到了，别再让排队中的退避重试多发一次请求。
+        _refetch?.cancel();
+        _refetch = null;
       } else {
         // refetch 失败也要置位：`_onEvent` 在终态事件到达时清掉了本地
         // error，等这次重拉回填真值。若连不上又不置位，重连监听的
-        // `_loadFailed || (_run == null && !_loading)` 两个条件都不成立，
-        // 取消 / 失败原因会永久停在屏幕上为空。`_run != null` 时这个标记
-        // 不影响 `_body` 渲染（只有 run == null 才读它显示加载失败文案）。
+        // `_loadFailed || (_run == null && !_loading)` 两个条件都不成立。
+        // `_run != null` 时这个标记不影响 `_body` 渲染（只有 run == null
+        // 才读它显示加载失败文案）。
         _loadFailed = true;
+        // 终态真值还没回来就自己排一次有上限的退避重拉。connection 事件
+        // 只能当加速：连接没断就不会再有 connected，重连也可能早于这次
+        // 失败落地（半开连接要等发送超时才返回 null）。
+        final current = _run;
+        if (current != null &&
+            current.status != FlowRunStatus.running &&
+            _terminalRefetchRetries < _maxTerminalRefetchRetries) {
+          _terminalRefetchRetries += 1;
+          _refetch?.cancel();
+          _refetch = Timer(
+            Duration(milliseconds: 600 * _terminalRefetchRetries),
+            _load,
+          );
+        }
       }
     });
     // 事件先到、agent 还没同步下来时挂起的「查看会话」，重拉成功后再打开。

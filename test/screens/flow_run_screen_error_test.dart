@@ -113,6 +113,42 @@ void _expectReadableForeground(WidgetTester tester, Color expected) {
 }
 
 void main() {
+  test('连接事件订阅覆盖所有生产入口', () {
+    bool shouldListen({
+      required bool hasClient,
+      required bool injectedSend,
+      required bool injectedEvents,
+    }) =>
+        FlowRunScreen.shouldListenToConnectionEvents(
+          hasClient: hasClient,
+          clientHasInjectedSend: injectedSend,
+          hasConnectionEvents: injectedEvents,
+        );
+
+    expect(
+      shouldListen(
+          hasClient: false, injectedSend: false, injectedEvents: false),
+      isTrue,
+      reason: 'push 入口不传 client，用真实单例',
+    );
+    expect(
+      shouldListen(hasClient: true, injectedSend: false, injectedEvents: false),
+      isTrue,
+      reason: '工作台把真实 HubFlow(send=null) 透传下来，也必须订阅，'
+          '否则终态重拉失败后没有重连兜底',
+    );
+    expect(
+      shouldListen(hasClient: true, injectedSend: true, injectedEvents: false),
+      isFalse,
+      reason: '既有测试注入 stub 又不给连接流，不该碰真实单例',
+    );
+    expect(
+      shouldListen(hasClient: true, injectedSend: true, injectedEvents: true),
+      isTrue,
+      reason: '新测试注入可控连接流也要订阅',
+    );
+  });
+
   for (final dark in [false, true]) {
     final label = dark ? '暗色' : '亮色';
 
@@ -335,5 +371,65 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await bus.close();
     await conn.close();
+  });
+
+  testWidgets('连接一直健康、没有重连时，自带退避重试把原因补回来', (tester) async {
+    // 刻意不注入 connectionEvents、也不发 connected：连接没断，之后不会有
+    // 任何连接事件。只看 _loadOnce 失败后自己排的重拉。
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    const reason = '工作流日志写入失败：磁盘满了';
+    var requests = 0;
+    final client = HubFlow(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        if (frame['type'] != 'flow_run_get_req') return true;
+        requests += 1;
+        if (requests == 2) {
+          // 主机回 success:false / 帧不合法时 _client.run 就是 null，
+          // 但连接本身没断，不会有 connected。
+          return false;
+        }
+        bus.add(PeerControlEvent(
+          peerId: peerId,
+          data: {
+            'type': 'flow_run_get_resp',
+            'request_id': frame['request_id'],
+            'success': true,
+            'run_id': 'r1',
+            'status': requests == 1 ? 'running' : 'failed',
+            'tasks_used': 1,
+            'tree': _tree,
+            'error': requests == 1 ? '超出 max_tasks 上限' : reason,
+          },
+        ));
+        return true;
+      },
+    );
+    await tester.pumpWidget(_app(client));
+    await _settle(tester);
+
+    bus.add(PeerControlEvent(
+      peerId: 'p1',
+      data: {
+        'type': 'flow.run.changed',
+        'run_id': 'r1',
+        'status': 'failed',
+      },
+    ));
+    await tester.pump(const Duration(milliseconds: 30));
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump();
+    expect(requests, 2);
+    expect(find.byKey(const ValueKey('run-error-card')), findsNothing);
+
+    // 600ms 退避后自己重拉，把真原因补回来。
+    await tester.pump(const Duration(milliseconds: 650));
+    await tester.pump();
+    expect(requests, 3, reason: '没有 connected 也要自己重试');
+    expect(find.byKey(const ValueKey('run-error-card')), findsOneWidget);
+    expect(find.text(reason), findsOneWidget);
+    expect(find.text('超出 max_tasks 上限'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await bus.close();
   });
 }
