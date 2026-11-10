@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/peer/services/hub_flow.dart';
+import 'package:shepaw/peer/services/peer_connection.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/screens/flow_run_screen.dart';
 import 'package:shepaw/theme/app_theme.dart';
@@ -43,7 +44,12 @@ HubFlow _host(
 
 /// 用真实主题，否则 MaterialApp 默认主题的 `outline` 是深灰，掩盖了
 /// 「把边框灰当正文色」这种对比度问题。
-Widget _app(HubFlow client, {bool dark = false}) => MaterialApp(
+Widget _app(
+  HubFlow client, {
+  bool dark = false,
+  Stream<PeerConnectionEvent>? connectionEvents,
+}) =>
+    MaterialApp(
       locale: const Locale('zh'),
       theme: dark ? AppTheme.dark : AppTheme.light,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -52,6 +58,7 @@ Widget _app(HubFlow client, {bool dark = false}) => MaterialApp(
         peerId: 'p1',
         runId: 'r1',
         client: client,
+        connectionEvents: connectionEvents,
       ),
     );
 
@@ -208,5 +215,125 @@ void main() {
     expect(find.byKey(const ValueKey('run-error-card')), findsNothing);
     await tester.pumpWidget(const SizedBox());
     await bus.close();
+  });
+
+  testWidgets('终态后重拉失败不崩，旧告警也不会冒充取消原因', (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    var requests = 0;
+    final client = HubFlow(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        if (frame['type'] == 'flow_run_get_req') {
+          requests += 1;
+          if (requests == 1) {
+            bus.add(PeerControlEvent(
+              peerId: peerId,
+              data: {
+                'type': 'flow_run_get_resp',
+                'request_id': frame['request_id'],
+                'success': true,
+                'run_id': 'r1',
+                'status': 'running',
+                'tasks_used': 1,
+                'tree': _tree,
+                'error': '超出 max_tasks 上限',
+              },
+            ));
+            return true;
+          }
+          // 第二次（终态事件后的重拉）发送失败：`_client.run` 返回 null。
+          return false;
+        }
+        return true;
+      },
+    );
+    await tester.pumpWidget(_app(client));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('run-status-strip')), findsOneWidget);
+
+    bus.add(PeerControlEvent(
+      peerId: 'p1',
+      data: {
+        'type': 'flow.run.changed',
+        'run_id': 'r1',
+        'status': 'cancelled',
+      },
+    ));
+    await tester.pump(const Duration(milliseconds: 30));
+    // 400ms 后触发重拉；`_loadOnce` 拿到 null，不能把旧 error 放回来，
+    // 也不能崩 / 把整屏换成加载失败。
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('run-status-strip')), findsOneWidget);
+    expect(find.byKey(const ValueKey('run-error-card')), findsNothing);
+    expect(find.text('超出 max_tasks 上限'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await bus.close();
+  });
+
+  testWidgets('终态后重拉失败，重连会再拉一次把原因补回来', (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    final conn = StreamController<PeerConnectionEvent>.broadcast();
+    const reason = '运行超过 86400000 毫秒没有任何事件';
+    var requests = 0;
+    final client = HubFlow(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        if (frame['type'] != 'flow_run_get_req') return true;
+        requests += 1;
+        if (requests == 2) {
+          // 终态事件后的那次重拉连不上：`_client.run` 返回 null。
+          return false;
+        }
+        bus.add(PeerControlEvent(
+          peerId: peerId,
+          data: {
+            'type': 'flow_run_get_resp',
+            'request_id': frame['request_id'],
+            'success': true,
+            'run_id': 'r1',
+            'status': requests == 1 ? 'running' : 'cancelled',
+            'tasks_used': 1,
+            'tree': _tree,
+            // 第一次是运行中的旧告警；第三次（重连后）才是真原因。
+            'error': requests == 1 ? '超出 max_tasks 上限' : reason,
+          },
+        ));
+        return true;
+      },
+    );
+    await tester.pumpWidget(_app(client, connectionEvents: conn.stream));
+    await _settle(tester);
+
+    bus.add(PeerControlEvent(
+      peerId: 'p1',
+      data: {
+        'type': 'flow.run.changed',
+        'run_id': 'r1',
+        'status': 'cancelled',
+      },
+    ));
+    await tester.pump(const Duration(milliseconds: 30));
+    // 400ms 后的重拉失败，`_onEvent` 已经把旧 error 清掉了，屏幕上没有原因。
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump();
+    expect(requests, 2);
+    expect(find.byKey(const ValueKey('run-error-card')), findsNothing);
+
+    // 废连接重连成功：`_loadFailed` 置位后这次才会重新拉，把真原因补回来。
+    conn.add(PeerConnectionEvent(
+      peerId: 'p1',
+      type: PeerConnectionEventType.connected,
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 30));
+    expect(requests, 3, reason: '重连要触发一次新的 flow_run_get_req');
+    expect(find.byKey(const ValueKey('run-error-card')), findsOneWidget);
+    expect(find.text(reason), findsOneWidget);
+    expect(find.text('超出 max_tasks 上限'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await bus.close();
+    await conn.close();
   });
 }

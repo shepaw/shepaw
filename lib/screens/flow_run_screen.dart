@@ -77,6 +77,7 @@ class FlowRunScreen extends StatefulWidget {
     required this.runId,
     this.title,
     this.client,
+    this.connectionEvents,
     this.onOpenSession,
     this.onDeleted,
     this.onClose,
@@ -89,6 +90,10 @@ class FlowRunScreen extends StatefulWidget {
 
   /// 测试里换成假的。
   final HubFlow? client;
+
+  /// 测试里换成可控的连接事件流，用来模拟「废连接重连成功」。不传时用真实
+  /// 连接管理器；与 [client] 一样只为测试注入，生产不传。
+  final Stream<PeerConnectionEvent>? connectionEvents;
 
   /// 点"查看会话"的可选覆盖。不传时屏幕自己按 `psess_<sessionId>` 打开
   /// 普通私聊（[openFlowNodeSession]），调用方不必再接线。
@@ -137,9 +142,11 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   void initState() {
     super.initState();
     _sub = _client.runEvents(widget.peerId).listen(_onEvent);
-    // 测试注入了假客户端时不要碰真实连接管理器。
-    if (widget.client == null) {
-      _connSub = PeerConnectionManager.instance.events.listen((event) {
+    // 测试注入了假客户端、又没给连接事件流时不要碰真实连接管理器。
+    final connectionEvents = widget.connectionEvents;
+    if (connectionEvents != null || widget.client == null) {
+      _connSub = (connectionEvents ?? PeerConnectionManager.instance.events)
+          .listen((event) {
         if (!mounted || event.peerId != widget.peerId) return;
         if (event.type != PeerConnectionEventType.connected) return;
         // 废连接被丢掉并重连成功后，把刚才失败的那次运行重新拉回来。
@@ -189,7 +196,12 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       if (run != null) {
         _run = run;
         _loadFailed = false;
-      } else if (_run == null) {
+      } else {
+        // refetch 失败也要置位：`_onEvent` 在终态事件到达时清掉了本地
+        // error，等这次重拉回填真值。若连不上又不置位，重连监听的
+        // `_loadFailed || (_run == null && !_loading)` 两个条件都不成立，
+        // 取消 / 失败原因会永久停在屏幕上为空。`_run != null` 时这个标记
+        // 不影响 `_body` 渲染（只有 run == null 才读它显示加载失败文案）。
         _loadFailed = true;
       }
     });
