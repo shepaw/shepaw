@@ -688,7 +688,13 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
         // 运行级失败 / 取消原因。主机把 Failed 的 error 和 Cancel 的 reason
         // 都写进 `flow_run_get_resp.error`；之前只有节点级 error 被渲染，
         // 用户主动停止、看门狗按卡住收敛时都只看到「已取消」却不知道为什么。
-        if (run.error != null && run.error!.isNotEmpty) ...[
+        // 只在终态的失败 / 取消显示：主机在非终态也会写 `run.error`
+        // （`on_error: continue` 的失败分支、宽限期、预算告警），运行中或
+        // 已成功的运行挂一张「失败原因」会误导用户。
+        if ((run.status == FlowRunStatus.failed ||
+                run.status == FlowRunStatus.cancelled) &&
+            run.error != null &&
+            run.error!.isNotEmpty) ...[
           const SizedBox(height: 8),
           _RunErrorCard(run: run),
         ],
@@ -925,7 +931,10 @@ class _RunErrorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final failed = run.status == FlowRunStatus.failed;
-    final color = failed ? theme.colorScheme.error : theme.colorScheme.outline;
+    // 正文 / 图标用 onSurfaceVariant（可读的次级前景色）；`outline` 只配
+    // 边框，它是分隔灰，拿去当文字色在亮/暗主题下对比度都不到 1.4:1。
+    final foreground =
+        failed ? theme.colorScheme.error : theme.colorScheme.onSurfaceVariant;
     final surface = failed
         ? theme.colorScheme.errorContainer
         : theme.colorScheme.surfaceContainerHighest;
@@ -936,7 +945,8 @@ class _RunErrorCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
+        border:
+            Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.5)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -944,13 +954,13 @@ class _RunErrorCard extends StatelessWidget {
           Icon(
             failed ? Icons.error_outline : Icons.info_outline,
             size: 16,
-            color: color,
+            color: foreground,
           ),
           const SizedBox(width: 8),
           Expanded(
             child: SelectableText(
               run.error!,
-              style: theme.textTheme.bodySmall?.copyWith(color: color),
+              style: theme.textTheme.bodySmall?.copyWith(color: foreground),
             ),
           ),
         ],
