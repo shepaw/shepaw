@@ -25,6 +25,7 @@ class FlowRunsPane extends StatefulWidget {
     this.limit,
     this.showHeader = true,
     this.onClose,
+    this.onEdit,
     this.executionHistory = false,
   });
 
@@ -46,6 +47,9 @@ class FlowRunsPane extends StatefulWidget {
 
   /// 嵌在右侧时的返回。运行记录栏不传。
   final VoidCallback? onClose;
+
+  /// 执行历史页进入这个流程的编辑页。不传就不显示编辑图标。
+  final VoidCallback? onEdit;
 
   /// 某个流程的执行历史：标题用「执行历史」，每一行优先展示开跑时填的标题。
   /// 这一页可以按标题 / 状态搜索，也可以按分组筛选。
@@ -131,32 +135,44 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
           : null,
       children: [
         if (widget.showHeader)
-          Row(
-            children: [
-              if (widget.onClose != null)
-                IconButton(
-                  tooltip: l10n.common_back,
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: widget.onClose,
-                )
-              else
-                const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  heading,
-                  style: widget.executionHistory
-                      ? theme.textTheme.titleMedium
-                      : theme.textTheme.labelLarge
-                          ?.copyWith(color: scheme.onSurfaceVariant),
+          Padding(
+            // 刷新贴着窗口右缘。内容区左右是 16，这里把图标再让出一截。
+            padding: const EdgeInsets.only(right: 16),
+            child: Row(
+              children: [
+                if (widget.onClose != null)
+                  IconButton(
+                    key: const ValueKey('executions-back'),
+                    tooltip: l10n.common_back,
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: widget.onClose,
+                  )
+                else
+                  const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    heading,
+                    style: widget.executionHistory
+                        ? theme.textTheme.titleMedium
+                        : theme.textTheme.labelLarge
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
                 ),
-              ),
-              IconButton(
-                key: const ValueKey('runs-refresh'),
-                tooltip: l10n.common_refresh,
-                icon: const Icon(Icons.refresh, size: 18),
-                onPressed: () => unawaited(_load()),
-              ),
-            ],
+                if (widget.onEdit != null)
+                  IconButton(
+                    key: const ValueKey('executions-edit'),
+                    tooltip: l10n.common_edit,
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    onPressed: widget.onEdit,
+                  ),
+                IconButton(
+                  key: const ValueKey('runs-refresh'),
+                  tooltip: l10n.common_refresh,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  onPressed: () => unawaited(_load()),
+                ),
+              ],
+            ),
           ),
         if (widget.executionHistory && widget.name.isNotEmpty)
           Align(

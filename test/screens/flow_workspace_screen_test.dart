@@ -93,6 +93,8 @@ void main() {
     await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
     await tester.tap(find.text('dev'));
     await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('executions-edit')));
+    await _settle(tester);
     // 加一步 → 产生未保存草稿。
     await tester.tap(find.byKey(const ValueKey('after-impl')));
     await _settle(tester);
@@ -432,6 +434,9 @@ steps:
 
     await tester.tap(find.text('dev'));
     await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('executions-edit')));
+    await _settle(tester);
     expect(find.byKey(const ValueKey('executions-open')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('design-more')));
     await _settleMenu(tester);
@@ -444,7 +449,7 @@ steps:
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('tapping a flow opens the editor directly', (tester) async {
+  testWidgets('点流程默认打开执行历史，编辑图标再进编辑页', (tester) async {
     tester.view.physicalSize = const Size(2400, 1800);
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.reset);
@@ -454,6 +459,18 @@ steps:
 
     await tester.tap(find.text('dev'));
     await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsOneWidget);
+    expect(find.byKey(const ValueKey('executions-edit')), findsOneWidget);
+    expect(find.byType(FlowDesignScreen), findsOneWidget,
+        reason: '编辑页留在历史下面，点编辑图标才揭开');
+    final refresh = tester.getRect(find.byKey(const ValueKey('runs-refresh')));
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    expect(width - refresh.right, greaterThanOrEqualTo(16),
+        reason: '刷新不要贴着窗口右缘');
+
+    await tester.tap(find.byKey(const ValueKey('executions-edit')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsNothing);
     expect(find.byKey(const ValueKey('detail-tab-overview')), findsNothing);
     expect(find.byKey(const ValueKey('detail-tab-runs')), findsNothing);
     expect(find.byType(FlowDesignScreen), findsOneWidget);
@@ -461,6 +478,15 @@ steps:
     // 主机只给了空 ops：这台主机只读，所以没有保存按钮。
     expect(find.byKey(const ValueKey('save-button')), findsNothing);
     expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('flow-row-dev')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('executions-back')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsNothing);
+    expect(find.byType(FlowDesignScreen), findsOneWidget,
+        reason: '从编辑页再点进历史，返回回到编辑页');
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -572,6 +598,8 @@ steps:
     addTearDown(harness.close);
     await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
     await tester.tap(find.text('dev'));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('executions-edit')));
     await _settle(tester);
     // 加一步 → 产生未保存改动（onDirtyChanged → _editorDirty = true）。
     await tester.tap(find.byKey(const ValueKey('after-impl')));
@@ -830,7 +858,10 @@ steps:
     expect(before.key.toString(), contains('p1'));
 
     activeHost = 'p2';
-    await tester.tap(find.byIcon(Icons.refresh));
+    await tester.tap(find.descendant(
+      of: find.byKey(const ValueKey('flow-library-pane')),
+      matching: find.byIcon(Icons.refresh),
+    ));
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 50));
     }

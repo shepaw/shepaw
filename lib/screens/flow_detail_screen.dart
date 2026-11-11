@@ -14,9 +14,10 @@ import 'flow_design_screen.dart';
 
 /// 一个流程的编辑页。
 ///
-/// 点进流程就到这里：主机支持编辑就直接改（手机也一样，只是换成整页表单）；
+/// 列表点进去先到执行历史，从历史页的编辑图标进到这里。
+/// 主机支持编辑就直接改（手机也一样，只是换成整页表单）；
 /// 只有连到不支持编辑操作的旧主机时，手机才退回只读步骤页 + 点选说话。
-/// 执行历史从列表或这里的菜单打开，不在编辑页里再分一栏。
+/// 执行历史也可以从这里的菜单再打开，不在编辑页里分一栏。
 ///
 /// 编辑页只创建一次，切走再回来不销毁撤销栈 / 草稿。
 class FlowDetailScreen extends StatefulWidget {
@@ -52,7 +53,7 @@ class FlowDetailScreen extends StatefulWidget {
 
   final VoidCallback? onOpenExecutions;
 
-  /// 把「打开流程设置」交给工作台。再点一次当前流程时用它回到流程设置。
+  /// 把「打开流程设置」交给外层。标题上的入口不依赖这个回调。
   final void Function(VoidCallback openSettings)? onBindSettings;
 
   @override

@@ -173,6 +173,8 @@ Future<void> _openFlow(
   await _settle(tester);
   await tester.tap(find.text('dev'));
   await _settle(tester);
+  await tester.tap(find.byKey(const ValueKey('executions-edit')));
+  await _settle(tester);
 }
 
 void main() {

@@ -18,6 +18,7 @@ class FlowExecutionHistoryScreen extends StatefulWidget {
     this.initialRunId,
     this.initialTitle,
     required this.onClose,
+    this.onEdit,
     this.onBindBack,
     this.onRunOpenChanged,
   });
@@ -32,6 +33,9 @@ class FlowExecutionHistoryScreen extends StatefulWidget {
   final String? initialTitle;
 
   final VoidCallback onClose;
+
+  /// 从这份列表进入流程编辑页。
+  final VoidCallback? onEdit;
 
   /// 把「从详情退回列表」交给外层，系统返回键能先退这一层。
   /// 传 null 表示这一页要卸掉了。
@@ -104,6 +108,7 @@ class _FlowExecutionHistoryScreenState extends State<FlowExecutionHistoryScreen>
       name: widget.flowName,
       executionHistory: true,
       onClose: widget.onClose,
+      onEdit: widget.onEdit,
       onOpenRun: _openRun,
     );
   }
