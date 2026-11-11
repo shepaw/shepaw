@@ -262,4 +262,222 @@ void main() {
     controller.stopCardValidityWatch();
     expect(controller.cardValidityPolling, isFalse);
   });
+
+  test('本地工具卡不参与对账，不会被主机回的 gone 误删', () async {
+    // She / 群编排用同一个 form / action_confirmation 键画卡，但主机没有
+    // 它们的等待位，一律回 gone。只有带 peer_form / card_channel_id 的
+    // 主机卡才能进 agent_card_status_req。
+    controller.messages.addAll([
+      Message(
+        id: 'row-local-form',
+        from: MessageFrom(id: 'agent-1', type: 'agent', name: 'Claude'),
+        type: MessageType.text,
+        content: '本地表单',
+        timestampMs: 0,
+        metadata: {
+          'form': {'form_id': 'local-form-1', 'fields': []},
+        },
+      ),
+      Message(
+        id: 'row-local-approval',
+        from: MessageFrom(id: 'agent-1', type: 'agent', name: 'Claude'),
+        type: MessageType.text,
+        content: '本地审批',
+        timestampMs: 0,
+        metadata: {
+          'action_confirmation': {
+            'confirmation_id': 'local-approval-1',
+            'confirmation_context': 'peer',
+            'actions': [
+              {'id': 'allow', 'label': '允许'}
+            ],
+          },
+        },
+      ),
+    ]);
+    controller.rebuildMessageIdMap();
+
+    var requests = 0;
+    svc.debugSendControlOverride = (peerId, json) async {
+      if (json['type'] == 'agent_card_status_req') requests++;
+      return true;
+    };
+
+    await controller.checkCardValidity();
+    expect(requests, 0, reason: '本地卡没有主机等待位，不该发状态查询');
+    expect(controller.messages, hasLength(2), reason: '本地卡必须留在屏幕上');
+  });
+
+  test('归属别的会话的残留卡不参与本次对账', () async {
+    controller.messages.addAll([
+      // B 会话残留的卡：若拿 A 的 channel 去问，主机回 gone 会把 B 唯一
+      // 一份落库副本删掉。
+      card('row-foreign',
+          cardId: 'c-foreign', key: 'form', cardChannelId: 'dm_other_session'),
+      card('row-mine', cardId: 'c-mine', key: 'form'),
+    ]);
+    controller.rebuildMessageIdMap();
+
+    Map<String, dynamic>? sent;
+    svc.debugSendControlOverride = (peerId, json) async {
+      if (json['type'] == 'agent_card_status_req') {
+        sent = json;
+        svc.debugInjectControlForTest(
+          'agent_card_status_resp',
+          {
+            'type': 'agent_card_status_resp',
+            'request_id': json['request_id'],
+            'channel_id': json['channel_id'],
+            'cards': [
+              {'id': 'c-mine', 'state': 'alive'},
+            ],
+          },
+          peerId: peerId,
+        );
+      }
+      return true;
+    };
+
+    await controller.checkCardValidity();
+    expect(sent, isNotNull);
+    expect(sent!['card_ids'], ['c-mine']);
+    expect(controller.messages.map((m) => m.id),
+        containsAll(['row-foreign', 'row-mine']));
+  });
+
+  test('不同主机的卡分别问各自的主机，不合并到一个请求', () async {
+    controller.messages.addAll([
+      card('row-a', cardId: 'c-a', key: 'form'),
+      Message(
+        id: 'row-b',
+        from: MessageFrom(id: 'agent-2', type: 'agent', name: 'Other'),
+        type: MessageType.text,
+        content: '选一个',
+        timestampMs: 0,
+        metadata: {
+          'form': {
+            'form_id': 'c-b',
+            'peer_form': {
+              'peer_id': 'peer-2',
+              'approval_id': 'c-b',
+            },
+          },
+          'card_channel_id': 'dm_remote-agent_user_1',
+        },
+      ),
+      Message(
+        id: 'row-hub',
+        from: MessageFrom(id: 'agent-2', type: 'agent', name: 'Other'),
+        type: MessageType.text,
+        content: '选一个',
+        timestampMs: 0,
+        metadata: {
+          'hub_interaction': {
+            'host_peer_id': 'peer-3',
+            'interaction_id': 'ix-3',
+          },
+        },
+      ),
+    ]);
+    controller.rebuildMessageIdMap();
+
+    final byPeer = <String, Map<String, dynamic>>{};
+    svc.debugSendControlOverride = (peerId, json) async {
+      if (json['type'] == 'agent_card_status_req') {
+        byPeer[peerId] = Map<String, dynamic>.from(json);
+        final ids = <String>[
+          ...(json['card_ids'] as List).cast<String>(),
+          ...(json['interaction_ids'] as List).cast<String>(),
+        ];
+        svc.debugInjectControlForTest(
+          'agent_card_status_resp',
+          {
+            'type': 'agent_card_status_resp',
+            'request_id': json['request_id'],
+            'channel_id': json['channel_id'],
+            'cards': [
+              for (final id in ids) {'id': id, 'state': 'alive'},
+            ],
+          },
+          peerId: peerId,
+        );
+      }
+      return true;
+    };
+
+    await controller.checkCardValidity();
+    expect(byPeer.keys, unorderedEquals(['peer-1', 'peer-2', 'peer-3']));
+    expect(byPeer['peer-1']!['card_ids'], ['c-a']);
+    expect(byPeer['peer-2']!['card_ids'], ['c-b']);
+    expect(byPeer['peer-3']!['interaction_ids'], ['ix-3']);
+    expect(controller.messages, hasLength(3));
+  });
+
+  test('重复 loadMessages 不会重建 15 秒定时器', () async {
+    controller.messages.add(card('row-alive', cardId: 'c-live', key: 'form'));
+    controller.rebuildMessageIdMap();
+    svc.debugSendControlOverride = (peerId, json) async {
+      if (json['type'] == 'agent_card_status_req') {
+        svc.debugInjectControlForTest(
+          'agent_card_status_resp',
+          {
+            'type': 'agent_card_status_resp',
+            'request_id': json['request_id'],
+            'channel_id': json['channel_id'],
+            'cards': [
+              {'id': 'c-live', 'state': 'alive'},
+            ],
+          },
+          peerId: peerId,
+        );
+      }
+      return true;
+    };
+    controller.startCardValidityWatch();
+    await pumpEventQueue();
+    final timer = controller.cardValidityTimerForTest;
+    // 一轮对话里 loadMessages 会被反复调用，startCardValidityWatch 跟着跑。
+    controller.startCardValidityWatch();
+    controller.startCardValidityWatch();
+    expect(identical(timer, controller.cardValidityTimerForTest), isTrue,
+        reason: '倒计时不能被每次 loadMessages 清零');
+    expect(controller.cardValidityPolling, isTrue);
+  });
+
+  test('切频道后在途回包不改写新会话，也不挡住新会话立即查', () async {
+    controller.messages.add(card('row-late', cardId: 'c-late', key: 'form'));
+    controller.rebuildMessageIdMap();
+    var injected = false;
+    svc.debugSendControlOverride = (peerId, json) async {
+      if (json['type'] == 'agent_card_status_req' && !injected) {
+        injected = true;
+        // 回包晚于切频道到达，且把旧卡判成 gone。
+        Future<void>.delayed(const Duration(milliseconds: 30), () {
+          svc.debugInjectControlForTest(
+            'agent_card_status_resp',
+            {
+              'type': 'agent_card_status_resp',
+              'request_id': json['request_id'],
+              'channel_id': json['channel_id'],
+              'cards': [
+                {'id': 'c-late', 'state': 'gone'},
+              ],
+            },
+            peerId: peerId,
+          );
+        });
+      }
+      return true;
+    };
+
+    final pending = controller.checkCardValidity();
+    controller.stopCardValidityWatch();
+    controller.currentChannelId = 'dm_other_session';
+    await pending;
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    await pumpEventQueue();
+
+    expect(controller.messages, hasLength(1),
+        reason: '旧会话的 gone 不能删掉新会话列表里的行');
+  });
 }

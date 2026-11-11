@@ -424,3 +424,118 @@ App：
   `agent_pending_interactions_req` / 事件补拉里声明会话。
 - `CardStatus` 账本只在进程内，主机重启后旧卡一律判 `gone`（那时旧卡确实
   也不该再答）。
+
+## 第 7 轮：跨端复审返修（2026-11-11）
+
+第 6 轮提交后再做一轮（主机 Rust 8 角度 + App 10 角度，逐条核验前提后返修）。
+本轮的核心结论：**第 5 轮的「15 秒卡片有效性轮询」会把还活着的卡删掉**，
+而且有几条提交路径绕过会话校验。返修按「误删活卡」「串会话漏网」「回执时序」
+三组落地。
+
+### 误删活卡（高危）
+
+- **旧式 hub 卡归属口径错**：`ask_ui_for_agent` 的卡帧 `channel_id` 取自
+  `frame.session_id`，群回合是群会话 id（`s_x`），而 `interaction.pending`
+  事件按群频道 id（`group_g1`）广播，App 也按 `group_g1` 查状态 → 主机判
+  `gone`、App 删掉活卡。主机新增 `card_channel_id(frame)`：优先
+  `frame["channel_id"]`，为空才回退 `session_id`，并剥 `psess_` 壳、把
+  `default` 归一为空。
+- **本地工具卡被当成主机卡对账**：App 的 `checkCardValidity` 原来把所有
+  `metadata['form']`（`form_id`）和非 cli 的 `action_confirmation` 都塞进
+  `card_ids`；本地 She / 群编排 / CLI 卡也带这些 id，但主机没有等待位，一律
+  回 `gone`，打开页面几秒卡就被删。现在只收**明确带主机标识**的卡：
+  `hub_interaction`（→ `interaction_ids`）、带 `peer_form` 的表单卡、带
+  `card_channel_id` 的 peer 审批卡。
+- **所有卡塞给一台主机**：原来取第一张卡的 peer，或退化为
+  `connectedPeerIds.first`；群聊里两台主机的卡会被问到对方主机上，全部回
+  `gone` 删掉。改为按 `host_peer_id` / `peer_form.peer_id` / `card_peer_id`
+  分组，每台主机只收到自己的卡；无归属的卡只走本会话 agent 的主机，且仅在
+  **只有一台已连接主机**时才用兜底，绝不乱猜。
+- **别的会话残留卡被对账**：采集时先看消息顶层的 `card_channel_id`，非空且
+  不等于本次查询的 channel 就跳过——否则拿 A 的归属问主机，删掉的是 B 会话
+  里唯一一份落库副本。
+- **relay 白名单不按会话过滤**：`worker_cards` 原来只按 approval_id 命中就改判
+  `alive`，别的会话残留的 `gone` 卡被一直保活。改成 id → channel_id 映射，
+  归属不匹配就保持 `gone`。
+
+### 串会话漏网
+
+- **relay 转发绕过校验**：`agent_form_resp` / `agent_approval_resp` 在本地
+  校验之前就调 `relay::approval` 转发并回 `ok=true, forwarded`。新增
+  `relay::approval_channel(id)`，留底帧带归属且提交帧归属不一致时回
+  `session_mismatch`，不消费等待位。
+- **`pouch_interaction_resp` 协议没有归属**：`frames.rs` 加可选
+  `channel_id`（老客户端缺省跳过校验），主机 `complete_interaction_by` 前比对
+  `PhoneState::interaction_status`；App 三处发送端（`_answerHubInteraction`、
+  `pouch_turn_relay`、`hub_event_client`）都带上会话，relay 那条再做一次
+  `psess_` / `default` 归一。
+- **关闭账本没记归属**：`ClosedCard` / `ClosedInteraction` 只记 reason / 设备 /
+  时刻，B 会话答掉的卡在 A 会话轮询会命中账本回 `answered_elsewhere`，把
+  错会话的残留卡永久留在屏幕上。两本账本都补 `channel_id`，命中且不匹配就
+  归 `gone`。
+- **审批卡归属在孤儿 / 补投路径被剥掉**：Controller 三处把 `channel_id` /
+  `peer_id` remove 后才交给 `_handleStreamingActionConfirmation`，于是
+  `card_channel_id` 永远写不出来，`submitApproval` 也没法带归属。改为
+  `_orphanApprovalCardData` 把两者转成消息顶层的 `card_channel_id` /
+  `card_peer_id`；`submitApproval` 接受作答时所在会话（不能只信卡片自己的
+  DB 归属，那等于让卡自证），`declineForm` 与两处自动重放也补上 `channel_id`。
+- **无归属孤儿审批卡无处作答**：`_publishOrphanCardToHub` 原来只给表单卡落
+  确定性消息行；收紧「无归属卡不由任意 DM 认领」之后，这类审批卡横幅点开
+  是空会话。现在也落 `peer_approval_<id>` 行（带 `card_peer_id`）。
+- **`hostChannelIdForCard` 的 LIKE 未转义**：`approval_id` 常含 `_`，SQLite
+  LIKE 会把它当通配符捞到无关行，假歧义导致返回空、主机跳过校验。改为先按
+  两个确定性消息 id 精确查，退回子串扫描时转义 `%` / `_` / `\` 并复核卡里的
+  id 与 approvalId 完全相同。
+- **`_onFormReq` 帧归属与回合频道不一致时仍按回合频道落库**：确定性 id 只有
+  一条，写进 A 后 B 永远加载不到，A 的轮询又会把这张活卡判 `gone` 删掉。
+  新增 `_persistFormCardForFrame`，不一致时按帧归属解析本机频道再落库。
+
+### 回执时序 / 生命周期
+
+- **3 秒回执计时从发送前开始**：`_awaitCardRespAck` 在重连发送循环（单次
+  最长 6 秒）之前就启动超时，主机 `ok=false` 到达时等待位已被摘掉，App 当成
+  「老主机」把卡标成已答。拆成发送前 `_registerCardRespAck` 登记、帧确实
+  发出后才 `awaitCardRespAck` 计时。
+- **等待位按 approval_id 单键覆盖**：双击 / 快速重试会互相清掉等待位。改成
+  一组等待位，回执到达时一起完成，各自 `finally` 只摘自己；另加 30 秒终态
+  回执账本，覆盖「第二次提交在第一个 ack 之后才登记等待位」的时序。
+- **终态拒收被通用 catch 回滚**：`PeerCardRejectedException(expired /
+  answered_elsewhere)` 不匹配 `PeerApprovalExpiredException.matches`，
+  `interactive_response_handler` 把它当瞬时失败回滚，把已失效卡恢复成可点；
+  `resubmitLostFormAnswer` 也会 reopen。给异常加 `isTerminal`，两处都按终态
+  处理。
+- **`declineForm` 不等 ack 就清账簿收卡**：主机在「答案没接住、卡片保留」
+  时仍保留等待位，App 却已把卡关死。现在等回执，`ok=false` 时不动本地状态。
+- **`_showPeerFormCard` 整份覆盖 metadata**：重复补投时用内存气泡的 metadata
+  全量回写 DB，抹掉服务层刚写的 `card_channel_id`。改用 `mergeMessageMetadata`
+  只 patch 卡片字段；`_markCardAnswered` 同样改为 patch。
+- **切频道 / dispose 期间在途回包仍改状态**：原来只在 `_applyCardStatus`
+  入口查一次。加 `_cardValidityGeneration`（stop / dispose 递增），每个 await
+  之后和每次 mutation 之前复核；`stopCardValidityWatch` 同时清在途标志，让
+  新会话能立即查。
+- **每次 `loadMessages` 重建 15 秒定时器**：活跃回合里倒计时不断被清零，
+  轮询永不触发。改成只在定时器未 active 时创建。
+- **note-only 用例断言恒真**：外层是 `pouch_sealed`，`frames.iter().any(...)` 永远
+  为 false。改为先拆封再断言「无 agent_error + 有 answer_pending ack」。
+
+### 验证
+
+- 主机：`cargo test -p shepaw-gate -p shepaw-api -p shepaw-engines
+  -p shepaw-protocol --offline` → 614 / 106 / 31 / 14 全绿（+5 个新用例）。
+- App：`flutter analyze` 0 error；卡片相关 6 个测试文件全绿（含 7 个新增
+  回归用例：本地卡不删、错会话卡跳过、按主机分组、定时器不重建、切频道
+  代际守卫、并发回执、终态异常匹配）；全量 3950 例只剩 4 个失败
+  （`flow_field_catalog` / `group_context_builder` / `flow_workspace_screen`
+  两个 Timer 待处理），在干净 main 上单跑同样 4 个失败，确认与本次改动无关。
+
+### 仍未覆盖（本轮新增）
+
+- 老帧完全没有 `channel_id` 时主机回退到 `session_id`，若那是 `group:` /
+  `flow:` 主机键，仍与 App 频道口径不一致；需要保证所有旧式卡帧都带
+  `channel_id`。
+- relay 的会话校验查的是进程级全局表，若本机卡与残留 relay 记录恰好同 id
+  会误拒（id 是 UUID / 确定性 flow id，概率极低）。
+- `PouchInteractionResp.channel_id` 是两阶段上线的可选字段：老主机忽略，
+  老 App 不发；只有两端都升到本轮之后，旧式 hub 卡的跨会话拦截才生效。
+- `flow:` 审批卡、hub 内部 `take_deferred` 记不到作答设备、广播仍是设备级
+  fan-out、`CardStatus` 账本只在进程内——沿用第 6 轮的既有缺口。

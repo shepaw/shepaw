@@ -1135,6 +1135,21 @@ mixin _MessagingOps on _ChatControllerBase {
   /// back to the latest agent message so the card is still visible.
   void _handleStreamingActionConfirmation(Map<String, dynamic> actionData) {
     final confirmationId = actionData['confirmation_id'] as String? ?? '';
+    // 路由字段不进卡片数据，但归属本身要落到消息顶层：孤儿 / 补投卡在
+    // submitApproval 时靠它带 channel_id，轮询靠它对齐会话与主机。
+    final cardChannel = (actionData['card_channel_id'] ??
+            actionData['channel_id'])
+        ?.toString()
+        .trim() ??
+        '';
+    final cardPeer = (actionData['card_peer_id'] ?? actionData['peer_id'])
+            ?.toString()
+            .trim() ??
+        '';
+    final routing = <String, dynamic>{
+      if (cardChannel.isNotEmpty) 'card_channel_id': cardChannel,
+      if (cardPeer.isNotEmpty) 'card_peer_id': cardPeer,
+    };
     LoggerService().info(
       'onActionConfirmation: confirmationId=$confirmationId '
       'streamingMessageId=$streamingMessageId isProcessing=$isProcessing '
@@ -1180,11 +1195,9 @@ mixin _MessagingOps on _ChatControllerBase {
       );
       // 会话归属落在消息顶层（和表单卡一致）：重启后仍能校验这张审批卡
       // 是不是本会话的卡，有效性轮询也靠它对齐。
-      final cardChannel = actionData['channel_id']?.toString().trim() ?? '';
-      final cardMessage = cardChannel.isEmpty
+      final cardMessage = routing.isEmpty
           ? sm
-          : ChatStreamingText.withMergedMetadata(
-              sm, {'card_channel_id': cardChannel});
+          : ChatStreamingText.withMergedMetadata(sm, routing);
       messages.add(cardMessage);
       messageIdMap[sid] = cardMessage;
       streamingMessageId = sid;
@@ -1244,11 +1257,9 @@ mixin _MessagingOps on _ChatControllerBase {
       actionData: actionData,
       contentOverride: streamingContent,
     );
-    final cardChannel = actionData['channel_id']?.toString().trim() ?? '';
-    final cardMessage = cardChannel.isEmpty
+    final cardMessage = routing.isEmpty
         ? updated
-        : ChatStreamingText.withMergedMetadata(
-            updated, {'card_channel_id': cardChannel});
+        : ChatStreamingText.withMergedMetadata(updated, routing);
     messages[idx] = cardMessage;
     messageIdMap[cardMessage.id] = cardMessage;
     // Keep streamingMessageId pointing at the host bubble so subsequent
@@ -1309,17 +1320,19 @@ mixin _MessagingOps on _ChatControllerBase {
       // `existing is Map` 之后运行时类型是 `Map<dynamic, dynamic>`，
       // 列表里 `as Map<String, dynamic>` 会抛，release 上整段消息区变成灰屏。
       final form = FormFieldShape.mergeCard(existing.metadata?['form'], data);
-      final updated = ChatStreamingText.withMergedMetadata(
-        existing,
-        {'form': form},
-      );
+      // 归属是服务层落库时写进 DB 的，内存气泡里可能没有。整份回写会把这一列
+      // 抹掉，reload 之后 dock / 提交校验就都跳过了；这里只 patch form，其它
+      // 字段（card_channel_id / card_peer_id / 附件…）留给 merge 语义保留。
+      final patch = <String, dynamic>{
+        'form': form,
+        if (frameChannel.isNotEmpty) 'card_channel_id': frameChannel,
+      };
+      final updated = ChatStreamingText.withMergedMetadata(existing, patch);
       final idx = messages.indexWhere((m) => m.id == messageId);
       if (idx != -1) messages[idx] = updated;
       messageIdMap[messageId] = updated;
       _notify();
-      localDatabaseService
-          .updateMessageMetadata(messageId, updated.metadata ?? {})
-          .ignore();
+      localDatabaseService.mergeMessageMetadata(messageId, patch).ignore();
       return;
     }
     final aid = agentId;

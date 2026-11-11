@@ -1389,6 +1389,10 @@ class ChatService {
           'confirmation_id': confirmationId,
           'selected_action_id': selectedActionId,
           'selected_action_label': selectedActionLabel,
+          // 作答时所在会话：PeerAcpConnection 把它放进 agent_approval_resp，
+          // 主机用它拒绝「在 A 会话点 B 会话的卡」。
+          if (channelId != null && channelId.isNotEmpty)
+            'host_channel_id': hostSessionIdForChannel(channelId),
         },
       );
       // Peer in-band: also record the verdict on the live task's metadata.

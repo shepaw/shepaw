@@ -700,10 +700,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
 
       if (!isPeerAgentRowId(agentId, peerId, remoteId)) return;
       _handleStreamingActionConfirmation(
-        Map<String, dynamic>.from(event)
-          ..remove('peer_id')
-          ..remove('remote_agent_id')
-          ..remove('channel_id'),
+        _orphanApprovalCardData(event),
       );
     });
     // 孤儿表单：hub 在手机重连后补发的 AskUserQuestion，但本地已经没有活动
@@ -760,6 +757,21 @@ abstract class _ChatControllerBase extends ChangeNotifier
     });
     // 广播流只发一次：卡片在聊天页没打开时到达就丢了。这里把缓存里的补上。
     unawaited(_drainPendingOrphanCards());
+  }
+
+  /// 孤儿 / 补投审批事件转成卡片数据：路由字段不写进卡片本体，但归属
+  /// （会话 + 主机）要留在消息顶层，否则 submitApproval 和有效性轮询都
+  /// 拿不到 channel_id，主机那边只能跳过会话校验。
+  Map<String, dynamic> _orphanApprovalCardData(Map<String, dynamic> event) {
+    final data = Map<String, dynamic>.from(event)
+      ..remove('peer_id')
+      ..remove('remote_agent_id')
+      ..remove('channel_id');
+    final channel = event['channel_id']?.toString().trim() ?? '';
+    final peer = event['peer_id']?.toString().trim() ?? '';
+    if (channel.isNotEmpty) data['card_channel_id'] = channel;
+    if (peer.isNotEmpty) data['card_peer_id'] = peer;
+    return data;
   }
 
   /// 这张孤儿卡是否属于当前打开的会话。
@@ -835,10 +847,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
       hostChannelId: hostChannelId,
     )) {
       _handleStreamingActionConfirmation(
-        Map<String, dynamic>.from(event)
-          ..remove('peer_id')
-          ..remove('remote_agent_id')
-          ..remove('channel_id'),
+        _orphanApprovalCardData(event),
       );
     }
     for (final event in service.pendingOrphanFormsFor(
@@ -904,10 +913,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
         tag: 'PeerApproval',
       );
       _handleStreamingActionConfirmation(
-        Map<String, dynamic>.from(event)
-          ..remove('peer_id')
-          ..remove('remote_agent_id')
-          ..remove('channel_id'),
+        _orphanApprovalCardData(event),
       );
     }
   }
@@ -924,15 +930,22 @@ abstract class _ChatControllerBase extends ChangeNotifier
   Timer? _cardValidityTimer;
   bool _cardValidityInFlight = false;
   bool _cardValidityDisposed = false;
+  /// 切频道 / dispose 会让在途的状态回包作废。频道 id 切走又切回时字符串
+  /// 相等，不能只靠 currentChannelId 判断。
+  int _cardValidityGeneration = 0;
   DateTime? _lastCardValidityCheck;
   String? _lastCardValidityChannel;
 
   void startCardValidityWatch() {
     if (_cardValidityDisposed) return;
-    _cardValidityTimer?.cancel();
-    _cardValidityTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      unawaited(checkCardValidity());
-    });
+    // 定时器跟着「打开的会话」走。loadMessages 在一轮对话里会被反复调用，
+    // 每次重建就会把 15 秒倒计时清零：活跃回合里轮询永远不触发，跨端作答的
+    // 卡要一直等到会话安静才收场。
+    if (_cardValidityTimer?.isActive != true) {
+      _cardValidityTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+        unawaited(checkCardValidity());
+      });
+    }
     // loadMessages 在一轮对话里会被多次调用（发消息、回合终态…），别每次
     // 都立刻重查一遍；但切到新会话必须马上查。
     final channel = currentChannelId ?? '';
@@ -948,45 +961,69 @@ abstract class _ChatControllerBase extends ChangeNotifier
   void stopCardValidityWatch() {
     _cardValidityTimer?.cancel();
     _cardValidityTimer = null;
+    // 旧会话在途的查询不能挡住新会话立刻查一次，也不能在回来后改写新
+    // 会话的 messages。代际 + 清在途标志一起做。
+    _cardValidityGeneration++;
+    _cardValidityInFlight = false;
+    _lastCardValidityCheck = null;
+    _lastCardValidityChannel = null;
   }
 
   /// 单测用：当前是否还在为这个会话轮询卡片。
   @visibleForTesting
   bool get cardValidityPolling => _cardValidityTimer?.isActive ?? false;
 
-  /// 收集本会话里所有还有主机等待位的卡，问一次「还有效吗」。
-  /// 纯本地工具卡（单选 / 多选 / 文件上传）没有主机等待位，不参与对账。
+  /// 单测用：定时器实例本身，用来断言重复 start 不会重建。
+  @visibleForTesting
+  Timer? get cardValidityTimerForTest => _cardValidityTimer;
+
+  /// 收集本会话里「主机那边确实有等待位」的卡，按所属主机分组问一次状态。
+  ///
+  /// 本地工具卡（She / 群编排用 `form`、`action_confirmation` 画的卡）也带
+  /// `form_id` / `confirmation_id`，但主机压根没有它们的等待位，一律会回
+  /// `gone`。把它们送进对账等于打开页面几秒就把本地卡删掉，所以只认明确
+  /// 带主机标识的卡：`hub_interaction`、带 `peer_form` 的表单卡、以及带
+  /// `card_channel_id` 的 peer 审批卡。
   @visibleForTesting
   Future<void> checkCardValidity() async {
     if (_cardValidityInFlight || _cardValidityDisposed) return;
     final channel = currentChannelId;
     if (channel == null || channel.isEmpty) return;
+    final generation = _cardValidityGeneration;
     final hostChannel = hostSessionIdForChannel(channel);
-    final cardIds = <String>{};
-    final interactionIds = <String>{};
+    final cardIdsByPeer = <String, Set<String>>{};
+    final interactionIdsByPeer = <String, Set<String>>{};
     final byId = <String, List<String>>{};
-    var peerId = '';
 
-    void add(String id, String messageId) {
+    void add(
+      String owner,
+      String id,
+      String messageId, {
+      required bool interaction,
+    }) {
       if (id.isEmpty) return;
+      final target = interaction
+          ? interactionIdsByPeer.putIfAbsent(owner, () => <String>{})
+          : cardIdsByPeer.putIfAbsent(owner, () => <String>{});
+      target.add(id);
       byId.putIfAbsent(id, () => <String>[]).add(messageId);
     }
 
     for (final message in messages) {
       final meta = message.metadata;
       if (meta == null) continue;
+      // 别的会话残留的卡不参与本次对账：主机按 channel 排除后只会回 gone，
+      // 删掉的可能是 B 会话里唯一一份落库副本。
+      final cardChannel = meta['card_channel_id']?.toString().trim() ?? '';
+      if (cardChannel.isNotEmpty && cardChannel != hostChannel) continue;
       // hub 卡同时带 `hub_interaction` 和 `metadata[kind]`（form / 单选等）。
       // 它只在 PhoneState 的 interaction_id 等待位里，当成 approval_id 查会
       // 被主机回「gone」而误删，所以命中后不再收其它卡。
       final hub = meta['hub_interaction'];
       if (hub is Map) {
         final id = hub['interaction_id']?.toString() ?? '';
-        if (id.isNotEmpty) {
-          interactionIds.add(id);
-          add(id, message.id);
-          final owner = hub['host_peer_id']?.toString() ?? '';
-          if (peerId.isEmpty && owner.isNotEmpty) peerId = owner;
-        }
+        add(hub['host_peer_id']?.toString().trim() ?? '', id, message.id,
+            interaction: true);
         continue;
       }
       final form = meta['form'];
@@ -994,77 +1031,122 @@ abstract class _ChatControllerBase extends ChangeNotifier
           form['submitted_values'] == null &&
           form['closed'] == null) {
         final peer = form['peer_form'];
-        final id = (peer is Map ? peer['approval_id'] : null)?.toString() ??
-            form['form_id']?.toString() ??
-            '';
-        if (id.isNotEmpty) {
-          cardIds.add(id);
-          add(id, message.id);
-          final owner = peer is Map ? peer['peer_id']?.toString() ?? '' : '';
-          if (peerId.isEmpty && owner.isNotEmpty) peerId = owner;
+        // `peer_form` 是主机表单卡的标识（`isStandaloneFormCard` 同款）。
+        // 本地表单卡只有 form_id，绝不能拿去问主机。
+        if (peer is Map) {
+          final id = peer['approval_id']?.toString() ?? '';
+          add(peer['peer_id']?.toString().trim() ?? '', id, message.id,
+              interaction: false);
         }
       }
       final approval = meta['action_confirmation'];
       if (approval is Map &&
-          approval['confirmation_context'] != 'cli' &&
+          approval['confirmation_context'] == 'peer' &&
           approval['selected_action_id'] == null &&
-          approval['closed'] == null) {
+          approval['closed'] == null &&
+          cardChannel.isNotEmpty) {
         final id = approval['confirmation_id']?.toString() ?? '';
-        if (id.isNotEmpty) {
-          cardIds.add(id);
-          add(id, message.id);
-        }
+        add(meta['card_peer_id']?.toString().trim() ?? '', id, message.id,
+            interaction: false);
       }
     }
-    if (cardIds.isEmpty && interactionIds.isEmpty) {
+    final allPeers = <String>{
+      ...cardIdsByPeer.keys,
+      ...interactionIdsByPeer.keys,
+    }..remove('');
+    if (allPeers.isEmpty &&
+        cardIdsByPeer[''] == null &&
+        interactionIdsByPeer[''] == null) {
       // 这一刻没有卡：保持定时器（会话期间还会有新卡到达），但不发请求。
       return;
     }
-    if (peerId.isEmpty) {
+
+    // 没带归属的卡（旧行 / 无归属孤儿卡）走本会话 agent 的主机。只有一台
+    // 已连接主机时才敢用 connectedPeerIds 兜底：多台时乱挑一台会把别的主机
+    // 的活卡全部回成 gone 删掉。
+    var defaultPeer = '';
+    if (cardIdsByPeer[''] != null || interactionIdsByPeer[''] != null) {
       try {
         final agent =
             await localDatabaseService.getRemoteAgentById(agentId ?? '');
-        peerId = agent?.sourcePeerId ?? '';
+        defaultPeer = agent?.sourcePeerId?.trim() ?? '';
       } catch (_) {}
-      if (peerId.isEmpty) {
+      if (defaultPeer.isEmpty) {
         try {
           final ids = PeerConnectionManager.instance.connectedPeerIds;
-          if (ids.isNotEmpty) peerId = ids.first;
+          if (ids.length == 1) defaultPeer = ids.first;
         } catch (_) {}
       }
     }
-    if (peerId.isEmpty || currentChannelId != channel) return;
+    if (_cardValidityDisposed ||
+        generation != _cardValidityGeneration ||
+        currentChannelId != channel) {
+      return;
+    }
+
+    final peers = allPeers.toList();
+    if ((cardIdsByPeer[''] != null || interactionIdsByPeer[''] != null) &&
+        defaultPeer.isNotEmpty &&
+        !peers.contains(defaultPeer)) {
+      peers.add(defaultPeer);
+    }
+    if (peers.isEmpty) return;
 
     _lastCardValidityChannel = channel;
     _lastCardValidityCheck = DateTime.now();
     _cardValidityInFlight = true;
     try {
-      final entries = await PeerAgentClientService.instance.checkCardStatus(
-        peerId: peerId,
-        channelId: hostChannel,
-        cardIds: cardIds.toList(),
-        interactionIds: interactionIds.toList(),
-      );
-      // 异步回来时可能已经切到别的会话，或 controller 已 dispose；后者
-      // currentChannelId 不变，必须靠显式标志挡住。
-      if (_cardValidityDisposed || currentChannelId != channel || entries.isEmpty) {
-        return;
+      final entries = <CardStatusEntry>[];
+      for (final peerId in peers) {
+        final cardIds = <String>{
+          ...?cardIdsByPeer[peerId],
+          if (peerId == defaultPeer) ...?cardIdsByPeer[''],
+        }.toList();
+        final interactionIds = <String>{
+          ...?interactionIdsByPeer[peerId],
+          if (peerId == defaultPeer) ...?interactionIdsByPeer[''],
+        }.toList();
+        if (cardIds.isEmpty && interactionIds.isEmpty) continue;
+        final batch = await PeerAgentClientService.instance.checkCardStatus(
+          peerId: peerId,
+          channelId: hostChannel,
+          cardIds: cardIds,
+          interactionIds: interactionIds,
+        );
+        if (_cardValidityDisposed ||
+            generation != _cardValidityGeneration ||
+            currentChannelId != channel) {
+          return;
+        }
+        entries.addAll(batch);
       }
-      await _applyCardStatus(entries, byId);
+      if (entries.isEmpty) return;
+      await _applyCardStatus(
+        entries,
+        byId,
+        stillCurrent: () =>
+            !_cardValidityDisposed &&
+            generation == _cardValidityGeneration &&
+            currentChannelId == channel,
+      );
     } catch (_) {
       // 查询失败一律不动卡片，等下一轮。
     } finally {
-      _cardValidityInFlight = false;
+      if (generation == _cardValidityGeneration) {
+        _cardValidityInFlight = false;
+      }
     }
   }
 
   Future<void> _applyCardStatus(
     List<CardStatusEntry> entries,
-    Map<String, List<String>> byId,
-  ) async {
+    Map<String, List<String>> byId, {
+    required bool Function() stillCurrent,
+  }) async {
     final removed = <String>{};
     var answeredElsewhere = 0;
     for (final entry in entries) {
+      if (!stillCurrent()) return;
       if (entry.isAlive) continue;
       final messageIds = byId[entry.id];
       if (messageIds == null || messageIds.isEmpty) continue;
@@ -1076,11 +1158,13 @@ abstract class _ChatControllerBase extends ChangeNotifier
             ? 'answered_elsewhere'
             : 'answered_here';
         for (final id in messageIds) {
-          await _markCardAnswered(id, reason);
+          await _markCardAnswered(id, reason, stillCurrent: stillCurrent);
+          if (!stillCurrent()) return;
         }
         if (entry.isAnsweredElsewhere) answeredElsewhere++;
       }
     }
+    if (!stillCurrent()) return;
     if (removed.isNotEmpty) {
       final ids = removed.toList();
       messages.removeWhere((m) => ids.contains(m.id));
@@ -1091,6 +1175,8 @@ abstract class _ChatControllerBase extends ChangeNotifier
         } catch (_) {
           // 删库失败不影响本轮内存收敛，下轮 loadMessages 再对账。
         }
+        // 每个 await 之后都可能已切频道 / dispose，不能继续动新会话的列表。
+        if (!stillCurrent()) return;
       }
       _notify();
     }
@@ -1103,11 +1189,16 @@ abstract class _ChatControllerBase extends ChangeNotifier
 
   /// 保留卡片但收起可点态：写 closed 让 FormBubble / ActionConfirmationButtons
   /// 渲染「已作废：这个问题已在别处作答」。
-  Future<void> _markCardAnswered(String messageId, String reason) async {
+  Future<void> _markCardAnswered(
+    String messageId,
+    String reason, {
+    required bool Function() stillCurrent,
+  }) async {
+    if (!stillCurrent()) return;
     final idx = messages.indexWhere((m) => m.id == messageId);
     if (idx == -1) return;
     final meta = Map<String, dynamic>.from(messages[idx].metadata ?? {});
-    var changed = false;
+    final patch = <String, dynamic>{};
     for (final key in const [
       'form',
       'action_confirmation',
@@ -1126,16 +1217,17 @@ abstract class _ChatControllerBase extends ChangeNotifier
       }
       merged['closed'] = reason;
       meta[key] = merged;
-      changed = true;
+      patch[key] = merged;
     }
-    if (!changed) return;
+    if (patch.isEmpty) return;
     final updated = ChatStreamingText.withMergedMetadata(messages[idx], meta);
     messages[idx] = updated;
     messageIdMap[messageId] = updated;
     _notify();
     try {
-      await localDatabaseService
-          .updateMessageMetadata(messageId, updated.metadata ?? {});
+      // 只改这几张卡：整份回写会盖掉后台任务刚写进去的 card_channel_id /
+      // 附件 / 撤回等字段，下一次 reload 卡片就没了归属。
+      await localDatabaseService.mergeMessageMetadata(messageId, patch);
     } catch (_) {
       // 落库失败也要让当前页面先收起可点态。
     }

@@ -239,6 +239,9 @@ mixin _InteractionOps on _ChatControllerBase {
     } on PeerApprovalExpiredException {
       // 卡已在主机那边收场：那份答案没进引擎，照样续上。
     } catch (e) {
+      // 主机明确拒收（expired / answered_elsewhere）是终态，不能 reopen：
+      // 否则下一轮轮询又看到一张可点、但主机已经不等的死卡。
+      if (e is PeerCardRejectedException && e.isTerminal) return;
       _markFormDeferred(message.id, approvalId, reopen: true);
       _emit(ShowErrorSnackBarEvent('$e'));
       return;
@@ -741,6 +744,7 @@ mixin _InteractionOps on _ChatControllerBase {
         approvalId: record.confirmationId,
         selectedActionId: actionId,
         selectedActionLabel: actionLabel,
+        hostChannelId: _hostChannelId.isEmpty ? null : _hostChannelId,
       );
       await WorkflowService.instance.markPendingApprovalSubmitted(
         confirmationId,
@@ -1311,6 +1315,7 @@ mixin _InteractionOps on _ChatControllerBase {
       await PeerAgentClientService.instance.declineForm(
         peerId: peerId,
         approvalId: approvalId,
+        hostChannelId: _hostChannelId.isEmpty ? null : _hostChannelId,
       );
     } catch (e) {
       _emit(ShowErrorSnackBarEvent('$e'));
@@ -1395,6 +1400,9 @@ mixin _InteractionOps on _ChatControllerBase {
       'type': 'pouch_interaction_resp',
       'interaction_id': interactionId,
       'result': result,
+      // hub 交互卡也按会话收敛：主机拿它和 InteractionWaiter 的归属比对，
+      // 拒绝「A 会话点掉 B 会话的卡」。老主机忽略这个字段。
+      if (_hostChannelId.isNotEmpty) 'channel_id': _hostChannelId,
     });
     return true;
   }

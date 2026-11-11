@@ -1,7 +1,12 @@
+import 'models/card_status.dart' show PeerCardRejectedException;
+
 /// Thrown when the user taps a peer approval card that is no longer tracked
 /// locally (turn finished / timed out / already submitted / app restarted
 /// without a hub replay). Callers must keep the UI selection and persist it —
 /// rolling back would revive a dead "pending" card on the next reload.
+///
+/// 主机明确拒收答案（`expired` / `answered_elsewhere`）也是同一种终态：卡片
+/// 救不回来了，必须保留「已点过」而不是回滚成可点。
 class PeerApprovalExpiredException implements Exception {
   final String message;
 
@@ -15,6 +20,10 @@ class PeerApprovalExpiredException implements Exception {
   /// Whether [error] (or nested causes) is an expired peer-approval verdict.
   static bool matches(Object? error) {
     if (error is PeerApprovalExpiredException) return true;
+    // 主机回执说这张卡已经失效 / 被别处答掉：和本地「不认得这张卡」是同一
+    // 种终态。若在这里返回 false，调用方会当成瞬时失败回滚，把已失效的卡
+    // 又恢复成可点。
+    if (error is PeerCardRejectedException && error.isTerminal) return true;
     final text = error?.toString() ?? '';
     return text.contains('审批已失效');
   }

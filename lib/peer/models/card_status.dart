@@ -52,6 +52,15 @@ class PeerCardRejectedException implements Exception {
 
   final String reason;
 
+  /// 卡片已经救不回来（失效 / 被别的设备答掉）：调用方要保留用户已点的
+  /// 选择，不能回滚成可点态，也不能把 deferred 卡重新打开。
+  bool get isTerminal =>
+      reason == 'expired' ||
+      reason == 'answered_elsewhere' ||
+      reason == 'closed' ||
+      reason == 'cancelled' ||
+      reason == 'timeout';
+
   @override
   String toString() {
     switch (reason) {

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/peer/models/card_status.dart';
+import 'package:shepaw/peer/peer_approval_payload.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 
 import '../storage/test_harness.dart';
@@ -89,8 +90,7 @@ void main() {
     expect(entries, isEmpty);
   });
 
-  test('主机回 ok=false 时 submitForm 抛错，卡片不会被标成已答', () async {
-    final turn = svc.debugSeedPendingTurn(
+  test('主机回 ok=false 时 submitForm 抛错，卡片不会被标成已答', () async {    final turn = svc.debugSeedPendingTurn(
       requestId: 'req-card-ack',
       peerId: 'peer-1',
       channelId: 'ch-card-ack',
@@ -132,5 +132,88 @@ void main() {
       ),
       throwsA(isA<PeerCardRejectedException>()),
     );
+  });
+
+  test('终态拒收按「已失效」处理，不会被通用回滚复活', () {
+    expect(
+      PeerApprovalExpiredException.matches(
+        const PeerCardRejectedException('expired'),
+      ),
+      isTrue,
+    );
+    expect(
+      PeerApprovalExpiredException.matches(
+        const PeerCardRejectedException('answered_elsewhere'),
+      ),
+      isTrue,
+    );
+    // 跨会话 / 答案没送达到不是终态：卡还活着，应该能回滚重试。
+    expect(
+      PeerApprovalExpiredException.matches(
+        const PeerCardRejectedException('session_mismatch'),
+      ),
+      isFalse,
+    );
+    expect(
+      PeerApprovalExpiredException.matches(
+        const PeerCardRejectedException('answer_pending'),
+      ),
+      isFalse,
+    );
+  });
+
+  test('同一张卡并发提交时两个等待位都收到回执，不会互相清掉', () async {
+    final turn = svc.debugSeedPendingTurn(
+      requestId: 'req-card-ack-double',
+      peerId: 'peer-1',
+      channelId: 'ch-card-ack-double',
+    );
+    turn.then((_) {}, onError: (_) {});
+    addTearDown(() => svc.cancelInflightTurnsForChannel('ch-card-ack-double'));
+
+    svc.debugInjectControlForTest(
+      'agent_form_req',
+      formFrame('req-card-ack-double', 'ack-double'),
+      peerId: 'peer-1',
+    );
+    await pumpEventQueue();
+
+    svc.debugExpectCardAck = true;
+    var responses = 0;
+    svc.debugSendControlOverride = (peerId, json) async {
+      if (json['type'] == 'agent_form_resp') {
+        responses++;
+        if (responses == 1) {
+          svc.debugInjectControlForTest(
+            'agent_card_resp_ack',
+            {
+              'type': 'agent_card_resp_ack',
+              'approval_id': json['approval_id'],
+              'ok': false,
+              'reason': 'expired',
+            },
+            peerId: peerId,
+          );
+        }
+      }
+      return true;
+    };
+
+    // 两次提交都登记了等待位；第一个回执到达时两张都该被拒，不能有一个
+    // 因为等待位被覆盖而误判「老主机无 ack」把卡片标成已答。
+    final first = svc.submitForm(
+      peerId: 'peer-1',
+      approvalId: 'ack-double',
+      values: const {'question_0': '选 A'},
+      hostChannelId: 'dm_remote-agent_user_1',
+    );
+    final second = svc.submitForm(
+      peerId: 'peer-1',
+      approvalId: 'ack-double',
+      values: const {'question_0': '选 B'},
+      hostChannelId: 'dm_remote-agent_user_1',
+    );
+    await expectLater(first, throwsA(isA<PeerCardRejectedException>()));
+    await expectLater(second, throwsA(isA<PeerCardRejectedException>()));
   });
 }

@@ -66,6 +66,7 @@ class PeerAcpConnection implements AcpInteractiveConnection {
       approvalId: approvalId,
       selectedActionId: selectedActionId,
       selectedActionLabel: selectedActionLabel,
+      hostChannelId: responseData['host_channel_id'] as String?,
     );
   }
 }

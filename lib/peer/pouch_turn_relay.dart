@@ -622,11 +622,20 @@ class PouchTurnRelay {
       result = null;
     }
     if (result == null || result['_non_blocking'] == true) return;
+    // 卡帧带的归属（`ask_ui_for_agent` 写的 channel_id，主机侧已剥 psess_
+    // 壳并归一 default）：主机据此挡住别的会话里残留的同 id 卡被误点。
+    // 老帧 / 旧主机可能还带壳，这里再归一一次；不带该字段就跳过校验。
+    final rawChannel = (event['channel_id'] as String?)?.trim() ?? '';
+    final cardChannel = rawChannel.startsWith('psess_')
+        ? rawChannel.substring('psess_'.length)
+        : rawChannel;
     await PeerConnectionManager.instance.sendControl(hostPeerId, {
       'type': interactionResponseType,
       'request_id': event['request_id'],
       'interaction_id': event['interaction_id'],
       'result': result,
+      if (cardChannel.isNotEmpty && cardChannel != 'default')
+        'channel_id': cardChannel,
     });
   }
 

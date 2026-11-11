@@ -1263,6 +1263,7 @@ class HubEventClient {
           'type': 'pouch_interaction_resp',
           'interaction_id': interactionId,
           'result': {'output': output},
+          'channel_id': hostSessionIdForChannel(channelId),
         });
         return;
       }

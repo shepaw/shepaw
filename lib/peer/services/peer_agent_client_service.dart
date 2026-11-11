@@ -2199,7 +2199,26 @@ class PeerAgentClientService {
   /// 卡片有效性查询（request_id → 回包）与卡片提交回执（approval_id → ack）。
   /// 回执让 submitForm / submitApproval 不再把「帧写进 socket」当成功。
   final Map<String, Completer<List<CardStatusEntry>>> _cardStatusWaiters = {};
-  final Map<String, Completer<CardRespAck>> _cardAckWaiters = {};
+  // 同一张卡可能被双击 / 快速重试重复提交；按 approval_id 挂一组等待位，
+  // 回执到达时一起完成，finally 只摘自己那一个。
+  final Map<String, Set<Completer<CardRespAck>>> _cardAckWaiters = {};
+  // 双击 / 快速重试时，第二次提交可能在第一个 ack 之后才登记等待位，白等
+  // 3 秒后按「老主机」把已失效的卡标成已答。记一笔短期终态回执兜住。
+  final Map<String, ({String reason, int atMs})> _terminalCardRejections = {};
+  static const int _terminalCardRejectionTtlMs = 30 * 1000;
+
+  /// 这张卡最近被主机判过终态吗（expired / answered_elsewhere / …）。
+  String? _recentTerminalRejection(String approvalId) {
+    final hit = _terminalCardRejections.remove(approvalId);
+    if (hit == null) return null;
+    if (DateTime.now().millisecondsSinceEpoch - hit.atMs >=
+        _terminalCardRejectionTtlMs) {
+      return null;
+    }
+    // 保留到 TTL 结束，覆盖紧接着的多次重投。
+    _terminalCardRejections[approvalId] = hit;
+    return hit.reason;
+  }
 
   /// 刚成功登记到主机的会话（channelId → 登记时刻）。
   ///
@@ -2518,6 +2537,18 @@ class PeerAgentClientService {
     _submittedApprovals.clear();
     _submittedForms.clear();
     _recentFormAnswersByRequest.clear();
+    _terminalCardRejections.clear();
+    for (final waiters in _cardAckWaiters.values) {
+      for (final c in waiters) {
+        if (!c.isCompleted) c.complete(const CardRespAck(
+          approvalId: '',
+          ok: true,
+          reason: 'stopped',
+        ));
+      }
+    }
+    _cardAckWaiters.clear();
+    _cardStatusWaiters.clear();
     _deferredForms.clear();
     _cancelledWhileSuspended.clear();
     _reconcileNeeded.clear();
@@ -8405,6 +8436,10 @@ class PeerAgentClientService {
         'approval_id': approvalId,
         'action': stored['action'] ?? 'accept',
         if (stored['content'] != null) 'content': stored['content'],
+        // 补发的卡帧带归属；自动重答也要带上，否则老帧在别的会话里重放时
+        // 主机跳过会话校验，把 B 会话的等待位解掉。
+        if (_frameChannelId(data).isNotEmpty)
+          'channel_id': _frameChannelId(data),
       }));
       return;
     }
@@ -8461,18 +8496,23 @@ class PeerAgentClientService {
       );
     }
     if (pending.channelId.isNotEmpty) {
-      unawaited(persistFormCard(
-        channelId: pending.channelId,
+      // 帧归属和发起回合不一致时不能再按 A 的频道写行：确定性 id 只有一条，
+      // 写错频道后 B 永远加载不到，A 的轮询又会拿 A 的 channel 把这张活卡
+      // 判成 gone 删掉。改成按帧里的会话解析本机频道再落库。
+      unawaited(_persistFormCardForFrame(
+        pendingChannelId: pending.channelId,
+        frameChannel: frameChannel,
+        peerId: peerId,
+        remoteAgentId: pending.remoteAgentId,
         senderId: pending.localAgentId,
         senderName: pending.agentName,
-        formData: {
+        data: {
           'form_id': approvalId,
           'request_id': requestId,
           'title': data['title'] ?? '',
           if (data['description'] != null) 'description': data['description'],
           'fields': data['fields'] is List ? data['fields'] : const <dynamic>[],
           'peer_form': {'peer_id': peerId, 'approval_id': approvalId},
-          // 落库时留下归属，提交时才能校验「是不是在本会话点的」。
           'channel_id': cardChannel,
         },
       ));
@@ -8491,6 +8531,35 @@ class PeerAgentClientService {
       // 卡片归属的会话；聊天页据此决定要不要画在当前列表里。
       'channel_id': cardChannel,
     });
+  }
+
+  /// 帧归属与发起回合不一致时，把确定性卡片行落到帧指向的本机会话。
+  Future<void> _persistFormCardForFrame({
+    required String pendingChannelId,
+    required String frameChannel,
+    required String peerId,
+    required String remoteAgentId,
+    required String senderId,
+    required String senderName,
+    required Map<String, dynamic> data,
+  }) async {
+    var channelId = pendingChannelId;
+    if (frameChannel.isNotEmpty &&
+        frameChannel != hostSessionIdForChannel(pendingChannelId) &&
+        getIt.isRegistered<LocalDatabaseService>()) {
+      final resolved = await _localChannelIdForCard(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        hostChannelId: frameChannel,
+      );
+      if (resolved != null && resolved.isNotEmpty) channelId = resolved;
+    }
+    await persistFormCard(
+      channelId: channelId,
+      senderId: senderId,
+      senderName: senderName,
+      formData: data,
+    );
   }
 
   /// 回合内没等到回答：主机把卡片交到 deferred 表，这一轮随后收束。
@@ -8976,6 +9045,35 @@ class PeerAgentClientService {
         },
       );
     }
+    // 无归属（老主机）/ flow: 会话的孤儿审批卡同样要落一条确定性行，否则
+    // 横幅点开是空会话：本轮收紧「无归属卡不由任意 DM 认领」之后，这类卡
+    // 没有任何渲染入口，主机只能等超时自己降级。
+    if (interactionType == 'action_confirmation') {
+      final actions = data['actions'];
+      await _db.createMessage(
+        id: PeerApprovalPayload.approvalCardMessageId(cardId),
+        channelId: channelId,
+        senderId: localAgentId,
+        senderType: 'agent',
+        senderName: agentName,
+        content: (data['prompt'] as String?) ?? '',
+        metadata: {
+          'action_confirmation': {
+            'confirmation_id': cardId,
+            'confirmation_context': 'peer',
+            'prompt': data['prompt'] ?? '',
+            'actions': actions is List ? actions : const <dynamic>[],
+            if (data['tool_kind'] != null) 'tool_kind': data['tool_kind'],
+            if (data['tool_call_id'] != null)
+              'tool_call_id': data['tool_call_id'],
+            'orphan': true,
+          },
+          'card_peer_id': peerId,
+          if (hostChannelId.isNotEmpty) 'card_channel_id': hostChannelId,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
   }
 
   /// 主机会话 id → 本机频道 id。
@@ -9152,9 +9250,22 @@ class PeerAgentClientService {
   }
 
   void _onCardRespAck(Map<String, dynamic> data) {
-    final waiter = _cardAckWaiters.remove(data['approval_id']?.toString() ?? '');
-    if (waiter == null || waiter.isCompleted) return;
-    waiter.complete(CardRespAck.fromJson(data));
+    final waiters =
+        _cardAckWaiters.remove(data['approval_id']?.toString() ?? '');
+    if (waiters == null) return;
+    final ack = CardRespAck.fromJson(data);
+    if (!ack.ok) {
+      final probe = PeerCardRejectedException(ack.reason);
+      if (probe.isTerminal) {
+        _terminalCardRejections[data['approval_id']?.toString() ?? ''] = (
+          reason: ack.reason,
+          atMs: DateTime.now().millisecondsSinceEpoch,
+        );
+      }
+    }
+    for (final waiter in waiters) {
+      if (!waiter.isCompleted) waiter.complete(ack);
+    }
   }
 
   /// 从落库的卡片行里取回会话归属。工具审批卡的提交链路很深（ChatService →
@@ -9165,19 +9276,32 @@ class PeerAgentClientService {
       return '';
     }
     try {
-      final rows = await _db.findMessagesByMetadataMatch(approvalId);
       String? found;
+      void consider(String? channel) {
+        final value = channel?.trim() ?? '';
+        if (value.isEmpty || found == value) return;
+        if (found != null) found = ''; // 歧义：后面统一跳过校验
+        else found = value;
+      }
+
+      // 优先按确定性 id 精确取行，避免全表 LIKE 扫描与 `_` 通配符误命中。
+      for (final rowId in <String>[
+        PeerApprovalPayload.formCardMessageId(approvalId),
+        PeerApprovalPayload.approvalCardMessageId(approvalId),
+      ]) {
+        final row = await _db.getMessageById(rowId);
+        if (row == null) continue;
+        consider(_cardChannelFromRow(row));
+      }
+      // 老行 / 其它形态的行才退回子串扫描；转义通配符并按 id 精确复核。
+      final rows = await _db.findMessagesByMetadataMatch(
+        approvalId,
+        escapeWildcards: true,
+        limit: 50,
+      );
       for (final row in rows) {
-        final raw = row['metadata'];
-        if (raw is! String || raw.isEmpty) continue;
-        final decoded = jsonDecode(raw);
-        if (decoded is! Map) continue;
-        final channel = decoded['card_channel_id']?.toString().trim() ?? '';
-        if (channel.isEmpty) continue;
-        // 同一个 id 在两条不同会话里都有行（广播 / 补投）时归属有歧义：
-        // 宁可不带 channel_id 让主机跳过校验，也不能拿错的那条去拒答。
-        if (found != null && found != channel) return '';
-        found = channel;
+        if (!_rowBelongsToCard(row, approvalId)) continue;
+        consider(_cardChannelFromRow(row));
       }
       return found ?? '';
     } catch (e) {
@@ -9186,20 +9310,89 @@ class PeerAgentClientService {
     return '';
   }
 
-  /// 等一份提交回执。老主机没有 ack，超时就退回原行为（只按 socket 成功计）。
-  Future<CardRespAck?> _awaitCardRespAck(String approvalId) async {
+  Map<String, dynamic> _decodedMetadata(Map<String, dynamic> row) {
+    final raw = row['metadata'];
+    if (raw is! String || raw.isEmpty) return const <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return const <String, dynamic>{};
+  }
+
+  String? _cardChannelFromRow(Map<String, dynamic> row) =>
+      _decodedMetadata(row)['card_channel_id']?.toString();
+
+  /// 子串扫描命中不等于这张卡：确认卡里的 id 与 approvalId 完全相同。
+  bool _rowBelongsToCard(Map<String, dynamic> row, String approvalId) {
+    final meta = _decodedMetadata(row);
+    for (final key in const ['form', 'action_confirmation', 'hub_interaction']) {
+      final card = meta[key];
+      if (card is! Map) continue;
+      for (final idKey in const [
+        'form_id',
+        'confirmation_id',
+        'approval_id',
+        'interaction_id',
+      ]) {
+        if (card[idKey]?.toString() == approvalId) return true;
+      }
+      final peerForm = card['peer_form'];
+      if (peerForm is Map && peerForm['approval_id']?.toString() == approvalId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 登记一个回执等待位。必须在发帧之前挂好：主机可能在第一帧写出后立即
+  /// 回 ack。超时等回执的动作放到 [awaitCardRespAck]，从「帧确实发出去」
+  /// 之后才开始计时，免得 6 秒重连等待把 3 秒窗口耗光。
+  Completer<CardRespAck>? _registerCardRespAck(String approvalId) {
     if (debugSendControlOverride != null && !debugExpectCardAck) return null;
     final waiter = Completer<CardRespAck>();
-    _cardAckWaiters[approvalId] = waiter;
+    _cardAckWaiters
+        .putIfAbsent(approvalId, () => <Completer<CardRespAck>>{})
+        .add(waiter);
+    return waiter;
+  }
+
+  void _discardCardRespAck(String approvalId, Completer<CardRespAck>? waiter) {
+    if (waiter == null) return;
+    final waiters = _cardAckWaiters[approvalId];
+    if (waiters == null) return;
+    waiters.remove(waiter);
+    if (waiters.isEmpty) _cardAckWaiters.remove(approvalId);
+  }
+
+  /// 等一份提交回执。老主机没有 ack，超时就退回原行为（只按 socket 成功计）。
+  Future<CardRespAck?> awaitCardRespAck(
+    String approvalId,
+    Completer<CardRespAck>? waiter,
+  ) async {
+    if (waiter == null) return null;
+    // 后发的那次提交可能没赶上 ack：账本里有终态就立刻拒，别白等 3 秒
+    // 再按「老主机」把死卡标成已答。
+    final terminal = _recentTerminalRejection(approvalId);
+    if (terminal != null) {
+      _discardCardRespAck(approvalId, waiter);
+      throw PeerCardRejectedException(terminal);
+    }
     try {
-      return await waiter.future
+      final ack = await waiter.future
           .then<CardRespAck?>((value) => value)
           .timeout(
             const Duration(seconds: 3),
             onTimeout: () => null,
           );
+      if (ack == null) {
+        // 超时也可能是「ack 到了但等待位被前一次提交摘掉」。
+        final late = _recentTerminalRejection(approvalId);
+        if (late != null) throw PeerCardRejectedException(late);
+      }
+      return ack;
     } finally {
-      _cardAckWaiters.remove(approvalId);
+      _discardCardRespAck(approvalId, waiter);
     }
   }
 
@@ -9238,41 +9431,46 @@ class PeerAgentClientService {
       if (channel.isNotEmpty) 'channel_id': channel,
     };
     // 先挂上回执等待位再发：主机可能在第一帧写出后立即回 ack。
-    final ackFuture = _awaitCardRespAck(approvalId);
+    final ackWaiter = _registerCardRespAck(approvalId);
     var sent = false;
     Object? lastErr;
-    for (var attempt = 0; attempt < 3; attempt++) {
-      try {
-        sent = await _sendInteractionAnswer(peerId, payload)
-            .timeout(const Duration(seconds: 12), onTimeout: () => false);
-        if (sent) break;
-        lastErr = 'peer not connected';
-      } catch (e) {
-        lastErr = e;
+    try {
+      for (var attempt = 0; attempt < 3; attempt++) {
+        try {
+          sent = await _sendInteractionAnswer(peerId, payload)
+              .timeout(const Duration(seconds: 12), onTimeout: () => false);
+          if (sent) break;
+          lastErr = 'peer not connected';
+        } catch (e) {
+          lastErr = e;
+        }
+        if (attempt < 2) {
+          await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+        }
       }
-      if (attempt < 2) {
-        await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+      if (!sent) {
+        _log.warning(
+          'submitForm FAILED approvalId=$approvalId err=$lastErr',
+          tag: 'PeerApproval',
+        );
+        throw Exception('表单发送失败，请确认配对设备在线后重试');
       }
-    }
-    if (!sent) {
-      _log.warning(
-        'submitForm FAILED approvalId=$approvalId err=$lastErr',
-        tag: 'PeerApproval',
-      );
-      throw Exception('表单发送失败，请确认配对设备在线后重试');
-    }
-    // 主机回执：ok=false 说明答案没被收下，绝不能往下把卡片标成已答。
-    // 老主机没有 ack，3 秒超时后 ack == null，保持原来的行为。
-    final ack = await ackFuture;
-    if (ack != null && !ack.ok) {
-      _log.warning(
-        'submitForm rejected approvalId=$approvalId reason=${ack.reason}',
-        tag: 'PeerApproval',
-      );
-      if (ack.reason == 'answered_elsewhere' || ack.reason == 'expired') {
-        _applyInteractionClosed(approvalId, ack.reason);
+      // 主机回执：ok=false 说明答案没被收下，绝不能往下把卡片标成已答。
+      // 老主机没有 ack，3 秒超时后 ack == null，保持原来的行为。
+      final ack = await awaitCardRespAck(approvalId, ackWaiter);
+      if (ack != null && !ack.ok) {
+        _log.warning(
+          'submitForm rejected approvalId=$approvalId reason=${ack.reason}',
+          tag: 'PeerApproval',
+        );
+        if (ack.reason == 'answered_elsewhere' || ack.reason == 'expired') {
+          _applyInteractionClosed(approvalId, ack.reason);
+        }
+        throw PeerCardRejectedException(ack.reason);
       }
-      throw PeerCardRejectedException(ack.reason);
+    } finally {
+      // 发送失败 / 抛异常时别把等待位留在表里（超时会自己清）。
+      if (!sent) _discardCardRespAck(approvalId, ackWaiter);
     }
     final requestId = _approvalToRequest.remove(approvalId);
     // H9-4 / H9-9：错误帧只带 request_id，留一条短期反查，便于主机说
@@ -9340,6 +9538,7 @@ class PeerAgentClientService {
   Future<void> declineForm({
     required String peerId,
     required String approvalId,
+    String? hostChannelId,
   }) async {
     var tracked = _deferredForms.containsKey(approvalId) ||
         _approvalToRequest.containsKey(approvalId) ||
@@ -9348,13 +9547,25 @@ class PeerAgentClientService {
     if (!tracked) {
       throw const PeerApprovalExpiredException();
     }
-    final sent = await _sendInteractionAnswer(peerId, {
+    var channel = hostChannelId?.trim() ?? '';
+    if (channel.isEmpty) channel = await hostChannelIdForCard(approvalId);
+    final payload = <String, dynamic>{
       'type': 'agent_form_resp',
       'approval_id': approvalId,
       'action': 'decline',
-    });
+      if (channel.isNotEmpty) 'channel_id': channel,
+    };
+    final ackWaiter = _registerCardRespAck(approvalId);
+    final sent = await _sendInteractionAnswer(peerId, payload);
     if (!sent) {
+      _discardCardRespAck(approvalId, ackWaiter);
       throw Exception('表单发送失败，请确认配对设备在线后重试');
+    }
+    // 主机可能说「答案没被收下，卡片保留」（deferred 节点已终态）。这时不能
+    // 清本机账簿、也不能收卡，否则用户看到一张不能点的死卡而主机还在等。
+    final ack = await awaitCardRespAck(approvalId, ackWaiter);
+    if (ack != null && !ack.ok) {
+      throw PeerCardRejectedException(ack.reason);
     }
     _deferredForms.remove(approvalId);
     _approvalToRequest.remove(approvalId);
@@ -9415,6 +9626,8 @@ class PeerAgentClientService {
         'selected_action_id': submitted.actionId,
         if (submitted.label != null && submitted.label!.isNotEmpty)
           'selected_action_label': submitted.label,
+        if (_frameChannelId(data).isNotEmpty)
+          'channel_id': _frameChannelId(data),
       }));
       return;
     }
@@ -9546,6 +9759,9 @@ class PeerAgentClientService {
     required String approvalId,
     required String selectedActionId,
     String? selectedActionLabel,
+    /// 作答时所在会话的主机会话 id。不能只从卡片 DB 归属里取：那等于让
+    /// 卡片自己证明自己属于这个会话，A 会话里残留的 B 卡照样能过校验。
+    String? hostChannelId,
   }) async {
     _log.info(
       'submitApproval: approvalId=$approvalId actionId=$selectedActionId '
@@ -9566,7 +9782,10 @@ class PeerAgentClientService {
       );
       throw const PeerApprovalExpiredException();
     }
-    final channel = await hostChannelIdForCard(approvalId);
+    // 优先用「作答时所在会话」，拿不到（工作流面板 / 连接层）才退回卡片
+    // 落库归属。主机拿它和卡帧的归属比对，不一致就静默拒收。
+    var channel = hostChannelId?.trim() ?? '';
+    if (channel.isEmpty) channel = await hostChannelIdForCard(approvalId);
     final payload = <String, dynamic>{
       'type': 'agent_approval_resp',
       'approval_id': approvalId,
@@ -9577,44 +9796,48 @@ class PeerAgentClientService {
       if (channel.isNotEmpty) 'channel_id': channel,
     };
 
-    final ackFuture = _awaitCardRespAck(approvalId);
+    final ackWaiter = _registerCardRespAck(approvalId);
     // Retry briefly — a single dropped frame after Allow leaves Cursor hung
     // on [pending] for the rest of the turn.
     var sent = false;
     Object? lastErr;
-    for (var attempt = 0; attempt < 3; attempt++) {
-      try {
-        sent = await _sendInteractionAnswer(peerId, payload)
-            .timeout(const Duration(seconds: 12), onTimeout: () => false);
-        if (sent) break;
-        lastErr = 'peer not connected';
-      } catch (e) {
-        lastErr = e;
+    try {
+      for (var attempt = 0; attempt < 3; attempt++) {
+        try {
+          sent = await _sendInteractionAnswer(peerId, payload)
+              .timeout(const Duration(seconds: 12), onTimeout: () => false);
+          if (sent) break;
+          lastErr = 'peer not connected';
+        } catch (e) {
+          lastErr = e;
+        }
+        if (attempt < 2) {
+          await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+        }
       }
-      if (attempt < 2) {
-        await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+      if (!sent) {
+        _log.warning(
+          'submitApproval FAILED approvalId=$approvalId err=$lastErr — '
+          'keeping openApprovals gate so the turn does not finish without a verdict',
+          tag: 'PeerApproval',
+        );
+        throw Exception('审核结果发送失败，请确认配对设备在线后重试');
       }
-    }
-    if (!sent) {
-      _log.warning(
-        'submitApproval FAILED approvalId=$approvalId err=$lastErr — '
-        'keeping openApprovals gate so the turn does not finish without a verdict',
-        tag: 'PeerApproval',
-      );
-      throw Exception('审核结果发送失败，请确认配对设备在线后重试');
-    }
 
-    // 同表单卡：主机明确拒收时不能记成已裁决。老主机没有 ack 就照旧。
-    final ack = await ackFuture;
-    if (ack != null && !ack.ok) {
-      _log.warning(
-        'submitApproval rejected approvalId=$approvalId reason=${ack.reason}',
-        tag: 'PeerApproval',
-      );
-      if (ack.reason == 'answered_elsewhere' || ack.reason == 'expired') {
-        _applyInteractionClosed(approvalId, ack.reason);
+      // 同表单卡：主机明确拒收时不能记成已裁决。老主机没有 ack 就照旧。
+      final ack = await awaitCardRespAck(approvalId, ackWaiter);
+      if (ack != null && !ack.ok) {
+        _log.warning(
+          'submitApproval rejected approvalId=$approvalId reason=${ack.reason}',
+          tag: 'PeerApproval',
+        );
+        if (ack.reason == 'answered_elsewhere' || ack.reason == 'expired') {
+          _applyInteractionClosed(approvalId, ack.reason);
+        }
+        throw PeerCardRejectedException(ack.reason);
       }
-      throw PeerCardRejectedException(ack.reason);
+    } finally {
+      if (!sent) _discardCardRespAck(approvalId, ackWaiter);
     }
 
     final requestId = _approvalToRequest.remove(approvalId);

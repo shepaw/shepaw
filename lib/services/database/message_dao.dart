@@ -304,13 +304,24 @@ extension MessageDao on LocalDatabaseService {
   Future<List<Map<String, dynamic>>> findMessagesByMetadataMatch(
     String needle, {
     int limit = 20,
+    bool escapeWildcards = false,
   }) async {
     if (needle.isEmpty) return const [];
     final db = await database;
+    // LIKE 的 % / _ 是通配符：approval_id 常含 `_`，不转义会把别的卡片行
+    // 也捞进来，归属出现假歧义。
+    final pattern = escapeWildcards
+        ? needle
+            .replaceAll('\\', '\\\\')
+            .replaceAll('%', '\\%')
+            .replaceAll('_', '\\_')
+        : needle;
     return await db.query(
       'messages',
-      where: 'metadata LIKE ?',
-      whereArgs: ['%$needle%'],
+      where: escapeWildcards
+          ? r"metadata LIKE ? ESCAPE '\'"
+          : 'metadata LIKE ?',
+      whereArgs: ['%$pattern%'],
       orderBy: 'created_at DESC',
       limit: limit,
     );
