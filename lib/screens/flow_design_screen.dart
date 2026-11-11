@@ -1447,57 +1447,63 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         final split = canEdit && _panelOpen && !_phoneMode && width >= 900;
         final panelWidth = split ? _fitPanelWidth(width) : 0.0;
         final actions = _toolbarActions(l10n, c, compact);
+        // 手机上这条提示和保存状态挤在一行会被缩小到点不中，单独占一行。
+        final draftOwnRow = _phoneMode && widget.hasRestorableDraft;
+        final inlineDraft = widget.hasRestorableDraft && !draftOwnRow;
+        final lead = _toolbarLead(l10n, theme, scheme, statusText, c);
         return Material(
           color: scheme.surfaceContainerLow,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Row(
-                      children: [
-                        if (widget.hasRestorableDraft)
-                          Flexible(
-                            child: _toolbarLead(
-                                l10n, theme, scheme, statusText, c),
-                          )
-                        else
-                          Expanded(
-                            child: _toolbarLead(
-                                l10n, theme, scheme, statusText, c),
-                          ),
-                        if (widget.hasRestorableDraft) ...[
-                          const SizedBox(width: 12),
-                          Flexible(
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: _draftPrompt(l10n),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                if (split) ...[
-                  const SizedBox(width: 9),
-                  SizedBox(
-                    width: panelWidth,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerRight,
-                        child: actions,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: inlineDraft
+                            ? Row(
+                                children: [
+                                  Flexible(child: lead),
+                                  const SizedBox(width: 12),
+                                  Flexible(
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: _draftPrompt(l10n),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : lead,
                       ),
                     ),
-                  ),
-                ] else
+                    if (split) ...[
+                      const SizedBox(width: 9),
+                      SizedBox(
+                        width: panelWidth,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: actions,
+                          ),
+                        ),
+                      ),
+                    ] else
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: actions,
+                      ),
+                  ],
+                ),
+                if (draftOwnRow)
                   Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: actions,
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
+                    child: _draftPrompt(l10n, expand: true),
                   ),
               ],
             ),
@@ -1631,68 +1637,83 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     );
   }
 
-  /// 上次没保存的草稿。收成工具条里的一粒提示，和保存状态、操作按钮同一行。
-  Widget _draftPrompt(AppLocalizations l10n) {
+  /// 上次没保存的草稿。
+  ///
+  /// 桌面收成工具条里的一粒提示。[expand] 用于手机：占满一行，标题可以换行省略，
+  /// 恢复 / 丢弃保持能点的尺寸，不再跟保存状态挤在一起被缩小。
+  Widget _draftPrompt(AppLocalizations l10n, {bool expand = false}) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final onTint = scheme.onErrorContainer;
     final actionStyle = TextButton.styleFrom(
       foregroundColor: onTint,
-      visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      minimumSize: const Size(0, 28),
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: expand ? VisualDensity.standard : VisualDensity.compact,
+      padding: EdgeInsets.symmetric(horizontal: expand ? 12 : 8),
+      minimumSize: expand ? const Size(48, 40) : const Size(0, 28),
+      tapTargetSize: expand
+          ? MaterialTapTargetSize.padded
+          : MaterialTapTargetSize.shrinkWrap,
     );
+    final title = Text(
+      l10n.flow_draftBannerTitle,
+      maxLines: expand ? 2 : 1,
+      overflow: TextOverflow.ellipsis,
+      style: theme.textTheme.labelMedium?.copyWith(color: onTint),
+    );
+    final box = DecoratedBox(
+      key: const ValueKey('draft-banner'),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          expand ? 12 : 8,
+          expand ? 4 : 2,
+          2,
+          expand ? 4 : 2,
+        ),
+        child: Row(
+          mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+          children: [
+            Icon(Icons.history, size: 16, color: onTint),
+            const SizedBox(width: 6),
+            if (expand) Expanded(child: title) else title,
+            if (widget.onRestoreDraft != null)
+              TextButton(
+                key: const ValueKey('draft-restore'),
+                style: actionStyle.copyWith(
+                  textStyle: WidgetStatePropertyAll(
+                    theme.textTheme.labelMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                onPressed: widget.onRestoreDraft,
+                child: Text(l10n.flow_draftBannerRestore),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  l10n.flow_draftBannerReadOnly,
+                  style: theme.textTheme.labelSmall?.copyWith(color: onTint),
+                ),
+              ),
+            TextButton(
+              key: const ValueKey('draft-discard'),
+              style: actionStyle,
+              onPressed: widget.onDiscardDraft,
+              child: Text(l10n.flow_draftBannerDiscard),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (expand) return box;
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: Alignment.centerLeft,
-      child: DecoratedBox(
-        key: const ValueKey('draft-banner'),
-        decoration: BoxDecoration(
-          color: scheme.errorContainer,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 2, 2, 2),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.history, size: 16, color: onTint),
-              const SizedBox(width: 6),
-              Text(
-                l10n.flow_draftBannerTitle,
-                style: theme.textTheme.labelMedium?.copyWith(color: onTint),
-              ),
-              if (widget.onRestoreDraft != null)
-                TextButton(
-                  key: const ValueKey('draft-restore'),
-                  style: actionStyle.copyWith(
-                    textStyle: WidgetStatePropertyAll(
-                      theme.textTheme.labelMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  onPressed: widget.onRestoreDraft,
-                  child: Text(l10n.flow_draftBannerRestore),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    l10n.flow_draftBannerReadOnly,
-                    style: theme.textTheme.labelSmall?.copyWith(color: onTint),
-                  ),
-                ),
-              TextButton(
-                key: const ValueKey('draft-discard'),
-                style: actionStyle,
-                onPressed: widget.onDiscardDraft,
-                child: Text(l10n.flow_draftBannerDiscard),
-              ),
-            ],
-          ),
-        ),
-      ),
+      child: box,
     );
   }
 
