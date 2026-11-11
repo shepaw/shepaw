@@ -2,6 +2,8 @@
 /// `flow_validate_resp` / `flow_run_get_resp` 给出，这里只做解码。
 library;
 
+import '../../storage/pouch_scope.dart';
+
 /// 工作流会话 id 的格式守卫：只有主机下发的 `flow_<...>` 真会话能拼出
 /// `psess_` 频道。旧运行 / 群运行的条目可能是引擎槽位 key
 /// （`flow:<rid>:<node>` / `group:<gid>:<sid>:...`）、参与条目（`part-flow-…`）
@@ -446,9 +448,12 @@ class FlowRunView {
     return raw is Map ? Map<String, dynamic>.from(raw) : const {};
   }
 
+  // 老的两段式 `run:<rid>` 不在三层树里，主机产物帧桥会拒；只认 flow 家族
+  // 且带 `:run:` 的 scope，并且必须能被解析器接受。
   static bool _isRunScope(String value) =>
-      value.startsWith('run:') ||
-      (value.startsWith('flow:') && value.contains(':run:'));
+      value.startsWith('flow:') &&
+      value.contains(':run:') &&
+      PouchScope.tryParse(value) != null;
 
   static FlowRunView? fromResponse(Map<String, dynamic> response) {
     if (response['success'] != true) return null;
@@ -496,6 +501,11 @@ class FlowRunView {
                 : null);
     var runScope = _stringField(response, ['run_scope', 'run_pouch_scope']) ??
         _stringField(hostMeta, ['run_scope', 'pouch_scope']);
+    // 主机给的字符串也可能是拼出来的畸形 scope（老 run_id 带连字符），
+    // 解析器拒就丢掉，退回下面的 buildFlowRunScope / 等下一次真值。
+    if (runScope != null && PouchScope.tryParse(runScope) == null) {
+      runScope = null;
+    }
     final genericScope =
         _stringField(response, ['scope']) ?? _stringField(hostMeta, ['scope']);
     if (genericScope != null && _isRunScope(genericScope)) {
@@ -503,7 +513,9 @@ class FlowRunView {
     }
     if (runScope == null && instanceScope != null) {
       final id = (response['run_id'] as String?) ?? '';
-      if (id.isNotEmpty) runScope = '$instanceScope:run:$id';
+      if (id.isNotEmpty) {
+        runScope = PouchScope.buildFlowRunScope(instanceScope, id);
+      }
     }
     return FlowRunView(
       runId: (response['run_id'] as String?) ?? '',

@@ -194,6 +194,28 @@ void main() {
         ['final.md', 'draft.md']);
   });
 
+  test('a failed list is null, not an empty artifact list', () async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    final client = HubArtifact(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        bus.add(PeerControlEvent(
+          peerId: peerId,
+          data: {
+            'type': HubArtifact.listResponseType,
+            'request_id': frame['request_id'],
+            'success': false,
+            'error': 'peer_busy',
+          },
+        ));
+        return true;
+      },
+    );
+    // 主机报错 / 超时必须和「确实没有产物」区分开，否则重载会清空卡片。
+    expect(await client.list('p1', _runScope), isNull);
+    await bus.close();
+  });
+
   test('service round-trips list and get over injected control events',
       () async {
     final bus = StreamController<PeerControlEvent>.broadcast();
@@ -228,7 +250,8 @@ void main() {
     );
     final listed = await client.list('p1', _runScope, runId: 'run_1');
     final got = await client.get('p1', 'art_1', scope: _runScope, version: 1);
-    expect(listed.single.artifactId, 'art_1');
+    expect(listed, isNotNull);
+    expect(listed!.single.artifactId, 'art_1');
     expect(got?.artifactId, 'art_1');
     expect(sent.map((f) => f['type']), [
       HubArtifact.listRequestType,

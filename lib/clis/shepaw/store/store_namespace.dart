@@ -98,6 +98,15 @@ Future<String?> storeAgentAccessError(String uri) async {
     if (scoped.parsedScope.family == PouchScopeFamily.agent) {
       return _agentScopeOwnerError(scoped.parsedScope);
     }
+    // 三层工作流树（实例 / 带父链的运行）里的产物、锚点和草稿都由 Hub
+    // 管理，Agent CLI 不该绕过主机 ACL 直接读写；模板库 `flow:<name>`
+    // 仍是只读的流程定义，保持原样。
+    final scope = scoped.parsedScope;
+    if (scope.family == PouchScopeFamily.flow &&
+        (scope.kind == PouchScopeKind.instance ||
+            (scope.kind == PouchScopeKind.run && scope.parentId != null))) {
+      return '工作流实例 / 运行 scope 由 Hub 管理，Agent CLI 不能访问';
+    }
     return null;
   }
 
@@ -704,13 +713,16 @@ Future<List<Map<String, dynamic>>> mapArtifactMetaHits(
   bool metaOnly = false,
 }) async {
   const suffix = ArtifactService.metaSuffix;
-  bool isMeta(Map<String, dynamic> h) =>
-      '${h['path'] ?? ''}'.endsWith(suffix);
+  bool isMeta(Map<String, dynamic> h) => '${h['path'] ?? ''}'.endsWith(suffix);
 
-  final direct = [for (final h in hits) if (!isMeta(h)) h];
+  final direct = [
+    for (final h in hits)
+      if (!isMeta(h)) h
+  ];
   // metaOnly 时本体命中会被丢掉，不能用它们去折叠 sidecar 命中。
   final added = <String>{
-    if (!metaOnly) for (final h in direct) '${h['path'] ?? ''}',
+    if (!metaOnly)
+      for (final h in direct) '${h['path'] ?? ''}',
   };
   final out = <Map<String, dynamic>>[];
   if (!metaOnly) out.addAll(direct);
@@ -775,9 +787,8 @@ class StoreSearchCommand extends CliCommand {
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final task = (flags['task'] ?? '').trim();
-    final taskSeg = task.isEmpty
-        ? ''
-        : 'artifacts/${RuntimePaths.sanitizeSegment(task)}/';
+    final taskSeg =
+        task.isEmpty ? '' : 'artifacts/${RuntimePaths.sanitizeSegment(task)}/';
     final desc = (flags['desc'] ?? '').trim();
     var q = (flags['query'] ?? flags['q'] ?? '').trim();
     // `--task` 单独给时，task 段本身就在路径里；`--desc` 的文本只在 sidecar 里，

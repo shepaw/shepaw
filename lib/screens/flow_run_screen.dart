@@ -167,6 +167,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   List<FlowArtifact> _runArtifacts = const <FlowArtifact>[];
   List<FlowArtifact> _instanceArtifacts = const <FlowArtifact>[];
   bool _artifactsLoading = false;
+  bool _artifactsFailed = false;
   int _artifactLoadSeq = 0;
 
   /// 未来加「再跑一次」时用这个 id 调 `_client.start(instanceId: ...)`。
@@ -234,6 +235,9 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       _runArtifacts = const <FlowArtifact>[];
       _instanceArtifacts = const <FlowArtifact>[];
       _artifactsLoading = false;
+      _artifactsFailed = false;
+      // 作废在途加载，避免旧 runId 的回复写进新页面的状态。
+      _artifactLoadSeq++;
     }
   }
 
@@ -323,7 +327,12 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       }
       final marker = scope.lastIndexOf(':run:');
       if (marker > 0) {
-        _runScope ??= scope;
+        // 实例列表带 include_descendants，会看到兄弟运行的产物；只认末段等于
+        // 本次 runId 的 scope，否则「本次运行」会串到别的运行上去。
+        final runId = scope.substring(marker + ':run:'.length);
+        if (runId == widget.runId && !runId.contains('/')) {
+          _runScope ??= scope;
+        }
         _instanceScope ??= scope.substring(0, marker);
       } else if (scope.contains(':instance:')) {
         _instanceScope ??= scope;
@@ -363,6 +372,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
           _runArtifacts = const <FlowArtifact>[];
           _instanceArtifacts = const <FlowArtifact>[];
           _artifactsLoading = false;
+          _artifactsFailed = false;
         });
       }
       return;
@@ -370,24 +380,32 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     if (mounted) setState(() => _artifactsLoading = true);
     try {
       final runFuture = runScope == null
-          ? Future<List<FlowArtifact>>.value(const <FlowArtifact>[])
+          ? Future<List<FlowArtifact>?>.value(const <FlowArtifact>[])
           : _artifactClient.list(widget.peerId, runScope, runId: widget.runId);
       final instanceFuture = instanceScope == null
-          ? Future<List<FlowArtifact>>.value(const <FlowArtifact>[])
+          ? Future<List<FlowArtifact>?>.value(const <FlowArtifact>[])
           : _artifactClient.list(widget.peerId, instanceScope);
       final results =
-          await Future.wait<List<FlowArtifact>>([runFuture, instanceFuture]);
+          await Future.wait<List<FlowArtifact>?>([runFuture, instanceFuture]);
       if (!mounted || generation != _artifactLoadSeq) return;
-      var runArtifacts = results[0];
-      var instanceArtifacts = results[1];
+      // 两个请求都没拿到可信回复：保留已显示的产物，给重试入口，
+      // 不要把一次超时 / peer_busy 渲染成「还没有产物」。
+      if (results[0] == null && results[1] == null) {
+        setState(() {
+          _artifactsLoading = false;
+          _artifactsFailed = true;
+        });
+        return;
+      }
+      var runArtifacts = results[0] ?? const <FlowArtifact>[];
+      var instanceArtifacts = results[1] ?? const <FlowArtifact>[];
       _syncCoordsFromArtifacts([...runArtifacts, ...instanceArtifacts]);
       // 第一次没实例坐标，但 run 产物的 scope 补出来了：顺手把 promote 到
       // 实例层的产物也取回来，「本实例」切换才有内容。
       if (instanceScope == null && _instanceScope != null) {
-        instanceArtifacts = await _artifactClient.list(
-          widget.peerId,
-          _instanceScope!,
-        );
+        instanceArtifacts =
+            (await _artifactClient.list(widget.peerId, _instanceScope!)) ??
+                instanceArtifacts;
         if (!mounted || generation != _artifactLoadSeq) return;
       }
       setState(() {
@@ -395,13 +413,14 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
         _instanceArtifacts =
             FlowArtifact.groupByArtifactId(_promotedOnly(instanceArtifacts));
         _artifactsLoading = false;
+        _artifactsFailed = false;
       });
     } catch (_) {
       if (!mounted || generation != _artifactLoadSeq) return;
+      // 异常同样保留已有列表，只标记失败。
       setState(() {
-        _runArtifacts = const <FlowArtifact>[];
-        _instanceArtifacts = const <FlowArtifact>[];
         _artifactsLoading = false;
+        _artifactsFailed = true;
       });
     }
   }
@@ -900,6 +919,8 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
           instanceArtifacts: _instanceArtifacts,
           instanceScopeAvailable: _instanceScope != null,
           loading: _artifactsLoading,
+          failed: _artifactsFailed,
+          onRetry: _loadArtifacts,
           onOpenUri: widget.openArtifactUri,
         ),
         // 运行级失败 / 取消原因。主机把 Failed 的 error 和 Cancel 的 reason

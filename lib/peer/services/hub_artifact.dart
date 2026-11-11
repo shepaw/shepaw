@@ -75,7 +75,9 @@ class HubArtifact {
   static FlowArtifact? parseGetResponse(Map<String, dynamic>? response) =>
       FlowArtifact.fromResponse(response);
 
-  Future<List<FlowArtifact>> list(
+  /// 返回 null 表示「没拿到可信回复」（超时 / 主机报错 / 无响应），空列表才是
+  /// 「确实没有产物」。调用方据此保留已有卡片，不要一次抖动就把产物清空。
+  Future<List<FlowArtifact>?> list(
     String peerId,
     String scope, {
     String? runId,
@@ -87,6 +89,8 @@ class HubArtifact {
       responseType: listResponseType,
       command: artifactListCommand,
     );
+    if (response == null) return null;
+    if (response['success'] == false || response['error'] != null) return null;
     return parseListResponse(response);
   }
 

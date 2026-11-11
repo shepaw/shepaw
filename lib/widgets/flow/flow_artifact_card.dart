@@ -30,6 +30,8 @@ class FlowArtifactCard extends StatefulWidget {
     this.instanceArtifacts = const <FlowArtifact>[],
     this.instanceScopeAvailable = false,
     this.loading = false,
+    this.failed = false,
+    this.onRetry,
     this.onScopeChanged,
     this.onOpenUri,
   });
@@ -43,6 +45,11 @@ class FlowArtifactCard extends StatefulWidget {
   /// 老主机没有实例坐标时隐藏「本实例」切换。
   final bool instanceScopeAvailable;
   final bool loading;
+
+  /// 拉取失败（超时 / 主机报错）。失败时保留已有列表并给重试入口，
+  /// 不把一次抖动渲染成「还没有产物」。
+  final bool failed;
+  final VoidCallback? onRetry;
   final ValueChanged<FlowArtifactScope>? onScopeChanged;
 
   /// 测试注入；生产缺省走 [StoreOpenService.instance.openStoreUri]。
@@ -145,6 +152,24 @@ class _FlowArtifactCardState extends State<FlowArtifactCard> {
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 10),
                 child: LinearProgressIndicator(minHeight: 2),
+              )
+            else if (widget.failed)
+              Padding(
+                key: const ValueKey('flow-artifact-failed'),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, size: 16),
+                    const SizedBox(width: 8),
+                    const Expanded(child: Text('产物加载失败')),
+                    if (widget.onRetry != null)
+                      TextButton(
+                        key: const ValueKey('flow-artifact-retry'),
+                        onPressed: widget.onRetry,
+                        child: const Text('重试'),
+                      ),
+                  ],
+                ),
               )
             else if (artifacts.isEmpty)
               const Padding(

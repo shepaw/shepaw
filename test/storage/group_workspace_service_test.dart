@@ -249,7 +249,8 @@ void main() {
       );
       expect(summary!['status'], 'round_complete');
       expect(summary['admin_summary'], '已完成基础架构');
-      final steps = (summary['dispatch'] as Map<String, dynamic>)['steps'] as List;
+      final steps =
+          (summary['dispatch'] as Map<String, dynamic>)['steps'] as List;
       expect(steps.single['task'], '实现功能');
     });
 
@@ -294,7 +295,11 @@ void main() {
         groupId: 'group_test4',
         sessionId: 'session_event',
         seq: 1,
-        payload: {'kind': 'group_event', 'type': 'stepFailed', 'summary': 'boom'},
+        payload: {
+          'kind': 'group_event',
+          'type': 'stepFailed',
+          'summary': 'boom'
+        },
       );
       await ws.writeEventLog(
         groupId: 'group_test4',
@@ -330,8 +335,7 @@ void main() {
       expect(sanitizeMemberRelPath('  '), isNull);
     });
 
-    test('groupWorkspaceAccessError：成员可读，非成员拒绝，非群空间放行',
-        () async {
+    test('groupWorkspaceAccessError：成员可读，非成员拒绝，非群空间放行', () async {
       await ws.ensureGroupWorkspace(
         groupId: 'group_perm',
         members: [
@@ -400,6 +404,28 @@ void main() {
             await storeAgentAccessError('$pouch/agent:agent-member/files/a'),
             isNull,
           );
+          // 三层工作流实例 / 运行 scope 由 Hub 管理，Agent CLI 不能借 v3
+          // 地址绕过主机 ACL 读写产物、锚点或草稿。
+          const fid = 'fl_0123456789abcdef0123456789abcdef';
+          const iid = 'in_0123456789abcdef';
+          const rid = 'run_0123456789abcdef0123456789abcdef';
+          expect(
+            await storeAgentAccessError(
+              '$pouch/flow:$fid:instance:$iid:run:$rid/artifacts/a/v1/a.md',
+            ),
+            isNotNull,
+          );
+          expect(
+            await storeAgentAccessError(
+              '$pouch/flow:$fid:instance:$iid/instance.json',
+            ),
+            isNotNull,
+          );
+          // 模板库仍是只读流程定义，保持原样。
+          expect(
+            await storeAgentAccessError('$pouch/flow:weekly-report/meta.json'),
+            isNull,
+          );
         },
       );
 
@@ -443,8 +469,7 @@ void main() {
         sessionId: 'group_session_b',
         content: '任务 B 结论：修复了调度 bug。',
       );
-      final latestBytes =
-          await StoreUriReader.instance.read(uri1!);
+      final latestBytes = await StoreUriReader.instance.read(uri1!);
       expect(utf8.decode(latestBytes), '任务 B 结论：修复了调度 bug。');
 
       final sessionABytes = await StoreUriReader.instance.read(
@@ -460,14 +485,15 @@ void main() {
         groupId: 'group_events',
         members: [(agentId: 'she', role: 'admin')],
       );
-      const eventsDir = 'group_events/shared/orchestration/group_session_ev/events';
-      final writeLog = (int seq, Map<String, dynamic> payload) =>
-          ws.writeEventLog(
-            groupId: 'group_events',
-            sessionId: 'group_session_ev',
-            seq: seq,
-            payload: payload,
-          );
+      const eventsDir =
+          'group_events/shared/orchestration/group_session_ev/events';
+      final writeLog =
+          (int seq, Map<String, dynamic> payload) => ws.writeEventLog(
+                groupId: 'group_events',
+                sessionId: 'group_session_ev',
+                seq: seq,
+                payload: payload,
+              );
 
       // 乱序写入（seq 编号决定顺序），并混入一条不可解析的 JSON。
       await writeLog(3, {
@@ -547,21 +573,38 @@ void main() {
 
       // 旧决定（本轮开始前写入）→ 不消费
       await writeInbox('dispatch.json', {
-        'issued_at': DateTime.now().subtract(const Duration(minutes: 5)).toUtc().toIso8601String(),
+        'issued_at': DateTime.now()
+            .subtract(const Duration(minutes: 5))
+            .toUtc()
+            .toIso8601String(),
         'kind': 'dispatch',
         'mode': 'concurrent',
-        'steps': [{'step': 1, 'agents': ['Coder'], 'task': '旧任务'}],
+        'steps': [
+          {
+            'step': 1,
+            'agents': ['Coder'],
+            'task': '旧任务'
+          }
+        ],
       });
       // 新决定（本轮开始后写入）→ 消费
       await writeInbox('finish.json', {
-        'issued_at': DateTime.now().add(const Duration(seconds: 1)).toUtc().toIso8601String(),
+        'issued_at': DateTime.now()
+            .add(const Duration(seconds: 1))
+            .toUtc()
+            .toIso8601String(),
         'kind': 'finish',
         'action': 'done',
       });
       await writeInbox('mentions.json', {
-        'issued_at': DateTime.now().add(const Duration(seconds: 2)).toUtc().toIso8601String(),
+        'issued_at': DateTime.now()
+            .add(const Duration(seconds: 2))
+            .toUtc()
+            .toIso8601String(),
         'kind': 'mention',
-        'mentions': [{'name': 'Coder', 'notify': true, 'reason': '协助'}],
+        'mentions': [
+          {'name': 'Coder', 'notify': true, 'reason': '协助'}
+        ],
       });
 
       final inbox = await ws.readOrchestrationInbox(
@@ -587,8 +630,7 @@ void main() {
   });
 
   group('跨设备 ACL (grantPeerAccess)', () {
-    test('friend 设备追加成员目录与 shared 白名单；owner 设备不动；幂等',
-        () async {
+    test('friend 设备追加成员目录与 shared 白名单；owner 设备不动；幂等', () async {
       await ws.ensureGroupWorkspace(
         groupId: 'group_acl',
         members: [(agentId: 'agent-peer', role: 'member')],
@@ -709,10 +751,12 @@ void main() {
       );
       expect(req, isNotNull);
       expect(req!.uri, contains('shared/tasks/$orchId/requirement.md'));
-      expect(await ws.readTaskRequirement(
-        groupId: 'group_task1',
-        orchestrationId: orchId,
-      ), contains('PR-1'));
+      expect(
+          await ws.readTaskRequirement(
+            groupId: 'group_task1',
+            orchestrationId: orchId,
+          ),
+          contains('PR-1'));
 
       final plan = GroupTaskPlan(
         orchestrationId: orchId,
@@ -761,7 +805,9 @@ void main() {
         round: 1,
         taskStatus: GroupTaskMemberResult.statusDone,
         summary: '已实现模型与测试',
-        artifactUris: ['pouch://workspaces/dev/group_task1/members/agent-coder/plan_impl.md'],
+        artifactUris: [
+          'pouch://workspaces/dev/group_task1/members/agent-coder/plan_impl.md'
+        ],
         messageId: 'reply-1',
       );
       final results = await ws.upsertTaskMemberResult(
@@ -770,7 +816,8 @@ void main() {
         memberResult: memberResult,
       );
       expect(results!.members.single.agentName, 'Coder');
-      expect(results.members.single.taskStatus, GroupTaskMemberResult.statusDone);
+      expect(
+          results.members.single.taskStatus, GroupTaskMemberResult.statusDone);
 
       final readResults = await ws.readTaskResults(
         groupId: 'group_task1',
@@ -785,10 +832,12 @@ void main() {
         finalSummaryUri: 'pouch://workspaces/dev/latest.md',
       );
       expect(archive, isNotNull);
-      expect(await ws.readTaskArchive(
-        groupId: 'group_task1',
-        orchestrationId: orchId,
-      ), contains('PR-1 已完成'));
+      expect(
+          await ws.readTaskArchive(
+            groupId: 'group_task1',
+            orchestrationId: orchId,
+          ),
+          contains('PR-1 已完成'));
 
       final done = await ws.updateTaskStatus(
         groupId: 'group_task1',
