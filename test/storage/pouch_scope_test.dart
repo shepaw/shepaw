@@ -470,4 +470,25 @@ void main() {
     );
     expect(flowScopeCountsLabel(scopes), '模板 1 · 实例 1 · 运行 2');
   });
+
+  test('buildFlowRunScope 只接受主机能解析的 run_id', () {
+    const instance = 'flow:fl_1:instance:in_1';
+    expect(
+      PouchScope.buildFlowRunScope(instance, 'run_0123456789abcdef'),
+      '$instance:run:run_0123456789abcdef',
+    );
+    // 老主机的裸 uuid / 大写 / 非 hex：拼出来主机解析器会拒，返回 null
+    // 让调用方等 flow_run_get_resp 里的 run_scope 真值。
+    for (final bad in [
+      'run_00000000-0000-0000-0000-000000000001',
+      'run_ABC',
+      'run_hello',
+      'plain-id',
+    ]) {
+      expect(PouchScope.buildFlowRunScope(instance, bad), isNull, reason: bad);
+    }
+    expect(
+        PouchScope.buildFlowRunScope('flow:weekly-report:instance:i1', 'run_1'),
+        isNull);
+  });
 }

@@ -295,6 +295,15 @@ class PouchScope {
     );
   }
 
+  /// 已有实例 scope 时拼出三层 run scope。`runId` 可能是老主机的裸 uuid
+  /// （带连字符、非小写 hex），拼出来的字符串主机解析器会拒 —— 这里先
+  /// `tryParse` 校验，不合法返回 null，调用方退回等 `flow_run_get_resp`
+  /// 里的 `run_scope` 真值。
+  static String? buildFlowRunScope(String instanceScope, String runId) {
+    final candidate = '$instanceScope:run:$runId';
+    return PouchScope.tryParse(candidate)?.id;
+  }
+
   /// 旧的两段式运行 scope。主机切到三层树之前仍在写它，所以解析层继续认；
   /// 新代码构造运行地址一律走 [flowRun]。
   static PouchScope legacyRun(String runId) =>

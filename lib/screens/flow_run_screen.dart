@@ -196,7 +196,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     _instanceScope = widget.instanceScope;
     _runScope = widget.runScope;
     if (_runScope == null && _instanceScope != null) {
-      _runScope = '$_instanceScope:run:${widget.runId}';
+      _runScope = PouchScope.buildFlowRunScope(_instanceScope!, widget.runId);
     }
     _sub = _client.runEvents(widget.peerId).listen(_onEvent);
     // 注入了假传输（send 非空）又不给连接事件流时不要碰真实连接管理器；
@@ -229,7 +229,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       _instanceScope = widget.instanceScope;
       _runScope = widget.runScope;
       if (_runScope == null && _instanceScope != null) {
-        _runScope = '$_instanceScope:run:${widget.runId}';
+        _runScope = PouchScope.buildFlowRunScope(_instanceScope!, widget.runId);
       }
       _runArtifacts = const <FlowArtifact>[];
       _instanceArtifacts = const <FlowArtifact>[];
@@ -307,7 +307,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     _instanceScope ??= run.instanceScope;
     _runScope ??= run.runScope;
     if (_runScope == null && _instanceScope != null) {
-      _runScope = '$_instanceScope:run:${widget.runId}';
+      _runScope = PouchScope.buildFlowRunScope(_instanceScope!, widget.runId);
     }
   }
 

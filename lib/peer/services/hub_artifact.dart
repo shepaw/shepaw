@@ -100,6 +100,9 @@ class HubArtifact {
     if (artifactId.trim().isEmpty && (uri == null || uri.trim().isEmpty)) {
       return null;
     }
+    // 主机要求三层树 scope 作为授权边界（防止跨实例读产物）；没带就不发帧，
+    // 和 list 对空 scope 的降级保持一致。
+    if (scope.trim().isEmpty) return null;
     final response = await _request(
       peerId,
       artifactGetFrame(
@@ -133,8 +136,13 @@ class HubArtifact {
       }
       final type = event.type;
       final isTypedReply = type == responseType || type == command;
-      final isPouchEnvelope =
-          type == 'pouch' && (data['op'] == 'result' || data['op'] == 'error');
+      // 通用 pouch 信封只在真的带着产物数据时才算回复；否则同一个 req_id
+      // 上任何一次无关的 pouch result/error 都会把等待提前结束。
+      final isPouchEnvelope = type == 'pouch' &&
+          (data['op'] == 'result' || data['op'] == 'error') &&
+          (data.containsKey('artifacts') ||
+              data.containsKey('artifact') ||
+              data.containsKey('artifact_id'));
       if (isTypedReply || isPouchEnvelope) done.complete(data);
     });
     try {

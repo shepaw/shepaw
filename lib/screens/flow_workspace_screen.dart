@@ -14,6 +14,7 @@ import '../services/local_database_service.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/services/hub_flow.dart';
 import '../peer/services/peer_agent_ids.dart';
+import '../storage/pouch_scope.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/flow/flow_context_panel.dart';
@@ -457,7 +458,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       instanceScope: result.instanceScope,
       runScope: result.instanceScope == null
           ? null
-          : '${result.instanceScope}:run:$runId',
+          : PouchScope.buildFlowRunScope(result.instanceScope!, runId),
     );
   }
 
