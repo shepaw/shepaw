@@ -184,23 +184,26 @@ void main() {
       if (json['type'] == 'agent_form_resp') {
         responses++;
         if (responses == 1) {
-          svc.debugInjectControlForTest(
-            'agent_card_resp_ack',
-            {
-              'type': 'agent_card_resp_ack',
-              'approval_id': json['approval_id'],
-              'ok': false,
-              'reason': 'expired',
-            },
-            peerId: peerId,
-          );
+          // 延迟到两次 submitForm 都登记了等待位之后才回。用非终态的
+          // session_mismatch：终态账本不会兜底，只有 Set<Completer> 能让
+          // 一个回执完成两个等待位（旧 Map<String, Completer> 会互相覆盖）。
+          Future<void>.delayed(const Duration(milliseconds: 20), () {
+            svc.debugInjectControlForTest(
+              'agent_card_resp_ack',
+              {
+                'type': 'agent_card_resp_ack',
+                'approval_id': json['approval_id'],
+                'ok': false,
+                'reason': 'session_mismatch',
+              },
+              peerId: peerId,
+            );
+          });
         }
       }
       return true;
     };
 
-    // 两次提交都登记了等待位；第一个回执到达时两张都该被拒，不能有一个
-    // 因为等待位被覆盖而误判「老主机无 ack」把卡片标成已答。
     final first = svc.submitForm(
       peerId: 'peer-1',
       approvalId: 'ack-double',
@@ -213,6 +216,8 @@ void main() {
       values: const {'question_0': '选 B'},
       hostChannelId: 'dm_remote-agent_user_1',
     );
+    // 让两个 _registerCardRespAck 都跑完再放行 ack。
+    await pumpEventQueue();
     await expectLater(first, throwsA(isA<PeerCardRejectedException>()));
     await expectLater(second, throwsA(isA<PeerCardRejectedException>()));
   });

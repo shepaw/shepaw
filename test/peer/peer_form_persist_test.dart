@@ -256,4 +256,101 @@ void main() {
       throwsA(isA<PeerApprovalExpiredException>()),
     );
   });
+
+  test('重启后从库里渲染出的孤儿审批卡仍然答得出去', () async {
+    final channelId = await newChannel();
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final approvalId = 'approv-restart-$stamp';
+    // 第 7 轮 `_publishOrphanCardToHub` 会给无归属孤儿审批卡落这条确定性行。
+    // 内存账簿全空时点 Allow，不能因为 submitApproval 只认内存就被判过期。
+    await db.createMessage(
+      id: PeerApprovalPayload.approvalCardMessageId(approvalId),
+      channelId: channelId,
+      senderId: 'agent-1',
+      senderType: 'agent',
+      senderName: 'Agent',
+      content: '要允许吗',
+      metadata: {
+        'action_confirmation': {
+          'confirmation_id': approvalId,
+          'confirmation_context': 'peer',
+          'prompt': '要允许吗',
+          'actions': const [
+            {'id': 'allow', 'label': '允许'}
+          ],
+          'orphan': true,
+        },
+        'card_peer_id': 'peer-1',
+      },
+    );
+
+    svc.debugSendControlOverride = (_, __) async => true;
+    await expectLater(
+      svc.submitApproval(
+        peerId: 'peer-1',
+        approvalId: approvalId,
+        selectedActionId: 'allow',
+        hostChannelId: hostSessionIdForChannel(channelId),
+      ),
+      completes,
+      reason: '确定性审批行证明这张卡本机见过，不该被 known-guard 判成过期',
+    );
+  });
+
+  test('已点过 / 别的会话的孤儿审批卡仍然拒绝提交', () async {
+    final channelId = await newChannel();
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final approvalId = 'approv-answered-$stamp';
+    await db.createMessage(
+      id: PeerApprovalPayload.approvalCardMessageId(approvalId),
+      channelId: channelId,
+      senderId: 'agent-1',
+      senderType: 'agent',
+      senderName: 'Agent',
+      content: '要允许吗',
+      metadata: {
+        'action_confirmation': {
+          'confirmation_id': approvalId,
+          'confirmation_context': 'peer',
+          'selected_action_id': 'allow',
+        },
+        'card_peer_id': 'peer-1',
+      },
+    );
+    await expectLater(
+      svc.submitApproval(
+        peerId: 'peer-1',
+        approvalId: approvalId,
+        selectedActionId: 'deny',
+      ),
+      throwsA(isA<PeerApprovalExpiredException>()),
+    );
+
+    // 归属别的会话的行也不能借 persisted 兜底绕过会话校验。
+    final foreignId = 'approv-foreign-$stamp';
+    await db.createMessage(
+      id: PeerApprovalPayload.approvalCardMessageId(foreignId),
+      channelId: 'dm_other_session',
+      senderId: 'agent-1',
+      senderType: 'agent',
+      senderName: 'Agent',
+      content: '要允许吗',
+      metadata: {
+        'action_confirmation': {
+          'confirmation_id': foreignId,
+          'confirmation_context': 'peer',
+        },
+        'card_peer_id': 'peer-1',
+      },
+    );
+    await expectLater(
+      svc.submitApproval(
+        peerId: 'peer-1',
+        approvalId: foreignId,
+        selectedActionId: 'allow',
+        hostChannelId: hostSessionIdForChannel(channelId),
+      ),
+      throwsA(isA<PeerApprovalExpiredException>()),
+    );
+  });
 }

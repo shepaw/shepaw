@@ -1469,10 +1469,25 @@ mixin _MessagingOps on _ChatControllerBase {
 
     final data = Map<String, dynamic>.from(actionData);
     data['confirmation_context'] ??= 'peer';
+    // 归属要留在消息顶层（和 DM 的 _handleStreamingActionConfirmation
+    // 同款）：群孤儿卡原来把 channel_id / peer_id 一起丢掉，结果既没法在
+    // submitApproval 带 channel_id，也没法进有效性轮询。
+    final cardChannel = (data['card_channel_id'] ?? data['channel_id'])
+            ?.toString()
+            .trim() ??
+        '';
+    final cardPeer =
+        (data['card_peer_id'] ?? data['peer_id'])?.toString().trim() ?? '';
+    final routing = <String, dynamic>{
+      if (cardChannel.isNotEmpty) 'card_channel_id': cardChannel,
+      if (cardPeer.isNotEmpty) 'card_peer_id': cardPeer,
+    };
     // Strip routing-only fields so message metadata stays card-shaped.
     data.remove('peer_id');
     data.remove('remote_agent_id');
     data.remove('channel_id');
+    data.remove('card_peer_id');
+    data.remove('card_channel_id');
 
     final confirmationId = data['confirmation_id'] as String? ?? '';
     LoggerService().info(
@@ -1500,14 +1515,25 @@ mixin _MessagingOps on _ChatControllerBase {
     if (sid == null) return;
 
     _updateGroupStreamingMetadata(sid, 'action_confirmation', data);
+    // 内存里同样要带归属：轮询 / dock / 提交校验都直接读 messages，
+    // 只写 DB 的话重开页面之前都看不到。
+    if (routing.isNotEmpty) {
+      final idx = messages.indexWhere((m) => m.id == sid);
+      if (idx != -1) {
+        final updated =
+            ChatStreamingText.withMergedMetadata(messages[idx], routing);
+        messages[idx] = updated;
+        messageIdMap[sid] = updated;
+        _notify();
+      }
+    }
     localDatabaseService
-        .updateMessageMetadata(
+        .mergeMessageMetadata(
           sid,
-          GroupInteractionPlanner.metadataForPersist(
-            existing: messageIdMap[sid]?.metadata,
-            interactionType: 'action_confirmation',
-            data: data,
-          ),
+          {
+            'action_confirmation': data,
+            ...routing,
+          },
         )
         .ignore();
 

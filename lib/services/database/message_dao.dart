@@ -55,6 +55,10 @@ class StoredMessageInsert {
 
 /// 消息（含流式/部分消息）相关的数据访问层。
 extension MessageDao on LocalDatabaseService {
+  /// 同一条消息的 metadata 读–改–写要串行：两个 patch 并发时若各自读到旧
+  /// 快照，后写者会整份盖掉先写者（card_channel_id 或 closed 丢失）。
+  static final Map<String, Future<void>> _metadataMergeChains = {};
+
   /// 创建消息
   Future<void> createMessage({
     required String id,
@@ -634,7 +638,25 @@ extension MessageDao on LocalDatabaseService {
   ///
   /// 后台任务（附件双写、事件合并）手里往往是一份旧的 metadata 快照；
   /// 整份回写会把别处刚写进去的字段（撤回、回应、`pouch_uri` 更新…）覆盖掉。
+  /// 同一行的多次 merge 走串行链，避免两个 patch 各自读到旧快照互相覆盖。
   Future<void> mergeMessageMetadata(
+    String messageId,
+    Map<String, dynamic> patch,
+  ) {
+    final previous = _metadataMergeChains[messageId] ?? Future<void>.value();
+    final Future<void> next = previous.then(
+      (_) => _mergeMessageMetadataNow(messageId, patch),
+      onError: (Object _) => _mergeMessageMetadataNow(messageId, patch),
+    );
+    _metadataMergeChains[messageId] = next;
+    return next.whenComplete(() {
+      if (identical(_metadataMergeChains[messageId], next)) {
+        _metadataMergeChains.remove(messageId);
+      }
+    });
+  }
+
+  Future<void> _mergeMessageMetadataNow(
     String messageId,
     Map<String, dynamic> patch,
   ) async {

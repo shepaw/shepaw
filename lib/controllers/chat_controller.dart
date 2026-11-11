@@ -977,6 +977,31 @@ abstract class _ChatControllerBase extends ChangeNotifier
   @visibleForTesting
   Timer? get cardValidityTimerForTest => _cardValidityTimer;
 
+  /// hub 卡的载荷同时挂在 `metadata[kind]` 上（form / 单选 / 多选 /
+  /// action_confirmation）。用户点过之后 `selected_action_id` /
+  /// `submitted_values` / `closed` 会写在这里，不能只看 `closed`。
+  bool _hubCardAlreadyAnswered(Map<dynamic, dynamic> meta, Map hub) {
+    final kind = hub['interaction_type']?.toString() ?? '';
+    for (final key in <String>[
+      kind,
+      'form',
+      'action_confirmation',
+      'single_select',
+      'multi_select',
+    ]) {
+      if (key.isEmpty) continue;
+      final card = meta[key];
+      if (card is! Map) continue;
+      if (card['submitted_values'] != null ||
+          card['selected_action_id'] != null ||
+          card['selected'] != null ||
+          card['closed'] != null) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// 收集本会话里「主机那边确实有等待位」的卡，按所属主机分组问一次状态。
   ///
   /// 本地工具卡（She / 群编排用 `form`、`action_confirmation` 画的卡）也带
@@ -1016,14 +1041,24 @@ abstract class _ChatControllerBase extends ChangeNotifier
       // 删掉的可能是 B 会话里唯一一份落库副本。
       final cardChannel = meta['card_channel_id']?.toString().trim() ?? '';
       if (cardChannel.isNotEmpty && cardChannel != hostChannel) continue;
+      // `card_peer_id` / `card_channel_id` 是主机审批卡的专属标记：本地
+      // She / 群编排 / CLI 卡不会写。无归属（flow: / default）的主机卡
+      // 只有 card_peer_id，同样要参与对账，否则被跨端答掉后屏幕上会
+      // 留一张点下去只报失效的死卡。
+      final cardPeer = meta['card_peer_id']?.toString().trim() ?? '';
       // hub 卡同时带 `hub_interaction` 和 `metadata[kind]`（form / 单选等）。
       // 它只在 PhoneState 的 interaction_id 等待位里，当成 approval_id 查会
       // 被主机回「gone」而误删，所以命中后不再收其它卡。
       final hub = meta['hub_interaction'];
       if (hub is Map) {
         final id = hub['interaction_id']?.toString() ?? '';
-        add(hub['host_peer_id']?.toString().trim() ?? '', id, message.id,
-            interaction: true);
+        // 本机已经答过的 hub 卡不能再进对账：主机回 answered_here，
+        // _markCardAnswered 会把用户的选择覆写成 expired，账本过期后还会
+        // 把整行删掉。已答/已收场的卡一律跳过。
+        if (id.isNotEmpty && !_hubCardAlreadyAnswered(meta, hub)) {
+          add(hub['host_peer_id']?.toString().trim() ?? '', id, message.id,
+              interaction: true);
+        }
         continue;
       }
       final form = meta['form'];
@@ -1044,10 +1079,9 @@ abstract class _ChatControllerBase extends ChangeNotifier
           approval['confirmation_context'] == 'peer' &&
           approval['selected_action_id'] == null &&
           approval['closed'] == null &&
-          cardChannel.isNotEmpty) {
+          (cardChannel.isNotEmpty || cardPeer.isNotEmpty)) {
         final id = approval['confirmation_id']?.toString() ?? '';
-        add(meta['card_peer_id']?.toString().trim() ?? '', id, message.id,
-            interaction: false);
+        add(cardPeer, id, message.id, interaction: false);
       }
     }
     final allPeers = <String>{
@@ -1208,7 +1242,12 @@ abstract class _ChatControllerBase extends ChangeNotifier
       final card = meta[key];
       if (card is! Map) continue;
       final merged = Map<String, dynamic>.from(card);
-      if (merged['submitted_values'] != null || merged['closed'] != null) {
+      // 已答 / 已收场的卡不能改写：用户点过的裁决比轮询回来的
+      // answered_here / answered_elsewhere 更可信。
+      if (merged['submitted_values'] != null ||
+          merged['closed'] != null ||
+          merged['selected_action_id'] != null ||
+          merged['selected'] != null) {
         continue;
       }
       if (key == 'action_confirmation') {

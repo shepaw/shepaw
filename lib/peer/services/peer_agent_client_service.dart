@@ -2209,15 +2209,29 @@ class PeerAgentClientService {
 
   /// 这张卡最近被主机判过终态吗（expired / answered_elsewhere / …）。
   String? _recentTerminalRejection(String approvalId) {
-    final hit = _terminalCardRejections.remove(approvalId);
+    _pruneTerminalRejections();
+    final hit = _terminalCardRejections[approvalId];
     if (hit == null) return null;
-    if (DateTime.now().millisecondsSinceEpoch - hit.atMs >=
-        _terminalCardRejectionTtlMs) {
-      return null;
-    }
-    // 保留到 TTL 结束，覆盖紧接着的多次重投。
-    _terminalCardRejections[approvalId] = hit;
-    return hit.reason;
+    return DateTime.now().millisecondsSinceEpoch - hit.atMs <
+            _terminalCardRejectionTtlMs
+        ? hit.reason
+        : null;
+  }
+
+  void _pruneTerminalRejections() {
+    if (_terminalCardRejections.length <= 64) return;
+    final cutoff = DateTime.now().millisecondsSinceEpoch -
+        _terminalCardRejectionTtlMs;
+    _terminalCardRejections.removeWhere((_, hit) => hit.atMs < cutoff);
+  }
+
+  void _noteTerminalRejection(String approvalId, String reason) {
+    if (approvalId.isEmpty) return;
+    _terminalCardRejections[approvalId] = (
+      reason: reason,
+      atMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    _pruneTerminalRejections();
   }
 
   /// 刚成功登记到主机的会话（channelId → 登记时刻）。
@@ -8553,6 +8567,18 @@ class PeerAgentClientService {
         hostChannelId: frameChannel,
       );
       if (resolved != null && resolved.isNotEmpty) channelId = resolved;
+      // `_localChannelIdForCard` 在频道还没镜像时会返回 `psess_` 壳。孤儿
+      // 路径会先建壳再落卡，这里 pending != null 不走那儿，得自己补上，
+      // 否则消息行指向一个会话列表里不存在的频道，横幅也点不开。
+      if (frameChannel.startsWith('flow_') &&
+          await _db.getChannelById(channelId) == null) {
+        await ensureFlowSessionShell(
+          channelId: channelId,
+          agentId: senderId,
+          title: (data['title'] as String?) ?? '',
+          db: _db,
+        );
+      }
     }
     await persistFormCard(
       channelId: channelId,
@@ -9250,19 +9276,15 @@ class PeerAgentClientService {
   }
 
   void _onCardRespAck(Map<String, dynamic> data) {
-    final waiters =
-        _cardAckWaiters.remove(data['approval_id']?.toString() ?? '');
-    if (waiters == null) return;
+    final approvalId = data['approval_id']?.toString() ?? '';
+    final waiters = _cardAckWaiters.remove(approvalId);
     final ack = CardRespAck.fromJson(data);
-    if (!ack.ok) {
-      final probe = PeerCardRejectedException(ack.reason);
-      if (probe.isTerminal) {
-        _terminalCardRejections[data['approval_id']?.toString() ?? ''] = (
-          reason: ack.reason,
-          atMs: DateTime.now().millisecondsSinceEpoch,
-        );
-      }
+    // 迟到的 ack（等待位已超时摘掉）也要记终态：否则紧接着的重试仍会
+    // 把已死卡标成已答。有没有等待位都一样记账。
+    if (!ack.ok && PeerCardRejectedException(ack.reason).isTerminal) {
+      _noteTerminalRejection(approvalId, ack.reason);
     }
+    if (waiters == null) return;
     for (final waiter in waiters) {
       if (!waiter.isCompleted) waiter.complete(ack);
     }
@@ -9772,8 +9794,12 @@ class PeerAgentClientService {
     // hub 重放的孤儿审批（_orphanedApprovals），说明结果已提交或 turn 已失败
     // 且 hub 尚未重发 —— 此时发出去的裁决只会被对端丢弃（NO MATCH），用户却
     // 看到「点击成功」的假象。直接报错让 UI 提示。
+    // 过期卡片守卫：内存账簿里没有这张卡时，还要认「App 重启后从 DB 确定性
+    // 行渲染出来的孤儿审批卡」——第 7 轮给这类卡落了 peer_approval_<id> 行，
+    // 主机重连补投之前用户就能点，若这里只查内存会把还活着的卡判成失效。
     final tracked = _approvalToRequest.containsKey(approvalId) ||
-        _orphanedApprovals.containsKey(approvalId);
+        _orphanedApprovals.containsKey(approvalId) ||
+        await _isPersistedOpenApproval(approvalId, channelId: hostChannelId);
     if (!tracked) {
       _log.warning(
         'submitApproval: unknown/expired approvalId=$approvalId — refusing to '
@@ -10217,6 +10243,47 @@ class PeerAgentClientService {
       return form['peer_form'] is Map;
     } catch (e) {
       _log.warning('read persisted form failed: $e',
+          tag: 'PeerApproval', error: e);
+      return false;
+    }
+  }
+
+  /// 孤儿审批卡（第 7 轮 `_publishOrphanCardToHub` 落的 `peer_approval_<id>`
+  /// 行）在 App 重启后也可能先于主机补投被渲染出来。和表单同款：认行、认
+  /// 归属、认未收场，避免把主机还在等的卡判成「已失效」。
+  Future<bool> _isPersistedOpenApproval(
+    String approvalId, {
+    String? channelId,
+  }) async {
+    if (!getIt.isRegistered<LocalDatabaseService>()) return false;
+    try {
+      final row = await _db.getMessageById(
+        PeerApprovalPayload.approvalCardMessageId(approvalId),
+      );
+      if (row == null) return false;
+      final current = channelId?.trim() ?? '';
+      final decoded = _decodedMetadata(row);
+      if (current.isNotEmpty) {
+        final rowChannel = row['channel_id']?.toString() ?? '';
+        if (rowChannel.isNotEmpty &&
+            rowChannel != current &&
+            hostSessionIdForChannel(rowChannel) != current) {
+          return false;
+        }
+        final cardChannel =
+            decoded['card_channel_id']?.toString().trim() ?? '';
+        if (cardChannel.isNotEmpty && cardChannel != current) return false;
+      }
+      final card = decoded['action_confirmation'];
+      if (card is! Map) return false;
+      if (card['confirmation_id']?.toString() != approvalId) return false;
+      if (card['selected_action_id'] != null || card['closed'] != null) {
+        return false;
+      }
+      // 必须是主机侧的 peer 审批卡；本地 She / CLI 工具卡没有这个上下文。
+      return card['confirmation_context'] == 'peer';
+    } catch (e) {
+      _log.warning('read persisted approval failed: $e',
           tag: 'PeerApproval', error: e);
       return false;
     }

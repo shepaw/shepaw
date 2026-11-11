@@ -239,12 +239,20 @@ mixin _InteractionOps on _ChatControllerBase {
     } on PeerApprovalExpiredException {
       // 卡已在主机那边收场：那份答案没进引擎，照样续上。
     } catch (e) {
-      // 主机明确拒收（expired / answered_elsewhere）是终态，不能 reopen：
-      // 否则下一轮轮询又看到一张可点、但主机已经不等的死卡。
-      if (e is PeerCardRejectedException && e.isTerminal) return;
-      _markFormDeferred(message.id, approvalId, reopen: true);
-      _emit(ShowErrorSnackBarEvent('$e'));
-      return;
+      if (e is PeerCardRejectedException && e.isTerminal) {
+        // 不能 reopen（下一轮轮询又会把主机已经不等的死卡看成可点），
+        // 但答案是否丢了要分情况：
+        // - answered_elsewhere：别的设备已经答掉且主机收下了，答案已进
+        //   引擎，再续一轮只会重复。直接收手。
+        // - expired / closed / cancelled / timeout：主机没有等待位，这份
+        //   答案确实没进引擎 —— 和上面的 PeerApprovalExpiredException
+        //   一致，继续走 sendDeferredFormFollowUp 另开一轮带过去。
+        if (e.reason == 'answered_elsewhere') return;
+      } else {
+        _markFormDeferred(message.id, approvalId, reopen: true);
+        _emit(ShowErrorSnackBarEvent('$e'));
+        return;
+      }
     }
     if (!continueTurn) return;
     // P6：工作流卡片由主机推进，不补这一轮（否则和主机重派的回合并发）。

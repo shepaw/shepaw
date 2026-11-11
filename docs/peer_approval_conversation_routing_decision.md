@@ -539,3 +539,104 @@ App：
   老 App 不发；只有两端都升到本轮之后，旧式 hub 卡的跨会话拦截才生效。
 - `flow:` 审批卡、hub 内部 `take_deferred` 记不到作答设备、广播仍是设备级
   fan-out、`CardStatus` 账本只在进程内——沿用第 6 轮的既有缺口。
+
+## 第 8 轮：跨端复审（第 7 轮新代码）（2026-11-12）
+
+第 7 轮提交后各派一名独立复审员审主机 Rust / App Dart 的新增代码（含与
+第 4–6 轮旧代码的交互），合并去重 11 条，逐条核验前提后返修。核心结论：
+**第 7 轮为修「误删活卡」而收紧的采集规则，反而把几类合法卡排除在对账之外；
+另有一处静默拒绝让 App 乐观落库后永远等不到回执。**
+
+### 高危
+
+- **重启后的孤儿审批卡答不出去**：第 7 轮给无归属孤儿审批卡落了
+  `peer_approval_<id>` 确定性行，但 `submitApproval` 的 tracked 只认内存
+  账簿（`_approvalToRequest` / `_orphanedApprovals`）。App 重启后、主机补投
+  帧到达前点 Allow，会抛 `PeerApprovalExpiredException`，上层按「已失效」
+  把 `selected_action_id` 落库；补投再来时 `conflictAlgorithm: ignore` 不覆盖，
+  主机还在等却再没有入口作答。新增 `_isPersistedOpenApproval`（认行、认
+  `card_channel_id` 归属、认未收场、认 `confirmation_context == 'peer'`），
+  与 `_isPersistedOpenForm` 对称。
+- **本机已答的 hub 卡被轮询改写并删行**：`checkCardValidity` 无条件收集
+  `hub_interaction.interaction_id`，主机回 `answered_here` 后
+  `_markCardAnswered` 的跳过条件只查 `submitted_values` / `closed`，于是把
+  用户已选的 `selected_action_id` 覆写成 `expired`；账本 TTL 到期后整行还会
+  被 `deleteMessage`。采集时新增 `_hubCardAlreadyAnswered`（查 `selected_*`
+  / `submitted_values` / `closed`），`_markCardAnswered` 同步把这些键纳入跳过。
+- **跨会话 hub 提交被静默丢弃，App 还显示已提交**：主机
+  `PouchInteractionResp` 归属不匹配时 `return HandlerReply::Quiet`，而 App
+  对 hub 卡是「`sendControl` 后立刻乐观落库」，既没有 ack 也没有超时回滚；
+  加上 `hub-ix-<id>` 是全局确定性行，错误会话先落库会让正确会话重载后也点
+  不动。主机改为回 `agent_card_resp_ack(id, false, "session_mismatch")`，
+  并把该用例的断言从「不应回业务帧」改成「必须回明确拒绝回执」。
+
+### 中危
+
+- **终态拒收把用户答案丢掉**：`resubmitLostFormAnswer` 对
+  `PeerCardRejectedException.isTerminal` 直接 return，而紧邻的
+  `on PeerApprovalExpiredException` 分支明确「答案没进引擎，照样续上」。改为
+  细分：`answered_elsewhere`（别的设备已答、答案已进引擎）直接收手；
+  `expired` / `closed` / `cancelled` / `timeout` 不 reopen、不弹错，但继续走
+  `sendDeferredFormFollowUp` 另开一轮把答案带过去。
+- **无归属主机审批卡永远不参与对账**：第 7 轮要求审批卡必须带非空
+  `card_channel_id` 才采集，把 `flow:` / `default` 口径（主机
+  `channel_id_for_session_key` 返回空）、群孤儿审批、以及第 4–6 轮旧行全部
+  排除。**没有直接放宽条件**（本地 She / 群编排卡也带
+  `confirmation_context: 'peer'`，放宽会重演第 7 轮的误删），改为两路补写
+  归属：`_handleGroupOrphanPeerApproval` 保留 `channel_id` / `peer_id` 为消息
+  顶层的 `card_channel_id` / `card_peer_id`（内存 + DB 都写，DB 用
+  `mergeMessageMetadata`），`_publishOrphanCardToHub` 的审批行恒写
+  `card_peer_id`；采集条件改成 `card_channel_id` 或 `card_peer_id` 任一非空。
+  这两个字段是主机审批卡专属，本地卡不写，因此仍能排除本地卡。
+- **`mergeMessageMetadata` 并发互相覆盖**：DAO 的读–改–写没有事务，重连补发
+  的 `onForm`（patch `card_channel_id`）与轮询的 `answered_elsewhere`（patch
+  `form.closed`）并发时后写者整份盖掉先写者。加 per-message 串行链
+  `_metadataMergeChains`，与服务层 `_mergeMessageMetadataSerialized` 同思路。
+
+### 低危
+
+- **`_persistFormCardForFrame` 写到不存在的 `psess_` 壳**：帧归属与发起回合
+  不一致时，`_localChannelIdForCard` 会返回尚未镜像的 `psess_` 壳，而这条
+  路径不走 `_publishOrphanCardToHub` 的 `ensureFlowSessionShell`。补上建壳。
+- **终态回执账本漏记 / 无界**：`_onCardRespAck` 在没有等待位时直接 return，
+  迟到的终态 ack 不入账，紧随的重试会再把死卡标成已答；账本也只在 `stop()`
+  清。改成「有没有等待位都记终态」+ 写入时按 TTL 淘汰 + `_recentTerminalRejection`
+  不再 remove/reinsert。
+- **测试隔离**：第 7 轮新增的 relay 播种用例写进程级全局表且
+  `app_peer = "phone-a"`，与 relay.rs 里不带 `env_lock` 的既有用例并发会污染
+  其 `pending_frames_for("phone-a").is_empty()` 断言。给 relay.rs 三个碰全局
+  表的用例补上同一把 `crate::util::lock_process_env()`。
+- **测试有效性**：第 7 轮两条用例没真正覆盖声称的行为——「切频道后在途
+  回包」只切到不同频道（删掉 generation 仍通过），补一条「切走又切回同一
+  频道 id」的用例并断言新会话能立即重查；「并发提交」靠 30 秒终态账本通过，
+  改成延迟注入**非终态** `session_mismatch` ack，只有 `Set<Completer>` 才能让
+  一个回执完成两个等待位。
+- **补测试**：第 7 轮修的 `findMessagesByMetadataMatch` LIKE 转义没有用例，
+  新增 `test/services/database/message_dao_like_escape_test.dart`（真实
+  SQLite 上验证 `_` / `%` 字面匹配、`hostChannelIdForCard` 确定性行优先、
+  并发 merge 串行化）。
+
+### 验证
+
+- 主机：`cargo test -p shepaw-gate -p shepaw-api -p shepaw-engines
+  -p shepaw-protocol --offline` → 614 / 106 / 31 / 14 全绿。
+- App：`flutter analyze` 0 error；卡片相关 7 个测试文件 57 例全绿（新增
+  8 个回归用例：重启后孤儿审批卡可答、已答卡拒绝提交、已答 hub 卡不被改写、
+  无归属主机卡参与对账且本地卡仍排除、LIKE 转义、确定性行优先、并发 merge、
+  generation 守卫）；全量 3958 例仍是同样的 4 个基线失败
+  （`flow_field_catalog` / `group_context_builder` / `flow_workspace_screen`
+  两个 Timer 待处理），与第 7 轮在干净 main 上核对的结果一致，无新增。
+
+### 仍未覆盖（本轮新增）
+
+- 主机回的 `session_mismatch` ack 目前只让「协议上拒绝显式化」；App 的
+  `pouch_interaction_resp` 路径仍不注册 ack waiter，因此还不会自动回滚已乐观
+  写入的选择。要彻底收敛需要给 4 个 `_answerHubInteraction` 调用点统一加
+  归属前置校验或 ack 等待（本轮未扩大改动面）。
+- 主机侧 `card_channel_id(frame)` 的 `session_id` 回退遇到 `group:` /
+  `flow:` 主机键仍无法匹配 App 频道；逐一核对生产帧均带 `channel_id`，未找到
+  可触发的错判，但属残留兼容缺口。
+- relay 的会话校验查的是进程级全局表；本机卡与残留 relay 记录恰好同 id 时
+  会误拒（id 为 UUID / 确定性 flow id，概率极低）。
+- 沿用第 6–7 轮的既有缺口：`flow:` 审批卡空归属、`take_deferred` 记不到作答
+  设备、广播仍是设备级 fan-out、`CardStatus` 账本只在进程内、两阶段上线窗口。
