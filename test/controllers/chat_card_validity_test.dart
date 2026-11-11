@@ -39,8 +39,10 @@ void main() {
       );
 
   late ChatController controller;
+  var disposedInTest = false;
 
   setUp(() {
+    disposedInTest = false;
     controller = ChatController(
       agentId: 'remote-agent',
       initialAgentName: 'Remote',
@@ -53,7 +55,7 @@ void main() {
   });
 
   tearDown(() {
-    controller.dispose();
+    if (!disposedInTest) controller.dispose();
     svc.debugSendControlOverride = null;
     svc.debugExpectCardStatus = false;
   });
@@ -195,6 +197,42 @@ void main() {
     expect(sent!['card_ids'], isEmpty);
     expect(sent!['interaction_ids'], ['ix-1']);
     expect(controller.messages, hasLength(1), reason: 'alive 的 hub 卡保留');
+  });
+
+  test('dispose 之后在途的状态回包不再改写已销毁的 controller', () async {
+    controller.messages
+        .add(card('row-late', cardId: 'c-late', key: 'form'));
+    controller.rebuildMessageIdMap();
+    svc.debugSendControlOverride = (peerId, json) async {
+      if (json['type'] == 'agent_card_status_req') {
+        // 回包晚于 dispose 到达。
+        Future<void>.delayed(const Duration(milliseconds: 30), () {
+          svc.debugInjectControlForTest(
+            'agent_card_status_resp',
+            {
+              'type': 'agent_card_status_resp',
+              'request_id': json['request_id'],
+              'channel_id': json['channel_id'],
+              'cards': [
+                {'id': 'c-late', 'state': 'gone'},
+              ],
+            },
+            peerId: peerId,
+          );
+        });
+      }
+      return true;
+    };
+
+    final pending = controller.checkCardValidity();
+    disposedInTest = true;
+    controller.dispose();
+    await pending;
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    await pumpEventQueue();
+
+    expect(controller.messages, hasLength(1),
+        reason: 'dispose 后不能删行 / _notify 已销毁的 controller');
   });
 
   test('离开当前会话时显式停止轮询', () async {

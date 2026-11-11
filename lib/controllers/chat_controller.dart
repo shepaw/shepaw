@@ -923,13 +923,26 @@ abstract class _ChatControllerBase extends ChangeNotifier
 
   Timer? _cardValidityTimer;
   bool _cardValidityInFlight = false;
+  bool _cardValidityDisposed = false;
+  DateTime? _lastCardValidityCheck;
+  String? _lastCardValidityChannel;
 
   void startCardValidityWatch() {
+    if (_cardValidityDisposed) return;
     _cardValidityTimer?.cancel();
     _cardValidityTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       unawaited(checkCardValidity());
     });
-    unawaited(checkCardValidity());
+    // loadMessages 在一轮对话里会被多次调用（发消息、回合终态…），别每次
+    // 都立刻重查一遍；但切到新会话必须马上查。
+    final channel = currentChannelId ?? '';
+    final now = DateTime.now();
+    final last = _lastCardValidityCheck;
+    if (_lastCardValidityChannel != channel ||
+        last == null ||
+        now.difference(last) >= const Duration(seconds: 2)) {
+      unawaited(checkCardValidity());
+    }
   }
 
   void stopCardValidityWatch() {
@@ -945,7 +958,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
   /// 纯本地工具卡（单选 / 多选 / 文件上传）没有主机等待位，不参与对账。
   @visibleForTesting
   Future<void> checkCardValidity() async {
-    if (_cardValidityInFlight) return;
+    if (_cardValidityInFlight || _cardValidityDisposed) return;
     final channel = currentChannelId;
     if (channel == null || channel.isEmpty) return;
     final hostChannel = hostSessionIdForChannel(channel);
@@ -1022,6 +1035,8 @@ abstract class _ChatControllerBase extends ChangeNotifier
     }
     if (peerId.isEmpty || currentChannelId != channel) return;
 
+    _lastCardValidityChannel = channel;
+    _lastCardValidityCheck = DateTime.now();
     _cardValidityInFlight = true;
     try {
       final entries = await PeerAgentClientService.instance.checkCardStatus(
@@ -1030,8 +1045,11 @@ abstract class _ChatControllerBase extends ChangeNotifier
         cardIds: cardIds.toList(),
         interactionIds: interactionIds.toList(),
       );
-      // 异步回来时可能已经切到别的会话；超时/旧主机回空列表时不动卡片。
-      if (currentChannelId != channel || entries.isEmpty) return;
+      // 异步回来时可能已经切到别的会话，或 controller 已 dispose；后者
+      // currentChannelId 不变，必须靠显式标志挡住。
+      if (_cardValidityDisposed || currentChannelId != channel || entries.isEmpty) {
+        return;
+      }
       await _applyCardStatus(entries, byId);
     } catch (_) {
       // 查询失败一律不动卡片，等下一轮。
@@ -1125,6 +1143,8 @@ abstract class _ChatControllerBase extends ChangeNotifier
 
   @override
   void dispose() {
+    _cardValidityDisposed = true;
+    stopCardValidityWatch();
     AppLifecycleService().setActiveChannel(null);
     if (currentChannelId != null) {
       final leaving = currentChannelId!;

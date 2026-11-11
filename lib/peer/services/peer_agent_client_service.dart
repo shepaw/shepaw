@@ -9166,14 +9166,20 @@ class PeerAgentClientService {
     }
     try {
       final rows = await _db.findMessagesByMetadataMatch(approvalId);
+      String? found;
       for (final row in rows) {
         final raw = row['metadata'];
         if (raw is! String || raw.isEmpty) continue;
         final decoded = jsonDecode(raw);
         if (decoded is! Map) continue;
         final channel = decoded['card_channel_id']?.toString().trim() ?? '';
-        if (channel.isNotEmpty) return channel;
+        if (channel.isEmpty) continue;
+        // 同一个 id 在两条不同会话里都有行（广播 / 补投）时归属有歧义：
+        // 宁可不带 channel_id 让主机跳过校验，也不能拿错的那条去拒答。
+        if (found != null && found != channel) return '';
+        found = channel;
       }
+      return found ?? '';
     } catch (e) {
       _log.warning('read card channel failed: $e', tag: _tag);
     }

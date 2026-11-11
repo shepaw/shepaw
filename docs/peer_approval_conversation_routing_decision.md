@@ -389,10 +389,37 @@ App：
   同存一份，按 approval_id 查会被主机回 `gone` 而误删）；CLI 卡无主机等待位，
   单选/多选/文件上传是本地工具卡，都不参与对账。
 
+## 第 6 轮：提交后复审返修（2026-11-11）
+
+提交 `ff8d111`（主机）/ `00e7baba`（App）之后做了 8 角度复审，逐条核验并返修：
+
+- **早退分支绕过密封**：`Router::dispatch` 的 `match` 里 `return HandlerReply::Frames(...)`
+  会跳过末尾的 `seal_reply`，ack 以明文发出。把整个 match 包进闭包，`return`
+  只从闭包返回，所有回包统一密封；两端的回执测试改为拆封后断言。
+- **工作节点卡被误判失效**：`agent_card_status_req` 原来只查本机 `ApprovalBus`，
+  工作节点转来的卡在 `relay::pending_frames_for` 里，会回 `gone` 让 App 删掉
+  还活着的卡。补上 relay 白名单，命中即回 `alive`。
+- **转发路径没有回执**：`relay::approval` 成功后原来直接 Quiet，App 要白等 3 秒。
+  现在回 `ok: true, reason: forwarded`。
+- **取消被记成「别处已答」**：`resolve(id, peer, "")` 是停止信号，账本改记
+  `cancelled`；`close_ids` 的口径保持一致。
+- **会话归属两处口径漂移**：`engine_ask` 改用 `stdio` 导出的
+  `channel_id_for_session_key`（`group:` / `flow:` / `default` 统一归一化）；
+  flow 的 deferred payload 与 `publish_card_closed` 补上 `channel_id`。
+- **旧式 interaction 卡无归属**：卡帧补 `channel_id`，`InteractionWaiter` 记住它，
+  状态查询按会话排除；关闭账本加 30 分钟 TTL、按时间淘汰最旧、记录作答设备，
+  本设备自己答的回 `answered_here`，不再弹「已在其他设备回答」。
+- **App 生命周期**：`dispose` 之后在途状态回包仍会改写已销毁 controller
+  （`currentChannelId` 不变，频道守卫挡不住），补 `_cardValidityDisposed` 显式标志；
+  `loadMessages` 一轮里会多次调用，加 2 秒同频道节流（切频道立即重查）；
+  `hostChannelIdForCard` 命中多条不同归属的行时不猜、不带 `channel_id`。
+
 ### 仍未覆盖
 
-- `flow:` session_key 的审批卡 `channel_id` 为空；`flow/host.rs::publish_card_closed`
-  的关闭帧仍不带 `channel_id`（App 目前按 `approval_id` 全局收场，功能不受影响）。
+- `flow:` session_key 的审批卡 `channel_id` 本来就是空（stdio 的既有口径），
+  这类卡不做会话校验。
+- `take_deferred()` 的 hub 内部路径记不到作答设备，工作流 gate 卡由本端答掉时
+  轮询仍可能回 `answered_elsewhere`（只是多一条提示，卡片状态正确）。
 - 广播 / 补发仍是设备级 fan-out，没有按会话准入；完全的根治需要客户端在
   `agent_pending_interactions_req` / 事件补拉里声明会话。
 - `CardStatus` 账本只在进程内，主机重启后旧卡一律判 `gone`（那时旧卡确实
