@@ -997,13 +997,21 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
             ),
           ),
           for (final scope in group.scopes)
-            ListTile(
-              selected: _scope?.id == scope.id,
-              leading: Icon(_iconFor(scope.kind)),
-              title: Text(scope.displayName),
-              subtitle: Text(scope.id),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _openScope(scope),
+            Padding(
+              // 工作流三层按 模板 → 实例 → 运行 缩进，别把运行平铺在顶层。
+              padding: EdgeInsets.only(
+                left: group.family == PouchScopeFamily.flow
+                    ? 16.0 * scope.flowDepth
+                    : 0,
+              ),
+              child: ListTile(
+                selected: _scope?.id == scope.id,
+                leading: Icon(_iconFor(scope.kind)),
+                title: Text(scope.displayName),
+                subtitle: Text(scope.id),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openScope(scope),
+              ),
             ),
         ],
         if (widget.onOpenLegacy != null) ...[
@@ -1292,6 +1300,9 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
         PouchScopeKind.skill => Icons.auto_awesome_outlined,
         PouchScopeKind.instruction => Icons.menu_book_outlined,
         PouchScopeKind.slip => Icons.sticky_note_2_outlined,
+        PouchScopeKind.flow => Icons.account_tree_outlined,
+        PouchScopeKind.instance => Icons.layers_outlined,
+        PouchScopeKind.run => Icons.play_arrow_outlined,
       };
 
   String _formatSize(int bytes) {

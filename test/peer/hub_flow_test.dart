@@ -36,6 +36,39 @@ void main() {
     });
   });
 
+  test(
+      'start frame carries instance_id for reruns, response exposes scope coords',
+      () {
+    const iid = 'in_0123456789abcdef';
+    final frame = HubFlow.startFrame(
+      name: 'bugfix',
+      scope: 'group:g1',
+      instanceId: iid,
+    );
+    expect(frame['instance_id'], iid);
+    // 不带时不发字段，旧主机照常收帧。
+    expect(
+        HubFlow.startFrame(name: 'bugfix').containsKey('instance_id'), isFalse);
+    expect(
+        HubFlow.startFrame(name: 'bugfix', instanceId: '')
+            .containsKey('instance_id'),
+        isFalse);
+
+    final call = FlowCall.fromResponse({
+      'success': true,
+      'run_id': 'run_1',
+      'instance_id': iid,
+      'instance_scope': 'flow:fl_1:instance:$iid',
+    });
+    expect(call.ok, isTrue);
+    expect(call.instanceId, iid);
+    expect(call.instanceScope, 'flow:fl_1:instance:$iid');
+    // 旧主机没这两个字段。
+    final legacy = FlowCall.fromResponse({'success': true, 'run_id': 'run_1'});
+    expect(legacy.instanceId, isNull);
+    expect(legacy.instanceScope, isNull);
+  });
+
   test('every flow frame type is routed as a control frame', () {
     for (final type in [
       'flow_list_resp',

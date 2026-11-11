@@ -5,10 +5,17 @@
 /// - `group:<gid>`、`:shared`、`:member:<aid>`、`:session:<sid>`、
 ///   `:session:<sid>:task:<tid>`；
 /// - `agent:<aid>`、`agent:<aid>:session:<sid>`；
-/// - `skill:<name>` / `instruction:<name>` / `slip:<id>`。
+/// - `skill:<name>` / `instruction:<name>` / `slip:<id>`；
+/// - `flow:<fid>`、`flow:<fid>:instance:<iid>`、
+///   `flow:<fid>:instance:<iid>:run:<rid>`（三层工作流）；
+/// - 旧形态：`run:<rid>`（旧运行区，没有父 scope）。
 ///
 /// id 只认 `[A-Za-z0-9_.-]`，`shared`/`session`/`task`/`member` 是关键字，
-/// 不能当 id。调用方不要自己拼 scope 字符串：一律走这里的构造函数。
+/// 不能当 id；`instance`/`run` 是 flow scope 第 3/5 段的保留关键字，三层形态
+/// 的 id 位置也不能用它们（旧的两段式别名不受限）。三层形态的 id 还必须是
+/// `fl_<hex>` / `in_<hex>` / `run_<hex>`（小写 16 进制，至少一位）；两段式
+/// `flow:<name>` / `run:<rid>` 仍沿用宽松解析，主机过渡期还在写它们。
+/// 调用方不要自己拼 scope 字符串：一律走这里的构造函数。
 library;
 
 /// id 允许的字符（hub 的 `is_id`）。袋子 id 也走这条。
@@ -18,6 +25,23 @@ bool isValidPouchScopeId(String value) =>
     RegExp(r'^[A-Za-z0-9_.-]+$').hasMatch(value);
 
 const Set<String> _keywords = {'shared', 'session', 'task', 'member'};
+
+/// 工作流三层的层级标记。形状校验已覆盖（id 必须是 `fl_`/`in_`/`run_` + hex），
+/// 这里留作和主机一致的防御：三层形态的 id 位置不能放它们。
+const Set<String> _flowKeywords = {'instance', 'run'};
+
+/// 三层工作流 id 的后缀：小写 16 进制，至少一位。
+final RegExp _lowerHex = RegExp(r'^[0-9a-f]+$');
+
+/// 三层工作流 id 的形状校验，和 hub 的 `parse_flow` 对齐：`<prefix>_<hex>`。
+/// `prefix` 只取生成约定里的 `fl` / `in` / `run`；hex 只认小写 `[0-9a-f]` 且
+/// 至少一位。生产的 id 是 32/16/32 位，但解析器只卡前缀 + 字符集，长度由
+/// 主机的 128 字节上限兜底。两段式别名（`flow:<name>` / `run:<rid>`）不走这里。
+bool _isFlowId(String value, String prefix) {
+  if (!value.startsWith('${prefix}_')) return false;
+  final hex = value.substring(prefix.length + 1);
+  return hex.isNotEmpty && _lowerHex.hasMatch(hex);
+}
 
 /// scope 的种类。和 hub 的 `ScopeKind` 一一对应。
 enum PouchScopeKind {
@@ -33,7 +57,10 @@ enum PouchScopeKind {
   agent('agent', '助手'),
   skill('skill', '技能'),
   instruction('instruction', '指令'),
-  slip('slip', '玉简');
+  slip('slip', '玉简'),
+  flow('flow', '流程'),
+  instance('instance', '实例'),
+  run('run', '运行');
 
   const PouchScopeKind(this.id, this.label);
 
@@ -51,7 +78,8 @@ enum PouchScopeFamily {
   agent('助手'),
   skill('技能'),
   instruction('指令'),
-  slip('玉简');
+  slip('玉简'),
+  flow('工作流');
 
   const PouchScopeFamily(this.label);
 
@@ -106,8 +134,21 @@ class PouchScope {
         return parent.startsWith('agent:')
             ? PouchScopeFamily.agent
             : PouchScopeFamily.group;
+      case PouchScopeKind.flow:
+      case PouchScopeKind.instance:
+      case PouchScopeKind.run:
+        // 整个 flow: 家族（含旧 run:<rid>）单独一组，浏览器按
+        // 模板 → 实例 → 运行 缩进展开。
+        return PouchScopeFamily.flow;
     }
   }
+
+  /// 工作流树里的层级：0 = 模板 / 旧 run，1 = 实例，2 = 运行。
+  int get flowDepth => switch (kind) {
+        PouchScopeKind.instance => 1,
+        PouchScopeKind.run when parentId != null => 2,
+        _ => 0,
+      };
 
   /// 展示名：`文件`、`群 g1 · 共享`、`会话 s1`…（不含路径）。
   String get displayName => switch (kind) {
@@ -222,6 +263,43 @@ class PouchScope {
   static PouchScope slip(String id) =>
       _checked('slip:$id', PouchScopeKind.slip, id, null);
 
+  /// 三层工作流：`flow:<fid>` → `flow:<fid>:instance:<iid>` →
+  /// `flow:<fid>:instance:<iid>:run:<rid>`，后两层的父 scope 分别是上一层。
+  static PouchScope flow(String flowId) =>
+      _checked('flow:$flowId', PouchScopeKind.flow, flowId, null);
+
+  static PouchScope flowInstance(String flowId, String instanceId) {
+    _requireFlowId(flowId, 'fl');
+    _requireFlowId(instanceId, 'in');
+    return _checked(
+      'flow:$flowId:instance:$instanceId',
+      PouchScopeKind.instance,
+      instanceId,
+      'flow:$flowId',
+    );
+  }
+
+  static PouchScope flowRun(
+    String flowId,
+    String instanceId,
+    String runId,
+  ) {
+    _requireFlowId(flowId, 'fl');
+    _requireFlowId(instanceId, 'in');
+    _requireFlowId(runId, 'run');
+    return _checked(
+      'flow:$flowId:instance:$instanceId:run:$runId',
+      PouchScopeKind.run,
+      runId,
+      'flow:$flowId:instance:$instanceId',
+    );
+  }
+
+  /// 旧的两段式运行 scope。主机切到三层树之前仍在写它，所以解析层继续认；
+  /// 新代码构造运行地址一律走 [flowRun]。
+  static PouchScope legacyRun(String runId) =>
+      _checked('run:$runId', PouchScopeKind.run, runId, null);
+
   static PouchScope _checked(
     String id,
     PouchScopeKind kind,
@@ -241,13 +319,31 @@ class PouchScope {
     }
   }
 
+  /// 三层工作流构造函数的 id：形状必须是 `<prefix>_<hex>`（见 [_isFlowId]），
+  /// 并额外挡掉 `instance` / `run` 两个层级标记（形状校验已覆盖，留作防御）。
+  /// 两段式 `flow` / `legacyRun` 不走这里，仍保持宽松。
+  static void _requireFlowId(String value, String prefix) {
+    if (!isValidPouchScopeId(value) ||
+        !_isFlowId(value, prefix) ||
+        _flowKeywords.contains(value)) {
+      throw FormatException('bad_scope: invalid id $value');
+    }
+  }
+
   // ── 解析 ─────────────────────────────────────────────────────────────────
 
-  /// 不合语法返回 null。
+  /// 不合语法返回 null。和 hub 的 `parse_scope` 对齐：不 trim（主机不认带空格的
+  /// scope）；三层 flow 树超过 `protocol.rs` 128 字节前缀上限时拒绝。老群任务
+  /// scope 本来就可能超过 128 字节，它们靠短前缀列举，不在这里卡。
   static PouchScope? tryParse(String text) {
-    final value = text.trim();
-    if (value.isEmpty) return null;
-    final parts = value.split(':');
+    const maxFlowScopeIdBytes = 128;
+    if (text.isEmpty) return null;
+    if (text.length > maxFlowScopeIdBytes &&
+        text.startsWith('flow:') &&
+        text.contains(':instance:')) {
+      return null;
+    }
+    final parts = text.split(':');
     final head = parts.first;
     if (head == 'pouch' ||
         head == 'system' ||
@@ -263,10 +359,14 @@ class PouchScope {
     }
     if (head == 'group') return _parseGroup(parts);
     if (head == 'agent') return _parseAgent(parts);
-    if (head == 'skill' || head == 'instruction' || head == 'slip') {
+    if (head == 'flow') return _parseFlow(parts);
+    if (head == 'skill' ||
+        head == 'instruction' ||
+        head == 'slip' ||
+        head == 'run') {
       final name = _oneId(parts, 1);
       if (name == null || parts.length != 2) return null;
-      return PouchScope._(value, _namedKind(head), name, null);
+      return PouchScope._(text, _namedKind(head), name, null);
     }
     return null;
   }
@@ -283,6 +383,7 @@ class PouchScope {
   static PouchScopeKind _namedKind(String head) => switch (head) {
         'skill' => PouchScopeKind.skill,
         'instruction' => PouchScopeKind.instruction,
+        'run' => PouchScopeKind.run,
         _ => PouchScopeKind.slip,
       };
 
@@ -343,6 +444,58 @@ class PouchScope {
     }
   }
 
+  /// `flow:<fid>` / `flow:<fid>:instance:<iid>` /
+  /// `flow:<fid>:instance:<iid>:run:<rid>`。`instance`、`run` 分别是第 3、5
+  /// 段的保留关键字（不是 id），也不能占三层形态的 id 位置；其余形状一律不认。
+  /// 三段以上（含 `:instance:` / `:run:` 尾）时三个 id 必须按 [_isFlowId]
+  /// 走 `<prefix>_<hex>` 的形状；两段式 `flow:<name>` 是旧别名，形状不限。
+  /// 写法照 `_parseGroup`，并与 hub 的 `parse_flow` 对齐。
+  static PouchScope? _parseFlow(List<String> parts) {
+    final fid = _oneId(parts, 1);
+    if (fid == null) return null;
+    final flowId = 'flow:$fid';
+    // 旧公共流程库也是两段式 flow:<name>，id 形状不限，这里一并兼容。
+    if (parts.length == 2) {
+      return PouchScope._(flowId, PouchScopeKind.flow, fid, null);
+    }
+    // 三层形态的 id 位置只认生成约定：fl_/in_/run_ + 小写 hex。
+    if (!_isFlowId(fid, 'fl')) return null;
+    // 层级标记不能落到 id 位置：flow:run:instance:in_1 之类（形状校验已覆盖，
+    // 这里保留和 hub 一致的防御）。
+    if (_flowKeywords.contains(fid)) return null;
+    switch (parts[2]) {
+      case 'instance':
+        final iid = _oneId(parts, 3);
+        if (iid == null || !_isFlowId(iid, 'in')) return null;
+        if (_flowKeywords.contains(iid)) return null;
+        final instanceId = '$flowId:instance:$iid';
+        if (parts.length == 4) {
+          return PouchScope._(
+            instanceId,
+            PouchScopeKind.instance,
+            iid,
+            flowId,
+          );
+        }
+        if (parts[4] != 'run') return null;
+        final rid = _oneId(parts, 5);
+        if (rid == null ||
+            !_isFlowId(rid, 'run') ||
+            _flowKeywords.contains(rid) ||
+            parts.length != 6) {
+          return null;
+        }
+        return PouchScope._(
+          '$instanceId:run:$rid',
+          PouchScopeKind.run,
+          rid,
+          instanceId,
+        );
+      default:
+        return null;
+    }
+  }
+
   static PouchScope? _parseAgent(List<String> parts) {
     final aid = _oneId(parts, 1);
     if (aid == null) return null;
@@ -379,6 +532,7 @@ class PouchScopeGroup {
         PouchScopeFamily.skill => '技能包',
         PouchScopeFamily.instruction => '指令集',
         PouchScopeFamily.slip => '玉简',
+        PouchScopeFamily.flow => '模板 → 实例 → 运行',
       };
 }
 

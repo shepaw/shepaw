@@ -99,4 +99,78 @@ void main() {
     expect(isValidPouchScopeId('a/b'), isFalse);
     expect(PouchScope.tryParse('group:g1'), isNotNull);
   });
+
+  test('工作流三层与旧两段式 scope 在 v3 地址里原样往返', () {
+    const fid = 'fl_0123456789abcdef0123456789abcdef';
+    const iid = 'in_0123456789abcdef';
+    const rid = 'run_0123456789abcdef0123456789abcdef';
+    const flowId = 'flow:$fid';
+    const instanceId = '$flowId:instance:$iid';
+    const runId = '$instanceId:run:$rid';
+    for (final scope in [
+      flowId,
+      instanceId,
+      runId,
+      'flow:weekly-report',
+      'run:$rid',
+    ]) {
+      final uri = PouchV2Uri(pouchId: _pouch, scope: scope, path: 'files/a.md');
+      final parsed = PouchV2Uri.parse(uri.format());
+      expect(parsed.scope, scope, reason: uri.format());
+      expect(parsed.parsedScope.id, scope, reason: uri.format());
+      expect(parsed.path, 'files/a.md', reason: uri.format());
+    }
+    expect(
+      PouchV2Uri.parse('pouch://$_pouch/$runId').parsedScope.parentId,
+      instanceId,
+    );
+    expect(
+      PouchV2Uri.parse('pouch://$_pouch/$instanceId').parsedScope.kind,
+      PouchScopeKind.instance,
+    );
+    expect(
+      PouchV2Uri.parse('pouch://$_pouch/run:$rid').parsedScope.kind,
+      PouchScopeKind.run,
+    );
+    expect(
+      PouchV2Uri.parse('pouch://$_pouch/run:$rid').parsedScope.parentId,
+      isNull,
+    );
+  });
+
+  test('畸形工作流 scope 在 v3 地址里报 bad_scope', () {
+    for (final scope in [
+      // 结构畸形：id 都合规，拒绝理由是段数 / 层级标记。
+      'flow:',
+      'run:',
+      'flow:fl_1:instance',
+      'flow:fl_1:step:in_1',
+      'flow:fl_1:instance:in_1:step:run_1',
+      'flow:fl_1:instance:in_1:run:run_1:extra',
+      'flow:run:instance:in_1',
+      'flow:fl_1:instance:in_1:run:run',
+      'run:r1:extra',
+      // 三段以上的 id 形状违规：大写 hex / 非 hex / 错前缀。
+      'flow:f1:instance:i1',
+      'flow:f1:instance:i1:run:r1',
+      'flow:fl_ABC:instance:in_1',
+      'flow:fl_g1:instance:in_1',
+      'flow:fl_1:instance:in_1:run:r1',
+      'flow:fl_1:instance:in_1:run:run_G',
+    ]) {
+      final raw = 'pouch://$_pouch/$scope/a.md';
+      expect(PouchV2Uri.tryParse(raw), isNull, reason: raw);
+      expect(
+        () => PouchV2Uri.parse(raw),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('bad_scope'),
+          ),
+        ),
+        reason: raw,
+      );
+    }
+  });
 }
