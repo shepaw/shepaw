@@ -238,6 +238,13 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       _artifactsFailed = false;
       // 作废在途加载，避免旧 runId 的回复写进新页面的状态。
       _artifactLoadSeq++;
+      // runId 变了要重新拉运行帧：只清产物列表会让页面停在旧 run 的树上，
+      // 而且没有任何新请求能把它刷回来。
+      _run = null;
+      _loading = true;
+      _runArtifacts = const <FlowArtifact>[];
+      _instanceArtifacts = const <FlowArtifact>[];
+      unawaited(_load());
     }
   }
 
@@ -266,8 +273,10 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   }
 
   Future<void> _loadOnce() async {
-    final run = await _client.run(widget.peerId, widget.runId);
-    if (!mounted) return;
+    final requestedRunId = widget.runId;
+    final run = await _client.run(widget.peerId, requestedRunId);
+    // 换 runId 期间旧请求落地：丢掉，别把旧树写进新页面。
+    if (!mounted || requestedRunId != widget.runId) return;
     if (run != null) _syncCoordsFromRun(run);
     setState(() {
       _loading = false;
@@ -377,6 +386,8 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       }
       return;
     }
+    final attemptedRun = runScope != null;
+    final attemptedInstance = instanceScope != null;
     if (mounted) setState(() => _artifactsLoading = true);
     try {
       final runFuture = runScope == null
@@ -388,32 +399,33 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       final results =
           await Future.wait<List<FlowArtifact>?>([runFuture, instanceFuture]);
       if (!mounted || generation != _artifactLoadSeq) return;
-      // 两个请求都没拿到可信回复：保留已显示的产物，给重试入口，
-      // 不要把一次超时 / peer_busy 渲染成「还没有产物」。
-      if (results[0] == null && results[1] == null) {
-        setState(() {
-          _artifactsLoading = false;
-          _artifactsFailed = true;
-        });
-        return;
-      }
-      var runArtifacts = results[0] ?? const <FlowArtifact>[];
-      var instanceArtifacts = results[1] ?? const <FlowArtifact>[];
+      // null = 没拿到可信回复（超时 / 主机报错 / 无响应）；空列表才是
+      // 「确实没有产物」。按半边分别判定，失败的一边保留已显示的数据，
+      // 不能让一次抖动把已有产物清空，也不能悄悄把失败当成成功。
+      final runFailed = attemptedRun && results[0] == null;
+      var instanceFailed = attemptedInstance && results[1] == null;
+      var runArtifacts = results[0] ?? _runArtifacts;
+      var instanceArtifacts = results[1] ??
+          (attemptedInstance ? _instanceArtifacts : const <FlowArtifact>[]);
       _syncCoordsFromArtifacts([...runArtifacts, ...instanceArtifacts]);
       // 第一次没实例坐标，但 run 产物的 scope 补出来了：顺手把 promote 到
       // 实例层的产物也取回来，「本实例」切换才有内容。
       if (instanceScope == null && _instanceScope != null) {
-        instanceArtifacts =
-            (await _artifactClient.list(widget.peerId, _instanceScope!)) ??
-                instanceArtifacts;
+        final second =
+            await _artifactClient.list(widget.peerId, _instanceScope!);
         if (!mounted || generation != _artifactLoadSeq) return;
+        if (second == null) {
+          instanceFailed = true;
+        } else {
+          instanceArtifacts = second;
+        }
       }
       setState(() {
         _runArtifacts = FlowArtifact.groupByArtifactId(runArtifacts);
         _instanceArtifacts =
             FlowArtifact.groupByArtifactId(_promotedOnly(instanceArtifacts));
         _artifactsLoading = false;
-        _artifactsFailed = false;
+        _artifactsFailed = runFailed || instanceFailed;
       });
     } catch (_) {
       if (!mounted || generation != _artifactLoadSeq) return;

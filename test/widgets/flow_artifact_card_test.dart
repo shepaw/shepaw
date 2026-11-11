@@ -128,4 +128,25 @@ void main() {
     expect(find.text('已提升报告'), findsOneWidget);
     expect(find.text('v7'), findsOneWidget);
   });
+
+  testWidgets('失败态保留已有产物并给重试入口', (tester) async {
+    var retries = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: FlowArtifactCard(
+          artifacts: _runArtifacts(),
+          failed: true,
+          onRetry: () => retries++,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('设计报告'), findsOneWidget);
+    expect(find.byKey(const ValueKey('flow-artifact-failed')), findsOneWidget);
+    expect(find.text('产物加载失败'), findsOneWidget);
+    expect(find.byKey(const ValueKey('flow-artifact-empty')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('flow-artifact-retry')));
+    await tester.pumpAndSettle();
+    expect(retries, 1);
+  });
 }

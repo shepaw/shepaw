@@ -152,8 +152,9 @@ class _FlowArtifactCardState extends State<FlowArtifactCard> {
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 10),
                 child: LinearProgressIndicator(minHeight: 2),
-              )
-            else if (widget.failed)
+              ),
+            // 失败提示和已有产物并存：重载抖动不该把卡片内容抹掉。
+            if (widget.failed)
               Padding(
                 key: const ValueKey('flow-artifact-failed'),
                 padding: const EdgeInsets.symmetric(vertical: 8),
@@ -170,8 +171,8 @@ class _FlowArtifactCardState extends State<FlowArtifactCard> {
                       ),
                   ],
                 ),
-              )
-            else if (artifacts.isEmpty)
+              ),
+            if (artifacts.isEmpty && !widget.loading && !widget.failed)
               const Padding(
                 key: ValueKey('flow-artifact-empty'),
                 padding: EdgeInsets.symmetric(vertical: 10),
@@ -182,8 +183,8 @@ class _FlowArtifactCardState extends State<FlowArtifactCard> {
                     Expanded(child: Text('还没有产物')),
                   ],
                 ),
-              )
-            else
+              ),
+            if (artifacts.isNotEmpty)
               for (final artifact in artifacts) ..._artifactRows(artifact),
           ],
         ),
