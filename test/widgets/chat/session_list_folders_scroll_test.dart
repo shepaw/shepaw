@@ -7,6 +7,7 @@ import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
+import 'package:shepaw/widgets/chat/agent_session_folders.dart';
 import 'package:shepaw/widgets/chat/session_list_panel.dart';
 
 /// 折叠组在会话列表里的位置：跟着列表一起滚，而且不再夹带一个「搜索」行。
@@ -20,6 +21,7 @@ void main() {
   late ChatController controller;
 
   setUp(() {
+    FoldedFolderMemory.debugClear();
     controller = ChatController(
       agentId: 'agent-1',
       initialAgentName: 'Agent',

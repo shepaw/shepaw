@@ -113,6 +113,8 @@ class _WithExpandedStateState extends State<_WithExpandedState> {
 }
 
 void main() {
+  setUp(FoldedFolderMemory.debugClear);
+
   testWidgets('tapping a folder expands it in place, no new page',
       (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
@@ -459,5 +461,75 @@ void main() {
     // flow 分支仍用 fromAgent，由上面的 A7-9 用例钉住。
     await tester.pumpWidget(const SizedBox());
     await bus.close();
+  });
+
+  testWidgets('再次打开先画出上次的引擎分组，私聊行不再下移', (tester) async {
+    final folders = [
+      {'kind': 'ide', 'count': 1, 'latest_title': 'Cursor'},
+      {'kind': 'terminal', 'count': 3, 'latest_title': '跑测试'},
+    ];
+    Widget page(HubFoldedSessions client) => MaterialApp(
+          locale: const Locale('zh'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: Column(
+              children: [
+                AgentSessionFolders(
+                  peerId: 'p1',
+                  remoteAgentId: 'a1',
+                  client: client,
+                ),
+                const ListTile(title: Text('私聊会话')),
+              ],
+            ),
+          ),
+        );
+
+    final first = StreamController<PeerControlEvent>.broadcast();
+    addTearDown(first.close);
+    await tester.pumpWidget(page(_host(first, folders)));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(find.text('引擎客户端 · 1'), findsOneWidget);
+    expect(find.text('引擎终端 · 3'), findsOneWidget);
+
+    // 第二次打开：主机先不回。第一帧就要有分组，私聊行停在分组下面。
+    final hold = Completer<void>();
+    final second = StreamController<PeerControlEvent>.broadcast();
+    addTearDown(second.close);
+    addTearDown(() {
+      if (!hold.isCompleted) hold.complete();
+    });
+    final delayed = HubFoldedSessions(
+      events: second.stream,
+      send: (peerId, frame) async {
+        await hold.future;
+        second.add(PeerControlEvent(peerId: peerId, data: {
+          'type': 'agent_sessions_resp',
+          'request_id': frame['request_id'],
+          'agent_id': 'a1',
+          'sessions': [],
+          'folders': folders,
+        }));
+        return true;
+      },
+    );
+    await tester.pumpWidget(page(delayed));
+    expect(find.text('引擎客户端 · 1'), findsOneWidget);
+    expect(find.text('引擎终端 · 3'), findsOneWidget);
+    final sessionTop = tester.getRect(find.text('私聊会话')).top;
+    expect(
+      sessionTop,
+      greaterThanOrEqualTo(tester.getRect(find.text('引擎终端 · 3')).bottom - 1),
+    );
+
+    hold.complete();
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(tester.getRect(find.text('私聊会话')).top, sessionTop);
+    await tester.pumpWidget(const SizedBox());
   });
 }
