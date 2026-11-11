@@ -17,6 +17,9 @@ class FlowExecutionHistoryScreen extends StatefulWidget {
     required this.flowName,
     this.initialRunId,
     this.initialTitle,
+    this.initialInstanceId,
+    this.initialInstanceScope,
+    this.initialRunScope,
     required this.onClose,
     this.onBindBack,
     this.onRunOpenChanged,
@@ -31,6 +34,12 @@ class FlowExecutionHistoryScreen extends StatefulWidget {
   final String? initialRunId;
   final String? initialTitle;
 
+  /// 刚开跑时从 `flow_run_start_resp` 带来的三层坐标。点历史里的旧运行时
+  /// 由 `FlowRunScreen` 自己从 run / 产物 scope 反解，不沿用上一次的坐标。
+  final String? initialInstanceId;
+  final String? initialInstanceScope;
+  final String? initialRunScope;
+
   final VoidCallback onClose;
 
   /// 把「从详情退回列表」交给外层，系统返回键能先退这一层。
@@ -44,15 +53,22 @@ class FlowExecutionHistoryScreen extends StatefulWidget {
       _FlowExecutionHistoryScreenState();
 }
 
-class _FlowExecutionHistoryScreenState extends State<FlowExecutionHistoryScreen> {
+class _FlowExecutionHistoryScreenState
+    extends State<FlowExecutionHistoryScreen> {
   String? _runId;
   String? _title;
+  String? _instanceId;
+  String? _instanceScope;
+  String? _runScope;
 
   @override
   void initState() {
     super.initState();
     _runId = widget.initialRunId;
     _title = widget.initialTitle;
+    _instanceId = widget.initialInstanceId;
+    _instanceScope = widget.initialInstanceScope;
+    _runScope = widget.initialRunScope;
     widget.onBindBack?.call(_runId == null ? null : _backToList);
     if (_runId != null) widget.onRunOpenChanged?.call(true);
   }
@@ -68,6 +84,9 @@ class _FlowExecutionHistoryScreenState extends State<FlowExecutionHistoryScreen>
     setState(() {
       _runId = runId;
       _title = title;
+      _instanceId = null;
+      _instanceScope = null;
+      _runScope = null;
     });
     widget.onBindBack?.call(_backToList);
     widget.onRunOpenChanged?.call(true);
@@ -93,6 +112,9 @@ class _FlowExecutionHistoryScreenState extends State<FlowExecutionHistoryScreen>
         runId: runId,
         title: _title,
         client: widget.client,
+        instanceId: _instanceId,
+        instanceScope: _instanceScope,
+        runScope: _runScope,
         onClose: _backToList,
         onDeleted: _backToList,
       );

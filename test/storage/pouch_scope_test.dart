@@ -456,4 +456,18 @@ void main() {
     expect(PouchScope.flow('run').kind, PouchScopeKind.flow);
     expect(PouchScope.legacyRun('run').kind, PouchScopeKind.run);
   });
+
+  test('工作流组头统计模板 / 实例 / 运行数量', () {
+    final scopes = [
+      PouchScope.parse('flow:fl_1'),
+      PouchScope.parse('flow:fl_1:instance:in_1'),
+      PouchScope.parse('flow:fl_1:instance:in_1:run:run_1'),
+      PouchScope.parse('run:old_run'),
+    ];
+    expect(
+      flowScopeCounts(scopes),
+      (templates: 1, instances: 1, runs: 2),
+    );
+    expect(flowScopeCountsLabel(scopes), '模板 1 · 实例 1 · 运行 2');
+  });
 }

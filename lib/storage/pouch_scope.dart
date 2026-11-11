@@ -562,3 +562,29 @@ List<PouchScopeGroup> groupPouchScopes(Iterable<PouchScope> scopes) {
   }
   return out;
 }
+
+/// 工作流家族的三级数量。旧 `run:<rid>` 没有父级，仍算一条运行记录。
+({int templates, int instances, int runs}) flowScopeCounts(
+    Iterable<PouchScope> scopes) {
+  var templates = 0;
+  var instances = 0;
+  var runs = 0;
+  for (final scope in scopes) {
+    switch (scope.kind) {
+      case PouchScopeKind.flow:
+        templates++;
+      case PouchScopeKind.instance:
+        instances++;
+      case PouchScopeKind.run:
+        runs++;
+      default:
+        break;
+    }
+  }
+  return (templates: templates, instances: instances, runs: runs);
+}
+
+String flowScopeCountsLabel(Iterable<PouchScope> scopes) {
+  final counts = flowScopeCounts(scopes);
+  return '模板 ${counts.templates} · 实例 ${counts.instances} · 运行 ${counts.runs}';
+}

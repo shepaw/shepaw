@@ -6,12 +6,15 @@ import '../l10n/app_localizations.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/peer_approval_payload.dart';
 import '../peer/services/flow_session_open.dart';
+import '../peer/services/hub_artifact.dart';
 import '../peer/services/hub_flow.dart';
 import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../services/approval/pending_approval_hub.dart';
 import '../services/approval/pending_approval_item.dart';
+import '../storage/pouch_scope.dart';
 import '../utils/layout_utils.dart';
+import '../widgets/flow/flow_artifact_card.dart';
 import '../widgets/flow/flow_loop_rounds.dart';
 import '../widgets/flow/flow_node_tree.dart';
 import '../widgets/flow/flow_yaml.dart';
@@ -82,6 +85,11 @@ class FlowRunScreen extends StatefulWidget {
     this.onDeleted,
     this.onClose,
     this.embedded = false,
+    this.instanceId,
+    this.instanceScope,
+    this.runScope,
+    this.artifactClient,
+    this.openArtifactUri,
   });
 
   final String peerId;
@@ -108,6 +116,17 @@ class FlowRunScreen extends StatefulWidget {
   /// 作为工作流右侧的当前记录。没有返回按钮，换一条记录就换这一页。
   final bool embedded;
 
+  /// 开跑响应里的三层坐标。旧主机 / 历史记录没有时由 run 响应与产物 scope
+  /// 补；`instanceId` 留给未来「再跑一次」按钮传给 `HubFlow.start`。
+  final String? instanceId;
+  final String? instanceScope;
+  final String? runScope;
+
+  /// 测试注入：产物读服务与 pouch:// 打开路径。
+  final HubArtifact? artifactClient;
+  final Future<void> Function(BuildContext context, String uri)?
+      openArtifactUri;
+
   /// 是否订阅连接事件流。真实 [HubFlow] 的 `send` 为 null（走连接管理器），
   /// 测试 stub 一定注入了 `send`。只有「注入 stub 又不给连接流」才跳过订阅，
   /// 避免测试碰到真实单例；工作台把真实 client 透传下来时也必须订阅，否则
@@ -129,6 +148,8 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   static const double _sidePaneMinWidth = 600;
 
   late final HubFlow _client = widget.client ?? HubFlow();
+  late final HubArtifact _artifactClient = widget.artifactClient ??
+      HubArtifact(send: _client.send, events: _client.events);
   StreamSubscription<FlowEvent>? _sub;
   StreamSubscription<PeerConnectionEvent>? _connSub;
   Timer? _refetch;
@@ -137,6 +158,19 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   bool _loadFailed = false;
   Future<void>? _inFlightLoad;
   bool _reloadQueued = false;
+
+  /// 三层坐标与两层产物列表。没拿到坐标（老主机）时直接显示紧凑空态，
+  /// 不发新命令、也不等它超时。
+  String? _instanceId;
+  String? _instanceScope;
+  String? _runScope;
+  List<FlowArtifact> _runArtifacts = const <FlowArtifact>[];
+  List<FlowArtifact> _instanceArtifacts = const <FlowArtifact>[];
+  bool _artifactsLoading = false;
+  int _artifactLoadSeq = 0;
+
+  /// 未来加「再跑一次」时用这个 id 调 `_client.start(instanceId: ...)`。
+  String? get rerunInstanceId => _instanceId;
 
   /// 终态真值重拉失败后的自带退避重试次数。只等 `connected` 不够：连接可能
   /// 一直健康（主机回 success:false / 帧不合法），也可能重连早于失败落地。
@@ -158,6 +192,12 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   @override
   void initState() {
     super.initState();
+    _instanceId = widget.instanceId;
+    _instanceScope = widget.instanceScope;
+    _runScope = widget.runScope;
+    if (_runScope == null && _instanceScope != null) {
+      _runScope = '$_instanceScope:run:${widget.runId}';
+    }
     _sub = _client.runEvents(widget.peerId).listen(_onEvent);
     // 注入了假传输（send 非空）又不给连接事件流时不要碰真实连接管理器；
     // 其余情况（含工作台透传下来的真实 client）都要订阅。
@@ -183,7 +223,18 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   @override
   void didUpdateWidget(FlowRunScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.runId != widget.runId) _selectedKey = null;
+    if (oldWidget.runId != widget.runId) {
+      _selectedKey = null;
+      _instanceId = widget.instanceId;
+      _instanceScope = widget.instanceScope;
+      _runScope = widget.runScope;
+      if (_runScope == null && _instanceScope != null) {
+        _runScope = '$_instanceScope:run:${widget.runId}';
+      }
+      _runArtifacts = const <FlowArtifact>[];
+      _instanceArtifacts = const <FlowArtifact>[];
+      _artifactsLoading = false;
+    }
   }
 
   @override
@@ -213,6 +264,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   Future<void> _loadOnce() async {
     final run = await _client.run(widget.peerId, widget.runId);
     if (!mounted) return;
+    if (run != null) _syncCoordsFromRun(run);
     setState(() {
       _loading = false;
       if (run != null) {
@@ -247,6 +299,111 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     });
     // 事件先到、agent 还没同步下来时挂起的「查看会话」，重拉成功后再打开。
     _retryPendingSessionOpen();
+    if (run != null) unawaited(_loadArtifacts());
+  }
+
+  void _syncCoordsFromRun(FlowRunView run) {
+    _instanceId ??= run.instanceId;
+    _instanceScope ??= run.instanceScope;
+    _runScope ??= run.runScope;
+    if (_runScope == null && _instanceScope != null) {
+      _runScope = '$_instanceScope:run:${widget.runId}';
+    }
+  }
+
+  /// 产物自身的 scope 也能补出实例坐标：run scope 的父级就是实例；旧主机
+  /// 给的畸形字符串按 `:run:` 前缀兜底，不拿它拼 URI。
+  void _syncCoordsFromArtifacts(Iterable<FlowArtifact> artifacts) {
+    for (final artifact in artifacts) {
+      final scope = artifact.scope;
+      if (scope.isEmpty) continue;
+      final parent = PouchScope.tryParse(scope)?.parentId;
+      if (parent != null && parent.contains(':instance:')) {
+        _instanceScope ??= parent;
+      }
+      final marker = scope.lastIndexOf(':run:');
+      if (marker > 0) {
+        _runScope ??= scope;
+        _instanceScope ??= scope.substring(0, marker);
+      } else if (scope.contains(':instance:')) {
+        _instanceScope ??= scope;
+      }
+    }
+    if (_instanceId == null && _instanceScope != null) {
+      final parts = _instanceScope!.split(':instance:');
+      if (parts.length == 2 &&
+          parts.last.isNotEmpty &&
+          !parts.last.contains(':')) {
+        _instanceId = parts.last;
+      }
+    }
+  }
+
+  /// 主机列实例 scope 会带上子运行（include_descendants）；「本实例」这一栏
+  /// 只留已 promote 到实例层的产物，运行层的仍归「本次运行」。
+  List<FlowArtifact> _promotedOnly(List<FlowArtifact> artifacts) {
+    final instance = _instanceScope;
+    if (instance == null || instance.isEmpty) return artifacts;
+    return [
+      for (final artifact in artifacts)
+        if (artifact.scope == instance ||
+            (!artifact.scope.contains(':run:') &&
+                artifact.scope.contains(':instance:')))
+          artifact,
+    ];
+  }
+
+  Future<void> _loadArtifacts() async {
+    final generation = ++_artifactLoadSeq;
+    final runScope = _runScope;
+    final instanceScope = _instanceScope;
+    if (runScope == null && instanceScope == null) {
+      if (mounted) {
+        setState(() {
+          _runArtifacts = const <FlowArtifact>[];
+          _instanceArtifacts = const <FlowArtifact>[];
+          _artifactsLoading = false;
+        });
+      }
+      return;
+    }
+    if (mounted) setState(() => _artifactsLoading = true);
+    try {
+      final runFuture = runScope == null
+          ? Future<List<FlowArtifact>>.value(const <FlowArtifact>[])
+          : _artifactClient.list(widget.peerId, runScope, runId: widget.runId);
+      final instanceFuture = instanceScope == null
+          ? Future<List<FlowArtifact>>.value(const <FlowArtifact>[])
+          : _artifactClient.list(widget.peerId, instanceScope);
+      final results =
+          await Future.wait<List<FlowArtifact>>([runFuture, instanceFuture]);
+      if (!mounted || generation != _artifactLoadSeq) return;
+      var runArtifacts = results[0];
+      var instanceArtifacts = results[1];
+      _syncCoordsFromArtifacts([...runArtifacts, ...instanceArtifacts]);
+      // 第一次没实例坐标，但 run 产物的 scope 补出来了：顺手把 promote 到
+      // 实例层的产物也取回来，「本实例」切换才有内容。
+      if (instanceScope == null && _instanceScope != null) {
+        instanceArtifacts = await _artifactClient.list(
+          widget.peerId,
+          _instanceScope!,
+        );
+        if (!mounted || generation != _artifactLoadSeq) return;
+      }
+      setState(() {
+        _runArtifacts = FlowArtifact.groupByArtifactId(runArtifacts);
+        _instanceArtifacts =
+            FlowArtifact.groupByArtifactId(_promotedOnly(instanceArtifacts));
+        _artifactsLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _artifactLoadSeq) return;
+      setState(() {
+        _runArtifacts = const <FlowArtifact>[];
+        _instanceArtifacts = const <FlowArtifact>[];
+        _artifactsLoading = false;
+      });
+    }
   }
 
   /// 在最新的运行树里按 key / session_id 找同一个节点的 agent。
@@ -336,7 +493,8 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
         final l10n = AppLocalizations.of(context);
         return AlertDialog(
           title: Text(l10n.flow_deleteRunTitle),
-          content: Text(l10n.flow_deleteRunBody),
+          content: Text('${l10n.flow_deleteRunBody}\n\n'
+              '${flowArtifactDeletionWarning(context)}'),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -736,6 +894,13 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
           run: run,
           onCancel: _cancel,
           onDelete: _deleteRun,
+        ),
+        FlowArtifactCard(
+          artifacts: _runArtifacts,
+          instanceArtifacts: _instanceArtifacts,
+          instanceScopeAvailable: _instanceScope != null,
+          loading: _artifactsLoading,
+          onOpenUri: widget.openArtifactUri,
         ),
         // 运行级失败 / 取消原因。主机把 Failed 的 error 和 Cancel 的 reason
         // 都写进 `flow_run_get_resp.error`；之前只有节点级 error 被渲染，

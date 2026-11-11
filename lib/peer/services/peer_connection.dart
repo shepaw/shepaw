@@ -279,6 +279,13 @@ class PeerConnection {
     'pouch_invite_status_resp',
     'pouch_invite_cancel_req',
     'pouch_invite_cancel_resp',
+    // M4 工作流产物：命令目录里的点号 id 与 snake_case 响应都可能成为帧 type。
+    'pouch_artifact_list_req',
+    'pouch_artifact_list_resp',
+    'pouch_artifact_get_req',
+    'pouch_artifact_get_resp',
+    'pouch.artifact_list',
+    'pouch.artifact_get',
     'session_create_req',
     'session_create_resp',
     'cli_execute_req',

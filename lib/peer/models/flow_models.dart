@@ -394,6 +394,10 @@ class FlowRunView {
     this.yaml = '',
     this.runSessionId,
     this.startedMs,
+    this.flowId,
+    this.instanceId,
+    this.instanceScope,
+    this.runScope,
   });
 
   final String runId;
@@ -415,6 +419,36 @@ class FlowRunView {
 
   /// 主机若下发 `started_ms`，状态条显示已用时；旧主机没有就不显示。
   final int? startedMs;
+
+  /// 三层分区坐标（M4）。旧主机的 `flow_run_get_resp` 不带这些字段，全为 null。
+  /// 有 `flow_id` + `instance_id` 时 [instanceScope] 会补出实例 scope。
+  final String? flowId;
+  final String? instanceId;
+  final String? instanceScope;
+  final String? runScope;
+
+  /// 未来「再跑一次」按钮把这个 id 传回 [HubFlow.start]，复用同一业务实例。
+  /// 运行页状态按「start 响应 → run 快照」的优先级保留它。
+  String? get rerunInstanceId => instanceId;
+
+  static String? _stringField(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+    }
+    return null;
+  }
+
+  static Map<String, dynamic> _hostMeta(Map<String, dynamic> response) {
+    final ctx = response['ctx'];
+    final host = ctx is Map ? ctx['host'] : null;
+    final raw = response['host_meta'] ?? host;
+    return raw is Map ? Map<String, dynamic>.from(raw) : const {};
+  }
+
+  static bool _isRunScope(String value) =>
+      value.startsWith('run:') ||
+      (value.startsWith('flow:') && value.contains(':run:'));
 
   static FlowRunView? fromResponse(Map<String, dynamic> response) {
     if (response['success'] != true) return null;
@@ -447,6 +481,30 @@ class FlowRunView {
       }
       runSessionId ??= flowRunSheSessionId(tree);
     }
+    // 三层坐标可能来自 run 帧顶层，也可能随 run.json 的 ctx.host 投影回来。
+    // 旧主机没有这些字段，instanceScope / runScope 就留 null，UI 退回空产物卡。
+    final hostMeta = _hostMeta(response);
+    final flowId = _stringField(response, ['flow_id']) ??
+        _stringField(hostMeta, ['flow_id']);
+    final instanceId = _stringField(response, ['instance_id']) ??
+        _stringField(hostMeta, ['instance_id']);
+    final instanceScope =
+        _stringField(response, ['instance_scope', 'instance_pouch_scope']) ??
+            _stringField(hostMeta, ['instance_scope']) ??
+            (flowId != null && instanceId != null
+                ? 'flow:$flowId:instance:$instanceId'
+                : null);
+    var runScope = _stringField(response, ['run_scope', 'run_pouch_scope']) ??
+        _stringField(hostMeta, ['run_scope', 'pouch_scope']);
+    final genericScope =
+        _stringField(response, ['scope']) ?? _stringField(hostMeta, ['scope']);
+    if (genericScope != null && _isRunScope(genericScope)) {
+      runScope ??= genericScope;
+    }
+    if (runScope == null && instanceScope != null) {
+      final id = (response['run_id'] as String?) ?? '';
+      if (id.isNotEmpty) runScope = '$instanceScope:run:$id';
+    }
     return FlowRunView(
       runId: (response['run_id'] as String?) ?? '',
       status: status,
@@ -461,6 +519,10 @@ class FlowRunView {
       yaml: (response['yaml'] as String?) ?? '',
       runSessionId: runSessionId,
       startedMs: (response['started_ms'] as num?)?.toInt(),
+      flowId: flowId,
+      instanceId: instanceId,
+      instanceScope: instanceScope,
+      runScope: runScope,
     );
   }
 
@@ -492,6 +554,10 @@ class FlowRunView {
       yaml: yaml,
       runSessionId: runSessionId,
       startedMs: startedMs,
+      flowId: flowId,
+      instanceId: instanceId,
+      instanceScope: instanceScope,
+      runScope: runScope,
     );
   }
 
@@ -509,6 +575,10 @@ class FlowRunView {
         yaml: yaml,
         runSessionId: runSessionId,
         startedMs: startedMs,
+        flowId: flowId,
+        instanceId: instanceId,
+        instanceScope: instanceScope,
+        runScope: runScope,
       );
 }
 
@@ -1045,4 +1115,273 @@ Object? flowFieldValue(Map<String, dynamic>? fields, String path) {
     if (hit != null) return hit;
   }
   return null;
+}
+
+// ── M4 工作流产物 ──────────────────────────────────────────────────────────
+// 主机 `pouch.artifact_list/get` 的解码。旧主机没有这两个命令、响应缺字段或
+// 夹了未知类型，都只退化成空列表 / 空版本，不让运行页抛异常。
+
+Map<String, dynamic> _artifactMap(Object? raw) =>
+    raw is Map ? Map<String, dynamic>.from(raw) : const <String, dynamic>{};
+
+Object? _artifactField(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value != null) return value;
+  }
+  return null;
+}
+
+String _artifactText(Map<String, dynamic> json, List<String> keys) {
+  final value = _artifactField(json, keys);
+  if (value is String) return value.trim();
+  return value == null ? '' : value.toString().trim();
+}
+
+int _artifactInt(Map<String, dynamic> json, List<String> keys) {
+  final value = _artifactField(json, keys);
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value.trim()) ?? 0;
+  return 0;
+}
+
+Map<String, dynamic> _artifactPayload(Map<String, dynamic>? response) {
+  if (response == null) return const <String, dynamic>{};
+  for (final key in const ['data', 'result']) {
+    final nested = _artifactMap(response[key]);
+    if (nested['artifacts'] is List ||
+        nested['artifact'] is Map ||
+        nested.containsKey('artifact_id')) {
+      return nested;
+    }
+  }
+  return response;
+}
+
+bool _artifactFailed(Map<String, dynamic> json) =>
+    json['success'] == false || json['ok'] == false;
+
+String _artifactVersionUri({
+  required String pouchId,
+  required String scope,
+  required String artifactId,
+  required int version,
+  required String filename,
+  required String path,
+}) {
+  if (pouchId.isEmpty || scope.isEmpty) return '';
+  final relative = path.isNotEmpty
+      ? path.replaceAll(RegExp(r'^/+|/+$'), '')
+      : 'artifacts/${Uri.encodeComponent(artifactId)}/v$version/'
+          '${Uri.encodeComponent(filename)}';
+  return 'pouch://$pouchId/$scope/$relative';
+}
+
+/// 产物的一版。URI 是主机给的 `pouch://` 地址；旧响应只有 path 时按三层
+/// 目录约定补一个地址，仍打不开就不给点击。
+class FlowArtifactVersion {
+  const FlowArtifactVersion({
+    required this.version,
+    required this.filename,
+    this.scope = '',
+    this.path = '',
+    this.hash = '',
+    this.size = 0,
+    this.createdMs = 0,
+    this.uri = '',
+    this.note = '',
+  });
+
+  final int version;
+  final String filename;
+  final String scope;
+  final String path;
+  final String hash;
+  final int size;
+  final int createdMs;
+  final String uri;
+  final String note;
+
+  factory FlowArtifactVersion.fromJson(
+    Map<String, dynamic> json, {
+    String fallbackUri = '',
+  }) {
+    final path = _artifactText(json, ['path']);
+    var filename = _artifactText(json, ['filename', 'name']);
+    if (filename.isEmpty && path.isNotEmpty) {
+      filename = path.split('/').last;
+    }
+    final explicitUri = _artifactText(json, ['uri', 'pouch_uri']);
+    return FlowArtifactVersion(
+      version: _artifactInt(json, ['version']),
+      filename: filename,
+      scope: _artifactText(json, ['scope']),
+      path: path,
+      hash: _artifactText(json, ['hash', 'sha256']),
+      size: _artifactInt(json, ['size']),
+      createdMs: _artifactInt(json, ['created_ms', 'createdMs']),
+      uri: explicitUri.isNotEmpty ? explicitUri : fallbackUri,
+      note: _artifactText(json, ['note']),
+    );
+  }
+}
+
+/// 一个 `artifact_id` 及它的版本列表。列表响应的重复 id（例如 run / instance
+/// 两边都查到同一产物）由 [groupByArtifactId] 合并。
+class FlowArtifact {
+  const FlowArtifact({
+    required this.artifactId,
+    this.title = '',
+    this.kind = '',
+    this.latestVersion = 0,
+    this.scope = '',
+    this.pouchId = '',
+    this.versions = const <FlowArtifactVersion>[],
+  });
+
+  final String artifactId;
+  final String title;
+  final String kind;
+  final int latestVersion;
+  final String scope;
+  final String pouchId;
+  final List<FlowArtifactVersion> versions;
+
+  factory FlowArtifact.fromJson(Map<String, dynamic> json) {
+    final artifactId = _artifactText(json, ['artifact_id', 'artifactId', 'id']);
+    final scope = _artifactText(json, ['scope', 'origin_scope']);
+    final pouchId = _artifactText(json, ['pouch_id', 'pouchId']);
+    final rawVersions = json['versions'];
+    final versions = <FlowArtifactVersion>[];
+    if (rawVersions is List) {
+      for (final raw in rawVersions) {
+        if (raw is! Map) continue;
+        final version = _artifactMap(raw);
+        final number = _artifactInt(version, ['version']);
+        if (number <= 0) continue;
+        final filename = _artifactText(version, ['filename', 'name']);
+        final versionScope = _artifactText(version, ['scope']);
+        final path = _artifactText(version, ['path']);
+        versions.add(FlowArtifactVersion.fromJson(
+          version,
+          fallbackUri: _artifactVersionUri(
+            pouchId: pouchId,
+            scope: versionScope.isNotEmpty ? versionScope : scope,
+            artifactId: artifactId,
+            version: number,
+            filename: filename,
+            path: path,
+          ),
+        ));
+      }
+    }
+    var latest = _artifactInt(json, ['latest_version', 'latestVersion']);
+    for (final version in versions) {
+      if (version.version > latest) latest = version.version;
+    }
+    return FlowArtifact(
+      artifactId: artifactId,
+      title: _artifactText(json, ['title']),
+      kind: _artifactText(json, ['kind']),
+      latestVersion: latest,
+      scope: scope,
+      pouchId: pouchId,
+      versions: versions,
+    );
+  }
+
+  static FlowArtifact? fromResponse(Map<String, dynamic>? response) {
+    if (response == null || _artifactFailed(response)) return null;
+    final payload = _artifactPayload(response);
+    if (_artifactFailed(payload)) return null;
+    final single = payload['artifact'];
+    if (single is Map) {
+      final artifact = FlowArtifact.fromJson(_artifactMap(single));
+      return artifact.artifactId.isEmpty ? null : artifact;
+    }
+    final list = payload['artifacts'];
+    if (list is List && list.isNotEmpty && list.first is Map) {
+      final artifact = FlowArtifact.fromJson(_artifactMap(list.first));
+      return artifact.artifactId.isEmpty ? null : artifact;
+    }
+    if (!payload.containsKey('artifact_id')) return null;
+    final artifact = FlowArtifact.fromJson(payload);
+    return artifact.artifactId.isEmpty ? null : artifact;
+  }
+
+  static List<FlowArtifact> listFromResponse(Map<String, dynamic>? response) {
+    if (response == null || _artifactFailed(response)) {
+      return const <FlowArtifact>[];
+    }
+    final payload = _artifactPayload(response);
+    if (_artifactFailed(payload)) return const <FlowArtifact>[];
+    final raw = payload['artifacts'];
+    if (raw is! List) return const <FlowArtifact>[];
+    return groupByArtifactId([
+      for (final item in raw)
+        if (item is Map) FlowArtifact.fromJson(_artifactMap(item)),
+    ]);
+  }
+
+  /// 按 `artifact_id` 合并；版本去重后 v 大的排前面。
+  static List<FlowArtifact> groupByArtifactId(
+      Iterable<FlowArtifact> artifacts) {
+    final merged = <String, FlowArtifact>{};
+    final versions = <String, List<FlowArtifactVersion>>{};
+    for (final artifact in artifacts) {
+      final id = artifact.artifactId;
+      if (id.isEmpty) continue;
+      final previous = merged[id];
+      if (previous == null) {
+        merged[id] = artifact;
+        versions[id] = List<FlowArtifactVersion>.of(artifact.versions);
+        continue;
+      }
+      merged[id] = FlowArtifact(
+        artifactId: id,
+        title: previous.title.isNotEmpty ? previous.title : artifact.title,
+        kind: previous.kind.isNotEmpty ? previous.kind : artifact.kind,
+        latestVersion: previous.latestVersion > artifact.latestVersion
+            ? previous.latestVersion
+            : artifact.latestVersion,
+        scope: previous.scope.isNotEmpty ? previous.scope : artifact.scope,
+        pouchId:
+            previous.pouchId.isNotEmpty ? previous.pouchId : artifact.pouchId,
+      );
+      versions[id]!.addAll(artifact.versions);
+    }
+    return <FlowArtifact>[
+      for (final id in merged.keys) _withVersions(merged[id]!, versions[id]!),
+    ];
+  }
+
+  static FlowArtifact _withVersions(
+    FlowArtifact artifact,
+    List<FlowArtifactVersion> versions,
+  ) {
+    final unique = <String, FlowArtifactVersion>{};
+    for (final version in versions) {
+      final key = '${version.version}|${version.filename}|${version.uri}|'
+          '${version.hash}';
+      unique.putIfAbsent(key, () => version);
+    }
+    final sorted = unique.values.toList()
+      ..sort((a, b) {
+        final byVersion = b.version.compareTo(a.version);
+        return byVersion != 0 ? byVersion : a.filename.compareTo(b.filename);
+      });
+    var latest = artifact.latestVersion;
+    for (final version in sorted) {
+      if (version.version > latest) latest = version.version;
+    }
+    return FlowArtifact(
+      artifactId: artifact.artifactId,
+      title: artifact.title,
+      kind: artifact.kind,
+      latestVersion: latest,
+      scope: artifact.scope,
+      pouchId: artifact.pouchId,
+      versions: sorted,
+    );
+  }
 }
