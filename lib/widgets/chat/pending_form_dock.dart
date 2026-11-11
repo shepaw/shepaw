@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/message.dart';
+import '../../peer/services/peer_agent_client_service.dart';
 import '../../services/she_service.dart';
 import '../form_field_shape.dart';
 import '../action_confirmation_buttons.dart';
@@ -95,6 +96,15 @@ bool isDockablePendingApproval(Message message) {
   return actions is List && actions.isNotEmpty;
 }
 
+/// 卡片落库时留下的会话归属（`card_channel_id`，主机会话 id 口径）。
+/// 旧行没有这个字段，保持原来的停靠行为；带归属但不匹配当前会话的一律跳过。
+bool _cardBelongsToChannel(Message message, String hostChannel) {
+  if (hostChannel.isEmpty) return true;
+  final cardChannel =
+      message.metadata?['card_channel_id']?.toString().trim() ?? '';
+  return cardChannel.isEmpty || cardChannel == hostChannel;
+}
+
 /// 取最新的一张待处理卡；其余留在消息流里照常显示。
 ///
 /// [approvalIsLive] 判断审批卡此刻还有没有人在等（见
@@ -105,10 +115,16 @@ bool isDockablePendingApproval(Message message) {
 DockedInteraction? dockedPendingInteraction(
   List<Message> messages, {
   bool Function(Message message)? approvalIsLive,
+  String? channelId,
 }) {
+  final hostChannel =
+      channelId == null ? '' : hostSessionIdForChannel(channelId);
   var userSpokeAfter = false;
   for (var i = messages.length - 1; i >= 0; i--) {
     final message = messages[i];
+    // 多会话并发时列表里可能混着别的会话残留的卡（尤其是重开页面从 DB
+    // 载入的行）。带归属但不匹配的一律不停靠，避免「在 A 会话答 B 的卡」。
+    if (_cardBelongsToChannel(message, hostChannel) == false) continue;
     final question = pendingQuestionKind(message);
     if (question != null &&
         (!userSpokeAfter || _isHostManagedQuestion(message))) {

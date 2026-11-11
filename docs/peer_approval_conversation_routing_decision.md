@@ -309,3 +309,91 @@ session id），群聊是 `group:<group_id>:<session_id>[:…]`。在 `stdio.rs`
   `should_enable_ask_mcp`：session_key 以 `group:` 开头或 request_id 以 `group-`
   开头就置 `SHEPAW_MCP_ASK_USER=0`）。所以群里出现的 `agent_form_req` 一定是
   从别处串过来的 —— 这条可以作为回归断言。
+
+## 第 4 轮：同一 agent 多 DM 会话并发（2026-11-11）
+
+L2 只把归属加在了**首张卡帧**上，后续链路仍是「全局 `approval_id` + 可选
+`channel_id`」。实测（hub.log 卡 `ead6ac66`：14:45Z 建、14:50Z deferred、
+14:51Z 已答、22:48Z 又被另一台设备答一次且 `resolved=false`）与 App 日志的
+`buffering as orphan form` 都说明：**孤儿 / 补发 / 历史残留卡仍能在任意打开
+的会话里被点选提交**，多 DM 并发时就会「在 A 会话回答 B 会话的问题卡片」。
+
+### 与第 3 轮裁定的偏差
+
+本文件 `:169` 写的是「无归属的卡不塞进当前会话，走全局 hub」；实现却在
+`chat_controller.dart` 的 `_claimsOrphanCard` 里让**任何打开的 DM** 认领无归属
+卡，`_drainPendingOrphanCards` / `_replayOpenInteractions` 还都传了
+`includeUnattributed: true`。单会话时碰巧对，多会话时同一张卡会被灌进所有
+打开的 DM。回归用例 `chat_orphan_card_routing_test.dart` 当时只在**群**
+Controller 上测了「没有归属不认领」，DM 分支漏测。
+
+### 本轮改动
+
+主机（`shepaw-cli`）：
+
+- `agent_form_resp` 新增可选 `channel_id`；主机用 `ApprovalBus::channel_for`
+  比对卡片归属，不一致就记日志并静默丢掉答案（不回 `agent_error`，免得把
+  答案所在回合判成失败），也不消费等待位。老客户端不带该字段时跳过校验。
+- `agent_interaction_closed`（`engine_ask` / `stdio` / deferred 收场）、
+  deferred payload 全部带上 `channel_id`，主机重启后仍能按归属收场。
+
+App：
+
+- 删除「无归属卡由当前 DM 认领」兜底：`_claimsOrphanCard`、
+  `_showPeerFormCard` 与四处 `includeUnattributed: true` 一律收紧。无归属卡
+  仍由 `_publishOrphanCardToHub` 落到固定单聊 + 全局横幅，用户从横幅跳过去。
+- 卡片落库时写 `card_channel_id`（主机会话 id 口径）；`dockedPendingInteraction`
+  按当前会话过滤停靠卡；`handleFormSubmitted` 在提交前校验归属；`submitForm`
+  把 `hostSessionIdForChannel(currentChannelId)` 放进回包。
+- `_onFormReq` 以帧里的 `channel_id` 为权威（不再只信 pending 的频道快照），
+  `_isPersistedOpenForm` 拒绝别的频道里残留的同 id 卡。
+
+回归用例：两个同时挂载的同 agent DM Controller + 无归属卡 → 两边都不写
+`messages`；归属 B 的表单卡只进 B；A 会话提交 B 的卡被拦下；dock 不显示
+别的会话的卡（`psess_` 壳按同一口径换算）。
+
+## 第 5 轮：卡片有效性检测 + 工具审批卡 / submitForm 回执（2026-11-11）
+
+裁定（用户确认）：打开会话若有答题卡片**立即**查一次；还有效的每 **15 秒**复查；
+被其他端回答的卡**保留并标成已答 + 提示**；确认失效的直接移除；离开当前会话
+停止检测；检测范围覆盖所有交互卡。
+
+主机：
+
+- `agent_approval_resp` 加可选 `channel_id`，和表单卡一样做会话校验；
+  `agent_card_resp_ack {approval_id, ok, reason}` 让 `submitForm` /
+  `submitApproval` 不再把「帧写进 socket」当成功（老主机无 ack 时 App 3 秒
+  超时退回原行为）。
+- `agent_card_status_req {request_id, channel_id, card_ids, interaction_ids}`
+  → `agent_card_status_resp {cards:[{id,state}]}`，state ∈ `alive` /
+  `answered_elsewhere` / `answered_here` / `closed` / `gone`。
+- `ApprovalBus` 增加 30 分钟 / 256 条的短时关闭账本（记录 reason 与作答设备），
+  `PhoneState` 给旧式 `interaction_id` 卡同样记一笔；状态查询据此区分
+  「别的设备答了」和「卡早就不存在」，并按 `channel_id` 排除别的会话的卡。
+
+App：
+
+- `_controlTypes` 收 `agent_card_status_resp` / `agent_card_resp_ack`；
+  `PeerAgentClientService.checkCardStatus` 按 request_id 等回包，超时返回空
+  列表（**网络抖动绝不删卡**）；`submitForm` / `submitApproval` 等 ack，
+  `ok=false` 抛 `PeerCardRejectedException` 且按 reason 收卡，不标已答。
+- 工具审批卡落库写 `card_channel_id`（表单卡同款）；`handleActionSelected`
+  提交前校验归属；`submitApproval` 从落库归属补 `channel_id`，不必逐层透传。
+- `ChatController` 新增卡片有效性轮询：`loadMessages` 结束立即查一次 +
+  `Timer.periodic(15s)`；`switchChannel` / `dispose` cancel；异步回来用
+  `currentChannelId` 代际守卫。`gone` 删行（DB + 内存），`answered_elsewhere`
+  写 `closed` 让 `InteractionClosedHint` 渲染「已在别处作答」并弹提示，
+  `alive` 不动。定时器跟着会话走（无卡时只跳过请求），保证期间新到的卡
+  下一轮仍会被检测。
+- hub 卡只在 `interaction_ids` 里查（`hub_interaction` 与 `metadata[kind]`
+  同存一份，按 approval_id 查会被主机回 `gone` 而误删）；CLI 卡无主机等待位，
+  单选/多选/文件上传是本地工具卡，都不参与对账。
+
+### 仍未覆盖
+
+- `flow:` session_key 的审批卡 `channel_id` 为空；`flow/host.rs::publish_card_closed`
+  的关闭帧仍不带 `channel_id`（App 目前按 `approval_id` 全局收场，功能不受影响）。
+- 广播 / 补发仍是设备级 fan-out，没有按会话准入；完全的根治需要客户端在
+  `agent_pending_interactions_req` / 事件补拉里声明会话。
+- `CardStatus` 账本只在进程内，主机重启后旧卡一律判 `gone`（那时旧卡确实
+  也不该再答）。

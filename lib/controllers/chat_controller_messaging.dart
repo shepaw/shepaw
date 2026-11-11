@@ -1178,10 +1178,17 @@ mixin _MessagingOps on _ChatControllerBase {
         userName: userName,
         actionData: actionData,
       );
-      messages.add(sm);
-      messageIdMap[sid] = sm;
+      // 会话归属落在消息顶层（和表单卡一致）：重启后仍能校验这张审批卡
+      // 是不是本会话的卡，有效性轮询也靠它对齐。
+      final cardChannel = actionData['channel_id']?.toString().trim() ?? '';
+      final cardMessage = cardChannel.isEmpty
+          ? sm
+          : ChatStreamingText.withMergedMetadata(
+              sm, {'card_channel_id': cardChannel});
+      messages.add(cardMessage);
+      messageIdMap[sid] = cardMessage;
       streamingMessageId = sid;
-      streamingContent = sm.content;
+      streamingContent = cardMessage.content;
       // Orphan cards (hub restarted mid-approval) have no live turn behind
       // them — showing a spinner would never clear.
       if (actionData['orphan'] != true) {
@@ -1202,9 +1209,9 @@ mixin _MessagingOps on _ChatControllerBase {
               senderId: agentId!,
               senderType: 'agent',
               senderName: displayName,
-              content: sm.content,
+              content: cardMessage.content,
               messageType: 'text',
-              metadata: sm.metadata,
+              metadata: cardMessage.metadata,
             )
             .ignore();
       }
@@ -1237,8 +1244,13 @@ mixin _MessagingOps on _ChatControllerBase {
       actionData: actionData,
       contentOverride: streamingContent,
     );
-    messages[idx] = updated;
-    messageIdMap[updated.id] = updated;
+    final cardChannel = actionData['channel_id']?.toString().trim() ?? '';
+    final cardMessage = cardChannel.isEmpty
+        ? updated
+        : ChatStreamingText.withMergedMetadata(
+            updated, {'card_channel_id': cardChannel});
+    messages[idx] = cardMessage;
+    messageIdMap[cardMessage.id] = cardMessage;
     // Keep streamingMessageId pointing at the host bubble so subsequent
     // sequential approvals land on the same card.
     streamingMessageId ??= streamingId;
@@ -1250,7 +1262,7 @@ mixin _MessagingOps on _ChatControllerBase {
     _notify();
     // Persist so loadMessages after sendChat cannot revive a card-less bubble.
     localDatabaseService
-        .updateMessageMetadata(streamingId, updated.metadata ?? {})
+        .updateMessageMetadata(streamingId, cardMessage.metadata ?? {})
         .ignore();
   }
 
@@ -1270,11 +1282,14 @@ mixin _MessagingOps on _ChatControllerBase {
     // P6：帧里的 `channel_id` 是裸主机会话 id（`flow_<rid8>_she`），本机
     // 打开的却是 `psess_flow_<rid8>_she`。两者是同一条会话，别因为字符串
     // 不相等就把已经打开的工作流会话里的卡丢掉（否则要退出重进才看得见）。
-    final frameChannel = formData['channel_id']?.toString() ?? '';
+    final frameChannel = formData['channel_id']?.toString().trim() ?? '';
     final current = currentChannelId;
-    final belongsHere = frameChannel.isEmpty ||
-        frameChannel == current ||
-        (current != null && frameChannel == hostSessionIdForChannel(current));
+    // 无归属卡不能再进当前列表：多会话并发时「谁打开就归谁」会把同一张卡
+    // 挂进任意会话，用户就在错的会话里把它答了。它们只由服务层的固定频道
+    // 落库 + 全局横幅呈现。
+    final belongsHere = frameChannel.isNotEmpty &&
+        (frameChannel == current ||
+            (current != null && frameChannel == hostSessionIdForChannel(current)));
     if (!belongsHere) {
       return;
     }

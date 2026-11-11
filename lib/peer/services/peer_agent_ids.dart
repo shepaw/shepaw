@@ -57,8 +57,8 @@ String hubAgentIdFromRaw(String raw, {String peerId = ''}) {
 ///
 /// 帧里的 `channel_id` 与 `hostSessionIdForChannel(currentChannelId)` 是同一
 /// 口径（App 频道 id 去掉 `psess_`）。没有归属的旧帧这里一律不匹配 ——
-/// 它们由服务层落到 agent 普通单聊，聊天页按「单聊 + 同一 agent」单独认领，
-/// 不能靠这个函数匹配任意打开的会话。
+/// 它们由服务层落到该 agent 一条固定的普通单聊并登记全局横幅，聊天页
+/// 不再「谁打开就认领」，否则多 DM 会话并发时同一张卡会挂进每个会话。
 bool orphanCardBelongsToHostSession(
   String? frameChannelId,
   String? hostSessionId,

@@ -162,6 +162,9 @@ class PeerConnection {
     'agent_form_deferred',
     'agent_form_resp',
     'agent_interaction_closed',
+    // 卡片有效性查询与作答回执：都要走 control 流，不能落进聊天消息持久化。
+    'agent_card_status_resp',
+    'agent_card_resp_ack',
     'agent_commands_req',
     'agent_commands_resp',
     'agent_sessions_req',

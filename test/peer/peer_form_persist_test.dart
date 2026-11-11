@@ -118,6 +118,8 @@ void main() {
     expect(form['form_id'], approvalId);
     expect(form['request_id'], requestId);
     expect(form['title'], '用哪个端口');
+    // 归属单独留一份，重开页面后 dock / 提交校验才认得出这是不是本会话的卡。
+    expect(metadataOf(row)['card_channel_id'], channelId);
     final peerForm = form['peer_form'] as Map;
     expect(peerForm['peer_id'], 'peer-1');
     expect(peerForm['approval_id'], approvalId);

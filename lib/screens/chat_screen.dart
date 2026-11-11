@@ -3766,6 +3766,7 @@ class _ChatScreenState extends State<ChatScreen>
                               dockedInteraction: dockedPendingInteraction(
                                 c.messages,
                                 approvalIsLive: c.isApprovalCardLive,
+                                channelId: c.currentChannelId,
                               ),
                               messageIdMap: c.messageIdMap,
                               streamingMessageId: c.streamingMessageId,
@@ -3949,6 +3950,7 @@ class _ChatScreenState extends State<ChatScreen>
                   final docked = dockedPendingInteraction(
                     c.messages,
                     approvalIsLive: c.isApprovalCardLive,
+                    channelId: c.currentChannelId,
                   );
                   if (docked == null) return const SizedBox.shrink();
                   return PendingInteractionDock(

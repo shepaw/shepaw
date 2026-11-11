@@ -131,6 +131,7 @@ void main() {
         peerId: 'peer-1',
         approvalId: approvalId,
         values: const {'port': '3000'},
+        hostChannelId: 'dm_remote-agent_user_1',
       );
 
       expect(wasDeferred, isTrue);
@@ -139,6 +140,8 @@ void main() {
       expect(sent.single['approval_id'], approvalId);
       expect(sent.single['action'], 'accept');
       expect(sent.single['content'], {'port': '3000'});
+      // 主机据此拒绝「在别的会话提交这张卡」。
+      expect(sent.single['channel_id'], 'dm_remote-agent_user_1');
     });
 
     test('拒绝只发一条 decline，不开新回合', () async {

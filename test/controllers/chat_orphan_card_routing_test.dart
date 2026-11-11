@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/controllers/chat_controller.dart';
+import 'package:shepaw/models/message.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/services/approval/pending_approval_hub.dart';
@@ -200,6 +201,119 @@ void main() {
       await pumpEventQueue();
 
       expect(dm.messages, isNotEmpty);
+    });
+
+    ChatController anotherDm(String channelId) {
+      final other = ChatController(
+        agentId: remoteAgentId,
+        initialAgentName: 'Remote',
+        initialChannelId: channelId,
+        getUserId: () => 'user-1',
+        getUserName: () => 'User',
+      );
+      other.currentChannelId = channelId;
+      other.installOrphanCardListenersForTest();
+      addTearDown(other.dispose);
+      return other;
+    }
+
+    test('两个同时打开的单聊都不认领无归属卡', () async {
+      final other = anotherDm(nextDmChannelId());
+      final approvalId = nextApprovalId();
+      PeerAgentClientService.instance.debugInjectControlForTest(
+        'agent_approval_req',
+        approvalFrame(
+          approvalId: approvalId,
+          requestId: 'req-$approvalId',
+          channelId: null,
+        ),
+        peerId: peerId,
+      );
+      await pumpEventQueue();
+
+      expect(dm.messages, isEmpty,
+          reason: '旧实现会让任何打开的 DM 认领，两个会话会各挂一张');
+      expect(other.messages, isEmpty);
+    });
+
+    test('多会话并发时表单卡只进归属的那个会话', () async {
+      final otherChannelId = nextDmChannelId();
+      final other = anotherDm(otherChannelId);
+      final approvalId = nextApprovalId();
+      PeerAgentClientService.instance.debugInjectControlForTest(
+        'agent_form_req',
+        {
+          'request_id': 'req-$approvalId',
+          'approval_id': approvalId,
+          'agent_id': remoteAgentId,
+          'channel_id': otherChannelId,
+          'title': '选一个',
+          'fields': [
+            {
+              'field_id': 'question_0',
+              'type': 'text_input',
+              'label': '选哪个',
+            }
+          ],
+        },
+        peerId: peerId,
+      );
+      await pumpEventQueue();
+
+      expect(dm.messages, isEmpty, reason: 'A 会话不该出现 B 会话的提问卡');
+      expect(other.messages, isNotEmpty,
+          reason: '归属 B 的卡必须在 B 里还能看到（证明监听确实装上）');
+    });
+  });
+
+  group('跨会话提交', () {
+    test('A 会话里的 B 会话卡片不能直接提交', () async {
+      final controller = ChatController(
+        agentId: remoteAgentId,
+        initialAgentName: 'Remote',
+        initialChannelId: 'dm_remote-agent_user_a',
+        getUserId: () => 'user-1',
+        getUserName: () => 'User',
+      )..currentChannelId = 'dm_remote-agent_user_a';
+      addTearDown(controller.dispose);
+      final events = <ChatEvent>[];
+      final sub = controller.events.listen(events.add);
+      addTearDown(sub.cancel);
+
+      final message = Message(
+        id: 'peer_form_cross-session',
+        from: MessageFrom(
+            id: 'remote-agent', type: 'agent', name: 'Remote'),
+        type: MessageType.text,
+        content: '选一个',
+        timestampMs: 0,
+        metadata: {
+          'card_channel_id': 'dm_remote-agent_user_b',
+          'form': {
+            'form_id': 'cross-session',
+            'peer_form': {
+              'peer_id': peerId,
+              'approval_id': 'cross-session',
+            },
+          },
+        },
+      );
+      await controller.handleFormSubmitted(
+        message,
+        'cross-session',
+        {'question_0': '选 A'},
+        '选 A',
+      );
+      await pumpEventQueue();
+
+      expect(
+        events.whereType<ShowErrorSnackBarEvent>(),
+        hasLength(1),
+        reason: '应该在提交前挡住，且给出明确提示',
+      );
+      // 没走到 submitForm：卡片本地状态也不能被标成已答。
+      final form = message.metadata?['form'];
+      expect(form is Map ? form['submitted_values'] : null, isNull);
     });
   });
 }

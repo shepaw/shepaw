@@ -46,6 +46,7 @@ import '../peer/services/peer_connection.dart' show PeerConnectionEvent;
 import '../peer/peer_approval_selection.dart';
 import '../peer/peer_agent_channel.dart' show isPeerAgentChannel;
 import '../peer/peer_approval_payload.dart';
+import '../peer/models/card_status.dart';
 import '../peer/interaction_card_close.dart' show metadataMarkingFormDeferred;
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/workflow/workflow_restore_planner.dart';
@@ -766,16 +767,17 @@ abstract class _ChatControllerBase extends ChangeNotifier
   /// 帧里的 `channel_id` 是主机收到的 `session_id`，与
   /// [hostSessionIdForChannel] 是同一口径。归属别的会话的卡一律不认领 ——
   /// 它已经由 `PeerAgentClientService` 登记到全局提醒，不能塞进当前会话。
-  /// 旧帧没有归属时只在单聊里认领，和提醒落到的普通单聊保持一致。
+  /// 没有归属的卡同样不认领：服务层已经把它落到该 agent 的一条固定单聊并
+  /// 登记了横幅，由用户从横幅跳过去作答。
   bool _claimsOrphanCard(Map<String, dynamic> event) {
     final channel = currentChannelId;
     if (channel == null || channel.isEmpty) return false;
     final frameChannel = (event['channel_id'] as String?)?.trim() ?? '';
     if (frameChannel.isEmpty) {
-      // 旧帧没带会话归属。服务层只能把提醒落到这名 agent 的普通单聊，
-      // 所以单聊里认领（谁打开就落在谁的会话），群聊里不认领——否则同一个
-      // agent 会把卡塞进不相关的群会话。
-      return !isGroupMode && (agentId?.isNotEmpty ?? false);
+      // 旧实现在这里让「任何打开的单聊」认领无归属卡。单会话时碰巧对，
+      // 多会话并发时同一张 B 会话的卡会被灌进所有打开的 DM（A 会话里也能
+      // 点提交），这正是串 session 的来源。宁可少一张实时卡，也不能挂错会话。
+      return false;
     }
     return orphanCardBelongsToHostSession(
       frameChannel,
@@ -831,7 +833,6 @@ abstract class _ChatControllerBase extends ChangeNotifier
       peerId: peerId,
       remoteAgentId: remoteId,
       hostChannelId: hostChannelId,
-      includeUnattributed: true,
     )) {
       _handleStreamingActionConfirmation(
         Map<String, dynamic>.from(event)
@@ -844,7 +845,6 @@ abstract class _ChatControllerBase extends ChangeNotifier
       peerId: peerId,
       remoteAgentId: remoteId,
       hostChannelId: hostChannelId,
-      includeUnattributed: true,
     )) {
       _handleStreamingForm(event);
     }
@@ -871,13 +871,11 @@ abstract class _ChatControllerBase extends ChangeNotifier
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       hostChannelId: hostChannelId,
-      includeUnattributed: true,
     );
     final openApprovals = service.pendingOpenApprovalsFor(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       hostChannelId: hostChannelId,
-      includeUnattributed: true,
     );
     if (openForms.isEmpty && openApprovals.isEmpty) return;
     for (final event in openForms) {
@@ -918,6 +916,213 @@ abstract class _ChatControllerBase extends ChangeNotifier
   /// 整表安装盖掉。
   Future<void> replayOpenInteractionsAfterLoad() => _drainPendingOrphanCards();
 
+  // ---- 卡片有效性轮询 ----------------------------------------------------
+  //
+  // 打开会话时对还没收场的交互卡立刻查一次主机；还有效的每 15 秒复查一次。
+  // 离开会话（切频道 / dispose）就 cancel，绝不在后台替别的会话轮询。
+
+  Timer? _cardValidityTimer;
+  bool _cardValidityInFlight = false;
+
+  void startCardValidityWatch() {
+    _cardValidityTimer?.cancel();
+    _cardValidityTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      unawaited(checkCardValidity());
+    });
+    unawaited(checkCardValidity());
+  }
+
+  void stopCardValidityWatch() {
+    _cardValidityTimer?.cancel();
+    _cardValidityTimer = null;
+  }
+
+  /// 单测用：当前是否还在为这个会话轮询卡片。
+  @visibleForTesting
+  bool get cardValidityPolling => _cardValidityTimer?.isActive ?? false;
+
+  /// 收集本会话里所有还有主机等待位的卡，问一次「还有效吗」。
+  /// 纯本地工具卡（单选 / 多选 / 文件上传）没有主机等待位，不参与对账。
+  @visibleForTesting
+  Future<void> checkCardValidity() async {
+    if (_cardValidityInFlight) return;
+    final channel = currentChannelId;
+    if (channel == null || channel.isEmpty) return;
+    final hostChannel = hostSessionIdForChannel(channel);
+    final cardIds = <String>{};
+    final interactionIds = <String>{};
+    final byId = <String, List<String>>{};
+    var peerId = '';
+
+    void add(String id, String messageId) {
+      if (id.isEmpty) return;
+      byId.putIfAbsent(id, () => <String>[]).add(messageId);
+    }
+
+    for (final message in messages) {
+      final meta = message.metadata;
+      if (meta == null) continue;
+      // hub 卡同时带 `hub_interaction` 和 `metadata[kind]`（form / 单选等）。
+      // 它只在 PhoneState 的 interaction_id 等待位里，当成 approval_id 查会
+      // 被主机回「gone」而误删，所以命中后不再收其它卡。
+      final hub = meta['hub_interaction'];
+      if (hub is Map) {
+        final id = hub['interaction_id']?.toString() ?? '';
+        if (id.isNotEmpty) {
+          interactionIds.add(id);
+          add(id, message.id);
+          final owner = hub['host_peer_id']?.toString() ?? '';
+          if (peerId.isEmpty && owner.isNotEmpty) peerId = owner;
+        }
+        continue;
+      }
+      final form = meta['form'];
+      if (form is Map &&
+          form['submitted_values'] == null &&
+          form['closed'] == null) {
+        final peer = form['peer_form'];
+        final id = (peer is Map ? peer['approval_id'] : null)?.toString() ??
+            form['form_id']?.toString() ??
+            '';
+        if (id.isNotEmpty) {
+          cardIds.add(id);
+          add(id, message.id);
+          final owner = peer is Map ? peer['peer_id']?.toString() ?? '' : '';
+          if (peerId.isEmpty && owner.isNotEmpty) peerId = owner;
+        }
+      }
+      final approval = meta['action_confirmation'];
+      if (approval is Map &&
+          approval['confirmation_context'] != 'cli' &&
+          approval['selected_action_id'] == null &&
+          approval['closed'] == null) {
+        final id = approval['confirmation_id']?.toString() ?? '';
+        if (id.isNotEmpty) {
+          cardIds.add(id);
+          add(id, message.id);
+        }
+      }
+    }
+    if (cardIds.isEmpty && interactionIds.isEmpty) {
+      // 这一刻没有卡：保持定时器（会话期间还会有新卡到达），但不发请求。
+      return;
+    }
+    if (peerId.isEmpty) {
+      try {
+        final agent =
+            await localDatabaseService.getRemoteAgentById(agentId ?? '');
+        peerId = agent?.sourcePeerId ?? '';
+      } catch (_) {}
+      if (peerId.isEmpty) {
+        try {
+          final ids = PeerConnectionManager.instance.connectedPeerIds;
+          if (ids.isNotEmpty) peerId = ids.first;
+        } catch (_) {}
+      }
+    }
+    if (peerId.isEmpty || currentChannelId != channel) return;
+
+    _cardValidityInFlight = true;
+    try {
+      final entries = await PeerAgentClientService.instance.checkCardStatus(
+        peerId: peerId,
+        channelId: hostChannel,
+        cardIds: cardIds.toList(),
+        interactionIds: interactionIds.toList(),
+      );
+      // 异步回来时可能已经切到别的会话；超时/旧主机回空列表时不动卡片。
+      if (currentChannelId != channel || entries.isEmpty) return;
+      await _applyCardStatus(entries, byId);
+    } catch (_) {
+      // 查询失败一律不动卡片，等下一轮。
+    } finally {
+      _cardValidityInFlight = false;
+    }
+  }
+
+  Future<void> _applyCardStatus(
+    List<CardStatusEntry> entries,
+    Map<String, List<String>> byId,
+  ) async {
+    final removed = <String>{};
+    var answeredElsewhere = 0;
+    for (final entry in entries) {
+      if (entry.isAlive) continue;
+      final messageIds = byId[entry.id];
+      if (messageIds == null || messageIds.isEmpty) continue;
+      PendingApprovalHub.instance.resolveByConfirmationId(entry.id);
+      if (entry.isGone) {
+        removed.addAll(messageIds);
+      } else {
+        final reason = entry.isAnsweredElsewhere
+            ? 'answered_elsewhere'
+            : 'answered_here';
+        for (final id in messageIds) {
+          await _markCardAnswered(id, reason);
+        }
+        if (entry.isAnsweredElsewhere) answeredElsewhere++;
+      }
+    }
+    if (removed.isNotEmpty) {
+      final ids = removed.toList();
+      messages.removeWhere((m) => ids.contains(m.id));
+      for (final id in ids) {
+        messageIdMap.remove(id);
+        try {
+          await chatService.deleteMessage(id);
+        } catch (_) {
+          // 删库失败不影响本轮内存收敛，下轮 loadMessages 再对账。
+        }
+      }
+      _notify();
+    }
+    if (answeredElsewhere > 0) {
+      _emit(ShowSnackBarEvent('这张问题卡片已在其他设备回答'));
+    }
+    // 定时器跟着会话走：卡片收完后仍保持 15 秒节奏，这样期间新到达的卡
+    // 下一轮就会被检测；真正停止只在 switchChannel / dispose。
+  }
+
+  /// 保留卡片但收起可点态：写 closed 让 FormBubble / ActionConfirmationButtons
+  /// 渲染「已作废：这个问题已在别处作答」。
+  Future<void> _markCardAnswered(String messageId, String reason) async {
+    final idx = messages.indexWhere((m) => m.id == messageId);
+    if (idx == -1) return;
+    final meta = Map<String, dynamic>.from(messages[idx].metadata ?? {});
+    var changed = false;
+    for (final key in const [
+      'form',
+      'action_confirmation',
+      'single_select',
+      'multi_select',
+    ]) {
+      final card = meta[key];
+      if (card is! Map) continue;
+      final merged = Map<String, dynamic>.from(card);
+      if (merged['submitted_values'] != null || merged['closed'] != null) {
+        continue;
+      }
+      if (key == 'action_confirmation') {
+        merged['selected_action_id'] = 'expired';
+        merged['selected_action_label'] = 'expired';
+      }
+      merged['closed'] = reason;
+      meta[key] = merged;
+      changed = true;
+    }
+    if (!changed) return;
+    final updated = ChatStreamingText.withMergedMetadata(messages[idx], meta);
+    messages[idx] = updated;
+    messageIdMap[messageId] = updated;
+    _notify();
+    try {
+      await localDatabaseService
+          .updateMessageMetadata(messageId, updated.metadata ?? {});
+    } catch (_) {
+      // 落库失败也要让当前页面先收起可点态。
+    }
+  }
+
   @override
   void dispose() {
     AppLifecycleService().setActiveChannel(null);
@@ -938,6 +1143,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
     // 注意：不要在这里清空 messageQueue —— 队列按频道存放在 ChatService 侧，
     // 必须跨页面存活，重进后由 loadMessages 恢复发送。
     _healthCheckTimer?.cancel();
+    stopCardValidityWatch();
     _dmReconcileFallbackTimer?.cancel();
     _peerConnSub?.cancel();
     _orphanApprovalSub?.cancel();

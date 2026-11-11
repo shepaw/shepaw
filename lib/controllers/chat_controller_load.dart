@@ -280,6 +280,9 @@ mixin _LoadOps on _ChatControllerBase {
         await _restoreWorkflowContext();
       }
       await _flushAllStashedPlanApprovalResponses();
+      // 消息装好之后立刻对账一次卡片有效性，之后每 15 秒复查；
+      // 切走 / dispose 会取消（见 stopCardValidityWatch）。
+      startCardValidityWatch();
     } catch (e) {
       isLoading = false;
       // 加载失败就别再压着空状态了——主机那一页不会来了。
@@ -304,6 +307,9 @@ mixin _LoadOps on _ChatControllerBase {
   Future<void> switchChannel(String channelId) async {
     final oldChannelId = currentChannelId;
     if (oldChannelId == null || oldChannelId == channelId) return;
+
+    // 离开旧会话就不再替它轮询卡片；loadMessages 末尾会重新起一个。
+    stopCardValidityWatch();
 
     // 1. 先把旧会话在途正文落进本机库，再拆 UI。桌面切换会拆掉当前页，
     //    没落库的流式气泡不会出现在下一页读到的缓存里。

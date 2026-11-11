@@ -219,6 +219,40 @@ void main() {
         DockedInteractionKind.fileUpload,
       );
     });
+
+    test('别的会话的卡片不停靠，本会话与旧卡照常停靠', () {
+      Message card(String id, {String? cardChannel}) => _msg(
+            id,
+            metadata: {
+              'form': _form(id),
+              if (cardChannel != null) 'card_channel_id': cardChannel,
+            },
+          );
+
+      // A 会话打开时，B 会话发起的卡不能出现在输入框上方。
+      expect(
+        dockedPendingInteraction(
+          [card('f-b', cardChannel: 'dm_agent_user_b')],
+          channelId: 'dm_agent_user_a',
+        ),
+        isNull,
+      );
+      // psess_ 壳与裸主机会话 id 是同一条会话。
+      expect(
+        dockedPendingInteraction(
+          [card('f-a', cardChannel: 'dm_agent_user_a')],
+          channelId: 'psess_dm_agent_user_a',
+        )?.message.id,
+        'f-a',
+      );
+      // 旧库里的卡没有 card_channel_id，保留原来的行为。
+      expect(
+        dockedPendingInteraction([card('f-legacy')],
+                channelId: 'dm_agent_user_a')
+            ?.message.id,
+        'f-legacy',
+      );
+    });
   });
 
   group('PagedFormPanel', () {

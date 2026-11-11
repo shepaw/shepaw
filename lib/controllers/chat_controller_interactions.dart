@@ -26,6 +26,14 @@ bool isFlowDeferredFormCard(Object? formMeta, String approvalId) {
 mixin _InteractionOps on _ChatControllerBase {
   static const _cliExpiredActionId = 'expired';
 
+  /// 当前会话在主机侧的会话 id（卡片帧 `channel_id` 的同一口径）。
+  String get _hostChannelId {
+    final current = currentChannelId;
+    return current == null || current.isEmpty
+        ? ''
+        : hostSessionIdForChannel(current);
+  }
+
   @override
   Future<bool> requestCliApproval(
     String toolName,
@@ -226,6 +234,7 @@ mixin _InteractionOps on _ChatControllerBase {
         peerId: peerId,
         approvalId: approvalId,
         values: values,
+        hostChannelId: _hostChannelId.isEmpty ? null : _hostChannelId,
       );
     } on PeerApprovalExpiredException {
       // 卡已在主机那边收场：那份答案没进引擎，照样续上。
@@ -924,6 +933,21 @@ mixin _InteractionOps on _ChatControllerBase {
       tag: 'ChatController',
     );
 
+    // 多会话并发：工具审批卡和表单卡一样按 card_channel_id 校验归属，
+    // 不能因为「本页恰好有这张卡」就在 A 会话替 B 会话点掉。
+    if (confirmationContext != 'cli') {
+      final hostChannel = _hostChannelId;
+      final cardChannel =
+          originalMessage.metadata?['card_channel_id']?.toString().trim() ?? '';
+      if (cardChannel.isNotEmpty &&
+          hostChannel.isNotEmpty &&
+          cardChannel != hostChannel) {
+        _emit(ShowErrorSnackBarEvent(
+            '这张审批卡片属于另一个会话，请回到发起它的会话再操作'));
+        return;
+      }
+    }
+
     if (await _answerHubInteraction(originalMessage, {
       'selected_action_id': actionId,
       'selected_action_label': actionLabel,
@@ -1190,11 +1214,26 @@ mixin _InteractionOps on _ChatControllerBase {
       if (peerId.isEmpty || approvalId.isEmpty) {
         return;
       }
+      // 多会话并发：卡片是全局 approval_id，不能只看「本页有没有这张卡」。
+      // 落库时留下的 card_channel_id 是发起回合的主机会话 id，和当前会话
+      // 不一致就说明这是别的会话的卡（或历史残留卡），在这里就把提交挡掉，
+      // 否则主机按全局 id 解到别人的等待位，deferred 续跑又会写进本会话。
+      final hostChannel = _hostChannelId;
+      final cardChannel =
+          originalMessage.metadata?['card_channel_id']?.toString().trim() ?? '';
+      if (cardChannel.isNotEmpty &&
+          hostChannel.isNotEmpty &&
+          cardChannel != hostChannel) {
+        _emit(ShowErrorSnackBarEvent(
+            '这张问题卡片属于另一个会话，请回到发起它的会话再回答'));
+        return;
+      }
       try {
         final wasDeferred = await PeerAgentClientService.instance.submitForm(
           peerId: peerId,
           approvalId: approvalId,
           values: values,
+          hostChannelId: hostChannel.isEmpty ? null : hostChannel,
         );
         PendingApprovalHub.instance.resolveByConfirmationId(approvalId);
         _markPeerFormSubmitted(originalMessage, values);
