@@ -67,6 +67,18 @@ Map<String, String> jadeSlipFlowInputs(
   return out;
 }
 
+/// 开跑表单交回来的输入叠到预设 / 自动映射之上：表单里的非空值赢，
+/// 清空的框不抹掉低优先级的值（与 [jadeSlipFlowInputs] 的约定一致）。
+Map<String, String> mergeJadeSlipFormInputs(
+  Map<String, String> initial,
+  Map<String, String> form,
+) =>
+    <String, String>{
+      ...initial,
+      for (final entry in form.entries)
+        if (entry.value.trim().isNotEmpty) entry.key: entry.value,
+    };
+
 String _slipContext(
   JadeSlip slip,
   String checklistText,
@@ -328,9 +340,9 @@ Future<bool> dispatchJadeSlipFlow(
       initialBindings: initialBindings,
     );
     if (plan == null) return false;
-    // 表单里人手填的值覆盖预设 / 自动映射。
-    inputs = plan.inputs;
-    bindings = plan.bindings;
+    inputs = mergeJadeSlipFormInputs(initialInputs, plan.inputs);
+    // 角色同理：表单里清空的角色不该把预设绑定抹掉。
+    bindings = mergeJadeSlipFormInputs(bindings, plan.bindings);
   }
 
   // 钉住表单据以生成的那一版，避免别人在这期间存了新版导致两边不一致；
@@ -379,10 +391,18 @@ Future<bool> dispatchJadeSlipFlow(
     // 开跑到落盘之间主机可能已经回写了终态事件，先读新副本再合并。
     JadeSlip fresh = slip;
     try {
+      // 主机可能已经把这一跑的终态回写了（比本地落盘快）。先使读缓存失效
+      // 再读权威副本，否则会拿旧快照把「待验收 / 受阻」盖成「进行中」——
+      // 而主机那条终态事件已写过、不会再发第二次通知。
+      await JadeSlipService.instance.refreshFromHost(slip.id);
       fresh = await JadeSlipService.instance.getById(slip.id) ?? slip;
     } catch (_) {
       // 读不到就用派发时那份，不把运行记录弄丢。
     }
+    // 主机已经把这一跑的终态回写了（跑得比这里落盘快）：不能再用「进行中」
+    // 盖掉它的待验收 / 受阻。
+    final alreadyFinished =
+        fresh.flowRuns.any((run) => run.runId == runId && run.isTerminal);
     await JadeSlipService.instance.update(
       fresh.copyWith(
         flowRuns: mergeJadeSlipFlowRuns(
@@ -394,8 +414,12 @@ Future<bool> dispatchJadeSlipFlow(
             hostId: host,
           ),
         ),
-        status: JadeSlipStatus.inProgress,
-        flowStatus: '',
+        status: alreadyFinished ? null : JadeSlipStatus.inProgress,
+        // 主机确认会回写终态时才挂「进行中」锁：终态会换成待验收 / 受阻，
+        // 取消时主机放开。旧主机不回写，挂了锁就永远解不开，所以只按清单派生。
+        flowStatus: alreadyFinished
+            ? null
+            : (result.originAck ? 'in_progress' : ''),
       ),
     );
   } catch (_) {

@@ -263,6 +263,25 @@ void main() {
     });
   });
 
+  test('开跑表单交回的输入：非空值覆盖预设，清空的框不抹掉预设 / 自动映射', () {
+    final merged = mergeJadeSlipFormInputs(
+      {'goal': 'Ship', 'title': '玉简标题', 'extra': '预设'},
+      {'goal': '', 'title': '人改的标题', 'new': '只在表单里'},
+    );
+    expect(merged, {
+      'goal': 'Ship',
+      'title': '人改的标题',
+      'extra': '预设',
+      'new': '只在表单里',
+    });
+    // 角色绑定走同一个合并：表单清空的角色不该抹掉预设。
+    expect(
+      mergeJadeSlipFormInputs({'coder': 'agent-1', 'reviewer': 'agent-2'},
+          {'coder': '', 'dev': 'agent-3'}),
+      {'coder': 'agent-1', 'reviewer': 'agent-2', 'dev': 'agent-3'},
+    );
+  });
+
   testWidgets('工作流玉简的确认弹层只有开跑，没有 Agent / 会话选项',
       (tester) async {
     await tester.runAsync(() async {
@@ -397,12 +416,15 @@ void main() {
         )),
       )));
       await tester.tap(find.text('打开模板选择'));
-      for (var i = 0; i < 4; i++) {
+      // 模板列表是真实异步加载的（runAsync）：全量并发跑时机器忙，固定等几轮
+      // 不够。轮询到出现为止，最多约 3 秒。
+      final demo = find.byKey(const ValueKey('slip-flow-template-demo'));
+      for (var i = 0; i < 50 && demo.evaluate().isEmpty; i++) {
         await settle(tester, 60);
       }
+      await settle(tester, 60);
 
-      expect(find.byKey(const ValueKey('slip-flow-template-demo')),
-          findsOneWidget);
+      expect(demo, findsOneWidget);
       expect(find.byKey(const ValueKey('slip-flow-template-other')),
           findsOneWidget);
       expect(find.text('模板说明'), findsOneWidget);
@@ -445,9 +467,12 @@ void main() {
         )),
       )));
       await tester.tap(find.text('打开模板选择'));
-      for (var i = 0; i < 4; i++) {
+      final groupDemo =
+          find.byKey(const ValueKey('slip-flow-template-group:g1/demo'));
+      for (var i = 0; i < 50 && groupDemo.evaluate().isEmpty; i++) {
         await settle(tester, 60);
       }
+      await settle(tester, 60);
 
       final listed = hub.frames
           .where((frame) => frame['type'] == 'flow_list_req')
@@ -550,6 +575,69 @@ void main() {
     });
   });
 
+  testWidgets('主机已回写终态时派发落盘不覆盖待验收状态', (tester) async {
+    await tester.runAsync(() async {
+      PouchSessionStore.readOverride = () async => const PouchSession(
+            hubUrl: 'https://hub.test',
+            pouchId: 'p',
+            pouchName: 'p',
+            hostPeerId: 'host-1',
+          );
+      final hub = _fakeHub(yaml: yaml);
+      final base = slip(
+        id: 's-race',
+        kind: JadeSlipExecutorKind.flow,
+        binding: binding,
+        items: const [JadeSlipItem(id: 'i1', text: '第一项')],
+      );
+      // 这一跑很快：主机在 App 落盘前就把 succeeded 写进了权威副本。
+      await JadeSlipService.instance.update(base.copyWith(
+        status: JadeSlipStatus.needsReview,
+        flowStatus: 'needs_review',
+        flowRuns: const [
+          JadeSlipFlowRun(
+            runId: 'r1',
+            startedAt: 1,
+            status: 'succeeded',
+            hostId: 'host-1',
+          ),
+        ],
+      ));
+
+      bool? dispatched;
+      await tester.pumpWidget(app(Scaffold(
+        body: Builder(builder: (context) => Center(
+          child: FilledButton(
+            onPressed: () async {
+              // 调用方手里还是开跑前那份旧对象。
+              dispatched = await dispatchJadeSlipFlow(
+                context,
+                base,
+                confirmed: true,
+                client: hub.client,
+              );
+            },
+            child: const Text('派发'),
+          ),
+        )),
+      )));
+      await tester.tap(find.text('派发'));
+      for (var i = 0; i < 6; i++) {
+        await settle(tester, 60);
+      }
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(dispatched, isTrue);
+      final saved = await JadeSlipService.instance.getById('s-race');
+      expect(saved?.status, JadeSlipStatus.needsReview,
+          reason: '不能把主机已经写好的待验收盖成进行中');
+      expect(saved?.flowStatus, 'needs_review');
+      expect(saved?.flowRuns.any((r) => r.runId == 'r1' && r.isTerminal),
+          isTrue);
+      await hub.bus.close();
+    });
+  });
+
   testWidgets('dispatchJadeSlipFlow 直接开跑：origin 带 slip_id，不弹会话选择',
       (tester) async {
     await tester.runAsync(() async {
@@ -611,6 +699,9 @@ void main() {
       final saved = await JadeSlipService.instance.getById('s-flow-dispatch');
       expect(saved?.flowRuns.any((r) => r.runId == 'r1'), isTrue);
       expect(saved?.sourceChannelId, isEmpty);
+      // 主机确认会回写：开跑挂上 in_progress 锁，清单派生不会立刻冲掉它。
+      expect(saved?.status, JadeSlipStatus.inProgress);
+      expect(saved?.flowStatus, 'in_progress');
       await hub.bus.close();
     });
   });

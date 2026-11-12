@@ -211,19 +211,65 @@ void main() {
     expect(blocked.status, JadeSlipStatus.blocked);
   });
 
-  test('人验收完清单项后状态变 done 且状态锁清除（不自动验收）', () {
+  test('清单全收完时状态锁仍然优先：重跑的结果停在待验收（不自动验收）', () {
     final accepted = JadeSlipItem(
       id: 'i1',
       text: '一件',
       state: JadeSlipItemState.accepted,
     );
-    final done = base(
+    final rerun = base(
       items: [accepted],
       status: JadeSlipStatus.needsReview,
       flowStatus: 'needs_review',
     ).withDerivedStatus(updatedAt: 300);
+    expect(rerun.status, JadeSlipStatus.needsReview,
+        reason: '早已验收完的玉简再跑一次，结果仍要人看，不能冲成 done');
+    expect(rerun.flowStatus, 'needs_review');
+
+    // 人显式整条验收（标 done）：放锁，按清单派生成 done。
+    final done = rerun
+        .copyWith(status: JadeSlipStatus.done)
+        .withDerivedStatus(updatedAt: 400);
     expect(done.status, JadeSlipStatus.done);
     expect(done.flowStatus, '');
+
+    // 人动了清单（服务层清锁）后同样按清单派生。
+    final cleared = rerun
+        .copyWith(flowStatus: '')
+        .withDerivedStatus(updatedAt: 500);
+    expect(cleared.status, JadeSlipStatus.done);
+  });
+
+  test('开跑留下的 in_progress 锁：清单派生不会把它退回 open / done', () {
+    final open = base(
+      items: [JadeSlipItem(id: 'i1', text: '一件')],
+      status: JadeSlipStatus.inProgress,
+      flowStatus: 'in_progress',
+    ).withDerivedStatus(updatedAt: 200);
+    expect(open.status, JadeSlipStatus.inProgress);
+    final settled = base(
+      items: [
+        JadeSlipItem(id: 'i1', text: '一件', state: JadeSlipItemState.accepted),
+      ],
+      status: JadeSlipStatus.inProgress,
+      flowStatus: 'in_progress',
+    ).withDerivedStatus(updatedAt: 200);
+    expect(settled.status, JadeSlipStatus.inProgress);
+    final itemless = base(
+      status: JadeSlipStatus.inProgress,
+      flowStatus: 'in_progress',
+    ).withDerivedStatus(updatedAt: 200);
+    expect(itemless.status, JadeSlipStatus.inProgress);
+  });
+
+  test('归档时状态锁清掉，状态保持归档', () {
+    final archived = base(
+      items: [JadeSlipItem(id: 'i1', text: '一件')],
+      status: JadeSlipStatus.archived,
+      flowStatus: 'needs_review',
+    ).withDerivedStatus(updatedAt: 200);
+    expect(archived.status, JadeSlipStatus.archived);
+    expect(archived.flowStatus, '');
   });
 
   test('取消运行不设状态锁时，状态按清单正常派生', () {

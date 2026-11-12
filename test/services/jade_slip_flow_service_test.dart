@@ -175,4 +175,73 @@ void main() {
     final list = await JadeSlipService.instance.list();
     expect(list, isEmpty);
   });
+
+  test('用另一份同值副本改标题：清单没变，状态锁不该被清', () async {
+    final slip = await seeded(flowStatus: 'needs_review');
+    final withItem = await JadeSlipService.instance.addItem(
+      id: slip.id,
+      text: '一项',
+    );
+    final locked = await JadeSlipService.instance.update(withItem.copyWith(
+      status: JadeSlipStatus.needsReview,
+      flowStatus: 'needs_review',
+    ));
+    expect(locked.flowStatus, 'needs_review');
+    // 列表页重新解码出来的副本：items 是新对象，内容一样。
+    final decoded = JadeSlip.fromJson(
+      jsonDecode(jsonEncode(locked.toJson())) as Map<String, dynamic>,
+    );
+    expect(identical(decoded.items, locked.items), isFalse);
+    final renamed = await JadeSlipService.instance
+        .update(decoded.copyWith(title: '只改标题'));
+    expect(renamed.flowStatus, 'needs_review');
+    expect(renamed.status, JadeSlipStatus.needsReview);
+  });
+
+  test('清单早已收完又跑出待验收：整条验收放锁并变 done', () async {
+    final slip = await seeded();
+    final withItem = await JadeSlipService.instance.addItem(
+      id: slip.id,
+      text: '一项',
+    );
+    final acceptedItems = [
+      for (final item in withItem.items)
+        item.copyWith(state: JadeSlipItemState.accepted),
+    ];
+    final settled = await JadeSlipService.instance
+        .update(withItem.copyWith(items: acceptedItems));
+    expect(settled.status, JadeSlipStatus.done);
+    // 主机回写：待验收 + 锁（清单没动）。
+    final rerun = await JadeSlipService.instance.update(settled.copyWith(
+      status: JadeSlipStatus.needsReview,
+      flowStatus: 'needs_review',
+    ));
+    expect(rerun.status, JadeSlipStatus.needsReview);
+
+    final done = await JadeSlipService.instance.acceptWhole(id: rerun.id);
+    expect(done.status, JadeSlipStatus.done);
+    expect(done.flowStatus, '');
+    expect(done.events.any((e) => e.text == '验收工作流结果'), isTrue);
+  });
+
+  test('还有未完成清单项时，整条验收不清掉待验收状态锁', () async {
+    final slip = await seeded();
+    final locked = await JadeSlipService.instance.update(slip.copyWith(
+      status: JadeSlipStatus.needsReview,
+      flowStatus: 'needs_review',
+    ));
+    final withItem = await JadeSlipService.instance.addItem(
+      id: locked.id,
+      text: '未完成',
+    );
+    // addItem 会按清单改动放锁，重新挂上模拟主机回写的终态锁。
+    final rerun = await JadeSlipService.instance.update(withItem.copyWith(
+      status: JadeSlipStatus.needsReview,
+      flowStatus: 'needs_review',
+    ));
+    final result = await JadeSlipService.instance.acceptWhole(id: rerun.id);
+    expect(result.flowStatus, 'needs_review');
+    expect(result.status, JadeSlipStatus.needsReview);
+    expect(result.events.any((e) => e.text == '验收工作流结果'), isFalse);
+  });
 }

@@ -33,10 +33,12 @@ class JadeSlipFlowBindingForm extends StatefulWidget {
 class _JadeSlipFlowBindingFormState extends State<JadeSlipFlowBindingForm> {
   late JadeSlipFlowBinding _draft;
 
-  /// 已经见过（初值或自己发出去）的绑定签名。父页面保存期间会用旧 binding
-  /// 重建一次，这里要认出它是「回显」而不是外部换模板，否则正在输入的值会被
-  /// 抢回去。真正的新绑定（换模板 / 主机回写）签名不在集合里，正常采纳。
-  final Set<String> _seen = <String>{};
+  /// 还没被父页面确认的「回显」签名：编辑前的那一版和自己发出去的每一版。
+  /// 父页面保存期间会用旧 binding 重建一次，这里要认出它是回显而不是外部
+  /// 换模板，否则正在输入的值会被抢回去。父页面一旦用当前草稿重建（确认
+  /// 收到），集合清空：之后再来任何不同的绑定（包括退回到以前见过的某一版，
+  /// 比如另一台设备或主机回写）都按外部改动采纳。
+  final Set<String> _pending = <String>{};
   final Map<String, TextEditingController> _controllers = {};
 
   static const _inputPrefix = 'i:';
@@ -51,7 +53,10 @@ class _JadeSlipFlowBindingFormState extends State<JadeSlipFlowBindingForm> {
   @override
   void didUpdateWidget(covariant JadeSlipFlowBindingForm oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_seen.contains(_signature(widget.binding))) {
+    final incoming = _signature(widget.binding);
+    if (incoming == _signature(_draft)) {
+      _pending.clear();
+    } else if (!_pending.contains(incoming)) {
       _adopt(widget.binding);
     }
     // 模板的 inputs / roles 名字变了时补齐控制器；didUpdateWidget 之后本来就会
@@ -70,9 +75,7 @@ class _JadeSlipFlowBindingFormState extends State<JadeSlipFlowBindingForm> {
 
   void _adopt(JadeSlipFlowBinding binding) {
     _draft = binding;
-    _seen
-      ..clear()
-      ..add(_signature(binding));
+    _pending.clear();
     _syncControllers();
   }
 
@@ -150,8 +153,10 @@ class _JadeSlipFlowBindingFormState extends State<JadeSlipFlowBindingForm> {
   }
 
   void _emit(JadeSlipFlowBinding next) {
+    _pending
+      ..add(_signature(_draft))
+      ..add(_signature(next));
     _draft = next;
-    _seen.add(_signature(next));
     // revision / scope / name 一律由 copyWith 原样带着走。
     widget.onChanged(next);
   }

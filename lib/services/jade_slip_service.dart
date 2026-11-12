@@ -52,6 +52,8 @@ class JadeSlipService {
         },
       );
     } catch (e) {
+      // 订阅没挂上：放开标记，下一个订阅者（或下次 onListen）再试。
+      _hostSyncStarted = false;
       _log.warning('cannot subscribe to host control events: $e', tag: _tag);
     }
   }
@@ -108,7 +110,12 @@ class JadeSlipService {
   @visibleForTesting
   HostPouchDocuments Function()? debugDocuments;
 
-  Stream<void> get changes => _changes.stream;
+  /// 每次取流都补一次主机订阅：广播流的 onListen 只在 0→1 时触发，第一次
+  /// 订阅失败（比如连接管理器还没起来）时，后来的页面要靠这里重试。
+  Stream<void> get changes {
+    ensureHostChangeSync();
+    return _changes.stream;
+  }
 
   /// 按玉简 id 串行化读改写事务，防止连续勾选/编辑并发覆盖（lost update）。
   Future<T> _serializeBySlip<T>(String id, Future<T> Function() action) {
@@ -316,9 +323,11 @@ class JadeSlipService {
     }
     // 人动了清单（勾选 / 验收 / 退回 / 阻塞 / 增删项）就把工作流终态的状态锁
     // 交回清单派生：否则「待验收」会一直压住用户刚做的改动。
-    // 只改标题、预设输入、flowRuns 时保留锁。
+    // 只改标题、预设输入、flowRuns 时保留锁。按内容比（与主机
+    // `item_signature` 同一口径），不能按对象身份：调用方手里的玉简可能是
+    // 另一次解码出来的同值副本。
     final touchedItems =
-        prev != null && !identical(prev.items, next.items);
+        prev != null && _itemSignature(prev) != _itemSignature(next);
     final slip = next
         .copyWith(
           title: next.title.trim(),
@@ -332,6 +341,11 @@ class JadeSlipService {
     _notify();
     return slip;
   }
+
+  static String _itemSignature(JadeSlip slip) => jsonEncode([
+        for (final item in slip.items)
+          [item.id, item.text, item.state.name, item.cancelledReason],
+      ]);
 
   Future<void> _writeSlip(HostPouchDocuments docs, JadeSlip slip) async {
     final normalized = slip.copyWith(deviceId: docs.deviceId);
@@ -657,6 +671,7 @@ class JadeSlipService {
       return (await getById(id)) ?? done;
     }
     var current = slip;
+    var acceptedAny = false;
     for (final item in slip.items) {
       if (item.state == JadeSlipItemState.submitted) {
         current = await acceptItem(
@@ -665,7 +680,27 @@ class JadeSlipService {
           actorId: actorId,
           actorName: actorName,
         );
+        acceptedAny = true;
       }
+    }
+    // 没有待验收项、清单也已收完、却挂着工作流的「待验收」锁（清单早已收完
+    // 又跑了一次）：整条验收就是确认这次运行结果。显式标 done，由
+    // withDerivedStatus 放锁，与主机 `slip accept` 同一规则。
+    if (!acceptedAny &&
+        current.flowStatus == 'needs_review' &&
+        !current.hasOpenItems) {
+      current = await update(current.copyWith(
+        status: JadeSlipStatus.done,
+        events: [
+          ...current.events,
+          _event(
+            kind: 'accepted',
+            text: '验收工作流结果',
+            actorId: actorId,
+            actorName: actorName,
+          ),
+        ],
+      ));
     }
     return current;
   }

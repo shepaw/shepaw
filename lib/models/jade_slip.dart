@@ -443,22 +443,43 @@ class JadeSlip {
     );
   }
 
+  /// 工作流写下的显式状态锁（与主机 `derive_status` 同一规则）：
+  /// `in_progress` 由开跑写（主机确认会回写时），终态回写换成
+  /// `needs_review` / `blocked`，取消时由主机放开。
+  JadeSlipStatus? get flowLock => switch (flowStatus) {
+        'needs_review' => JadeSlipStatus.needsReview,
+        'blocked' => JadeSlipStatus.blocked,
+        'in_progress' => JadeSlipStatus.inProgress,
+        _ => null,
+      };
+
   /// 全部验收通过才是 done。只要还有一项被堵住，整简就是 blocked。
   /// 还有人要做的是 open / in_progress，都交上来了是 needs_review。
+  ///
+  /// 工作流状态锁优先于「清单全收完 → done」：早已验收完的玉简再跑一次，
+  /// 结果仍要停在待验收 / 受阻等人看。锁只在人动清单（服务层清）、人显式
+  /// 标 done（整条验收）、归档时放开。
   JadeSlip withDerivedStatus({int? updatedAt}) {
     if (status == JadeSlipStatus.archived) {
-      return updatedAt == null ? this : copyWith(updatedAt: updatedAt);
-    }
-    if (items.isEmpty) {
-      // 没有清单项时 status 由人或工作流回写决定；验收完清掉状态锁。
-      final clearLock = flowStatus.isNotEmpty &&
-          (status == JadeSlipStatus.done || status == JadeSlipStatus.archived);
-      return clearLock || updatedAt != null
-          ? copyWith(
-              flowStatus: clearLock ? '' : null,
+      return flowStatus.isEmpty && updatedAt == null
+          ? this
+          : copyWith(
+              flowStatus: flowStatus.isEmpty ? null : '',
               updatedAt: updatedAt,
-            )
-          : this;
+            );
+    }
+    final lock = flowLock;
+    if (lock != null && status != JadeSlipStatus.done) {
+      return copyWith(status: lock, updatedAt: updatedAt);
+    }
+    final base = lock != null ? copyWith(flowStatus: '') : this;
+    return base._deriveFromItems(updatedAt);
+  }
+
+  JadeSlip _deriveFromItems(int? updatedAt) {
+    if (items.isEmpty) {
+      // 没有清单项时 status 由人或工作流回写决定。
+      return updatedAt == null ? this : copyWith(updatedAt: updatedAt);
     }
     final allSettled = items.every((e) =>
         e.state == JadeSlipItemState.accepted ||
@@ -467,19 +488,7 @@ class JadeSlip {
         e.state != JadeSlipItemState.cancelled ||
         e.cancelledReason.trim().isNotEmpty);
     if (allSettled && cancelledOk) {
-      // 人验收完 → done，工作流的状态锁也随之失效。
-      return copyWith(
-        status: JadeSlipStatus.done,
-        flowStatus: '',
-        updatedAt: updatedAt,
-      );
-    }
-    // 工作流终态没有对应清单项：按主机回写的状态锁，不让清单派生覆盖。
-    final locked = flowStatus == 'needs_review' || flowStatus == 'blocked'
-        ? JadeSlipStatus.parse(flowStatus)
-        : null;
-    if (locked != null) {
-      return copyWith(status: locked, updatedAt: updatedAt);
+      return copyWith(status: JadeSlipStatus.done, updatedAt: updatedAt);
     }
     final JadeSlipStatus next;
     if (items.any((e) => e.state == JadeSlipItemState.blocked)) {

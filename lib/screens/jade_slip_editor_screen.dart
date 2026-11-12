@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
+import '../controllers/flow/flow_executor.dart';
 import '../controllers/flow/flow_host_caps.dart';
 import '../l10n/app_localizations.dart';
 import '../models/jade_slip.dart';
@@ -100,6 +101,19 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   /// 主机没自报 `flow_origin`：运行终态不会回写玉简，编辑页给个轻提示。
   bool _flowHostOld = false;
   int _capsGen = 0;
+  /// 有没有拿到过一次明确的 `flow_schema_resp`（null / 抛错都不算）。
+  /// 没拿到且主机后来连上了，靠玉简变更事件补探一次。
+  bool _capsResolved = false;
+  bool _capsInFlight = false;
+
+  /// 绑定模板声明的输入 / 角色名，给预设表单画输入框。按 scope+name+revision
+  /// 取一次；取不到（离线 / 模板已删）就只显示绑定里已有的键，并允许稍后重试。
+  String _flowSpecKey = '';
+  String _flowSpecFailedKey = '';
+  int _flowSpecGen = 0;
+  DateTime? _flowSpecRetryAfter;
+  List<String> _flowInputNames = const [];
+  List<String> _flowRoles = const [];
   String _untitledLabel = '';
   /// 一次附件导入里给临时文件编号，避免同名互相覆盖。
   int _tempSeq = 0;
@@ -217,6 +231,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   /// 要提醒「运行终态不会回写玉简」。整段是尽力而为：没配对、离线、超时都
   /// 不阻塞 build，也不弹错误。
   Future<void> _loadFlowCaps() async {
+    if (_capsInFlight) return;
+    _capsInFlight = true;
     final gen = ++_capsGen;
     try {
       final hub = HubFlow(sendTimeout: const Duration(seconds: 2));
@@ -225,10 +241,15 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       if (host.isEmpty) return;
       final schema = await hub.schema(host);
       if (!mounted || gen != _capsGen) return;
+      // 拿不到 schema（超时 / 离线）不等于旧主机：不下结论，下次再探。
+      if (schema == null) return;
+      _capsResolved = true;
       final old = !FlowHostCaps.of(schema, const []).canWriteBackToSlip;
       if (_flowHostOld != old) setState(() => _flowHostOld = old);
     } catch (_) {
       // 连不上就维持「没提示」；编辑本身不该因为能力探测失败。
+    } finally {
+      _capsInFlight = false;
     }
   }
 
@@ -255,6 +276,72 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       executorKind: JadeSlipExecutorKind.flow,
       flowBinding: picked,
     ));
+    // 刚才可能连不上主机，选模板时顺手再探一次能力。
+    unawaited(_loadFlowCaps());
+  }
+
+  /// 取绑定模板的输入 / 角色名。尽力而为，失败只是少画几个输入框，并留一个
+  /// 退避窗口：主机连回来后（下一次玉简变更 / 重开编辑页）会再试，不会把
+  /// 失败的 key 钉死。
+  void _ensureFlowSpec(JadeSlipFlowBinding binding) {
+    final key = '${binding.scope}|${binding.name}|${binding.revision}';
+    if (binding.name.isEmpty || key == _flowSpecKey) return;
+    final now = DateTime.now();
+    // 退避只针对刚才失败的那个模板；换模板（或钉的版本变了）要立刻重取。
+    if (_flowSpecRetryAfter != null &&
+        key == _flowSpecFailedKey &&
+        now.isBefore(_flowSpecRetryAfter!)) {
+      return;
+    }
+    _flowSpecRetryAfter = null;
+    final gen = ++_flowSpecGen;
+    _flowSpecKey = key;
+    // 换模板时先清掉上一份名字，别用旧模板的字段名画输入框。
+    _flowInputNames = const [];
+    _flowRoles = const [];
+    unawaited(() async {
+      try {
+        final hub = HubFlow(sendTimeout: const Duration(seconds: 3));
+        final host = await hub.activeHost();
+        if (host.isEmpty) throw StateError('no active host');
+        final fetched = await hub.get(
+          host,
+          binding.name,
+          scope: binding.scope,
+          revision: binding.revision,
+        );
+        if (fetched == null || fetched.yaml.trim().isEmpty) {
+          throw StateError('template not available');
+        }
+        final form = FlowRunFormData.parse(
+          fetched.yaml,
+          requiredRoles: fetched.requiredRoles,
+        );
+        // 期间又换了模板：结果作废，由新那次请求负责。
+        if (!mounted || gen != _flowSpecGen) return;
+        setState(() {
+          _flowInputNames = [
+            for (final spec in form.inputs)
+              if (spec.name.trim().isNotEmpty) spec.name.trim(),
+          ];
+          // 群库流程由主机按群成员角色自动绑定，不需要在这里预设。
+          _flowRoles = binding.scope.startsWith('group:')
+              ? const []
+              : [
+                  for (final role in form.roles)
+                    if (role.trim().isNotEmpty) role.trim(),
+                ];
+        });
+        _flowSpecRetryAfter = null;
+      } catch (_) {
+        // 离线 / 模板已删 / yaml 坏：维持只显示已有键，稍后重试。
+        if (gen == _flowSpecGen) {
+          _flowSpecKey = '';
+          _flowSpecFailedKey = key;
+          _flowSpecRetryAfter = DateTime.now().add(const Duration(seconds: 10));
+        }
+      }
+    }());
   }
 
   Future<void> _persistFlowBinding(
@@ -348,6 +435,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final binding = slip.flowBinding;
+    if (binding != null) _ensureFlowSpec(binding);
     final latest = slip.latestFlowRun;
     final caption = theme.textTheme.bodySmall?.copyWith(
       color: scheme.onSurfaceVariant,
@@ -427,6 +515,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
               const SizedBox(height: 12),
               JadeSlipFlowBindingForm(
                 binding: binding,
+                inputNames: _flowInputNames,
+                roles: _flowRoles,
                 onChanged: (updated) =>
                     unawaited(_persistFlowBinding(slip, updated)),
               ),
@@ -557,6 +647,9 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     if (current != null && current.updatedAt > slip.updatedAt) return;
     _applySlipFields(slip);
     setState(() => _slip = slip);
+    // 打开编辑页时主机离线、能力探测没拿到结果：玉简有变更说明主机已经
+    // 连回来了，补探一次（_loadFlowCaps 自带在途去重）。
+    if (!_capsResolved) unawaited(_loadFlowCaps());
   }
 
   /// 主机连不上时给专用文案：权威在主机，写不进去就是没保存。
@@ -929,7 +1022,12 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                     icon: const Icon(Icons.play_arrow_rounded, size: 20),
                     label: Text(l10n.jadeSlip_run),
                   ),
-                  if (slip.submittedCount > 0) ...[
+                  // 清单早已收完又跑了一次工作流：没有待验收项，但运行结果
+                  // 仍要人确认（acceptWhole 会放开状态锁）。还有未完成清单项
+                  // 时不显示，避免按「全部验收」却只悄悄把状态锁清掉。
+                  if (slip.submittedCount > 0 ||
+                      (slip.flowStatus == 'needs_review' &&
+                          !slip.hasOpenItems)) ...[
                     const SizedBox(width: 4),
                     FilledButton.icon(
                       onPressed: () => unawaited(_acceptAll()),
