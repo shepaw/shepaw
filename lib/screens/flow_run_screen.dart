@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
@@ -156,7 +157,12 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   StreamSubscription<FlowEvent>? _sub;
   StreamSubscription<PeerConnectionEvent>? _connSub;
   Timer? _refetch;
-  FlowRunView? _run;
+
+  /// 当前运行。可监听：手机上的节点弹层在另一条路由里，靠它
+  /// 跟着状态 / 轮次刷新（宽屏侧栏随页面 build 自然刷新）。
+  final _RunHolder _runNotifier = _RunHolder();
+  FlowRunView? get _run => _runNotifier.value;
+  set _run(FlowRunView? value) => _runNotifier.value = value;
   bool _loading = true;
   bool _loadFailed = false;
   Future<void>? _inFlightLoad;
@@ -243,7 +249,9 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       _artifactLoadSeq++;
       // runId 变了要重新拉运行帧：只清产物列表会让页面停在旧 run 的树上，
       // 而且没有任何新请求能把它刷回来。
-      _run = null;
+      // didUpdateWidget 在 build 阶段：直接改底层值，不通知弹层（通知会在
+      // build 中 markNeedsBuild 另一条路由）。新运行拉回来后再统一通知。
+      _runNotifier.resetQuietly();
       _loading = true;
       _runArtifacts = const <FlowArtifact>[];
       _instanceArtifacts = const <FlowArtifact>[];
@@ -256,6 +264,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     _refetch?.cancel();
     _sub?.cancel();
     _connSub?.cancel();
+    _runNotifier.dispose();
     super.dispose();
   }
 
@@ -715,29 +724,39 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
           expand: false,
           initialChildSize: 0.55,
           maxChildSize: 0.9,
-          builder: (context, controller) => ListView(
-            controller: controller,
-            padding: const EdgeInsets.all(16),
-            children: [
-              _NodeDetailContent(
-                node: node,
-                showTitle: true,
-                canPatch: _canPatch(node),
-                onOpenSession: () {
-                  Navigator.pop(sheetContext);
-                  _openSession(node);
-                },
-                onOpenChildSession: (child) {
-                  Navigator.pop(sheetContext);
-                  _openSession(child);
-                },
-                onPatch: () {
-                  Navigator.pop(sheetContext);
-                  unawaited(_patchNode(node));
-                },
-                loadProgress: _loadNodeProgress,
-              ),
-            ],
+          // 弹层只记 key，每次运行更新都从最新的树里重新找这个节点，
+          // 状态 / 轮次 / 输出才会跟着变（和宽屏侧栏一致）。节点从树上
+          // 消失时退回打开时的快照。
+          builder: (context, controller) =>
+              ValueListenableBuilder<FlowRunView?>(
+            valueListenable: _runNotifier,
+            builder: (context, _, __) {
+              final current = _nodeByKey(node.key) ?? node;
+              return ListView(
+                controller: controller,
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _NodeDetailContent(
+                    node: current,
+                    showTitle: true,
+                    canPatch: _canPatch(current),
+                    onOpenSession: () {
+                      Navigator.pop(sheetContext);
+                      _openSession(current);
+                    },
+                    onOpenChildSession: (child) {
+                      Navigator.pop(sheetContext);
+                      _openSession(child);
+                    },
+                    onPatch: () {
+                      Navigator.pop(sheetContext);
+                      unawaited(_patchNode(current));
+                    },
+                    loadProgress: _loadNodeProgress,
+                  ),
+                ],
+              );
+            },
           ),
         );
       },
@@ -1054,10 +1073,11 @@ class _NodeDetailContent extends StatelessWidget {
         ],
         if (_hasProgress) ...[
           const SizedBox(height: 12),
-          // 状态 / 轮次变了换 key 重取：跑完一轮、重试一次都会写新的步骤。
+          // 点开才取；状态 / 轮次变了（跑完一轮、重试一次都会写新的步骤）
+          // 由 revision 作废旧结果，展开着就立刻重取。
           FlowNodeProgressSection(
-            key: ValueKey(
-                'node-progress-${node.key}-${node.status?.name}-${node.attempt}'),
+            key: ValueKey('node-progress-${node.key}'),
+            revision: '${node.status?.name}-${node.attempt}',
             load: (cancel) => loadProgress!(node, cancel),
           ),
         ],
@@ -1263,4 +1283,22 @@ class _RunErrorCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// [FlowRunScreen] 的当前运行，可被手机节点弹层监听。和 [ValueNotifier]
+/// 的区别只是多一个不通知的 [resetQuietly]，给 build 阶段用。
+class _RunHolder extends ChangeNotifier
+    implements ValueListenable<FlowRunView?> {
+  FlowRunView? _value;
+
+  @override
+  FlowRunView? get value => _value;
+
+  set value(FlowRunView? next) {
+    if (identical(_value, next)) return;
+    _value = next;
+    notifyListeners();
+  }
+
+  void resetQuietly() => _value = null;
 }

@@ -4,19 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
-import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../models/client_device_info.dart';
 import '../models/llm_token_usage.dart';
 import '../models/message.dart';
 import '../controllers/chat_message_window.dart';
-import '../services/store_open_service.dart';
-import '../screens/storage_directory_opener.dart';
-import '../storage/workspace_link_resolver.dart';
 import '../theme/app_theme.dart';
 import '../utils/progress_content_utils.dart';
 import '../utils/session_utils.dart';
 import 'copyable_code_block.dart';
+import 'markdown_link_opener.dart';
 import 'store_uri_link_syntax.dart';
 import 'voice_message_bubble.dart';
 import 'image_message_bubble.dart';
@@ -42,10 +39,8 @@ import 'chat/relay_approval_card.dart';
 import 'avatar_image.dart';
 import 'chat/sticky_in_view_header.dart';
 import '../services/she_service.dart';
-import '../services/error_handler_service.dart';
 import '../services/messaging/message_implicit_prompt.dart';
 import '../services/group/group_task_status.dart';
-import '../storage/store_protocol.dart';
 
 class MessageBubble extends StatelessWidget {
   static const double avatarSize = 32;
@@ -891,32 +886,10 @@ class MessageBubble extends StatelessWidget {
   /// Replace cc-only mention tokens with an annotated form.
   /// For mentions with notify:false, appends "(cc)" so readers can
   /// tell at a glance that the mentioned agent was not triggered.
-  /// Open pouch:// files (preview) or folders (storage browser).
-  Future<void> _openStoreLink(BuildContext context, String uriString) async {
-    registerStorageDirectoryOpener();
-    await StoreOpenService.instance.openStoreUri(context, uriString);
-  }
-
-  Future<void> _handleTapLink(BuildContext context, String href) async {
-    final resolved = resolveWorkspaceHref(href, workspaceUris) ??
-        (isPouchUri(href) ? href : null);
-    if (resolved != null && isPouchUri(resolved)) {
-      await _openStoreLink(context, resolved);
-      return;
-    }
-    final uri = Uri.tryParse(href);
-    if (uri == null) return;
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      if (context.mounted) {
-        showTopToast(
-          context,
-          AppLocalizations.of(context).widget_cannotOpenLink(href),
-          icon: Icons.error_outline,
-          color: Colors.red.shade400,
-        );
-      }
-    }
-  }
+  /// Open pouch:// files (preview) or folders (storage browser), workspace
+  /// relative links, or external URLs (toast when they can't be opened).
+  Future<void> _handleTapLink(BuildContext context, String href) =>
+      openMarkdownLink(context, href, workspaceUris: workspaceUris);
 
   /// Annotate mention tokens in [content] from persisted mention metadata:
   /// `@名字` is bolded for readability; cc-only mentions (notify: false) get

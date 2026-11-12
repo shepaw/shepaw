@@ -5568,6 +5568,15 @@
       }
     }
   },
+  "flow_nodeProgressEmpty": "No thinking or tool calls were recorded",
+  "flow_runsCancelReason": "Cancelled: {reason}",
+  "@flow_runsCancelReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
   "flow_runsFailureReason": "Failed: {reason}",
   "@flow_runsFailureReason": {
     "placeholders": {

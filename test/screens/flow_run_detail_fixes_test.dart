@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/peer/models/flow_models.dart';
@@ -9,6 +10,7 @@ import 'package:shepaw/peer/services/hub_flow.dart';
 import 'package:shepaw/peer/services/peer_connection.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/screens/flow_run_screen.dart';
+import 'package:shepaw/widgets/flow/flow_node_output.dart';
 import 'package:shepaw/widgets/flow/flow_runs_pane.dart';
 
 /// 执行详情三条修复的模型 / UI 回归：
@@ -77,8 +79,8 @@ void main() {
     });
 
     test('inputs 不是对象时按空处理', () {
-      final view = FlowRunView.fromResponse(
-          {..._runResponse(), 'inputs': '不是对象'});
+      final view =
+          FlowRunView.fromResponse({..._runResponse(), 'inputs': '不是对象'});
       expect(view, isNotNull);
       expect(view!.inputs, isEmpty);
     });
@@ -156,6 +158,7 @@ void main() {
       StreamController<PeerControlEvent> bus,
       List<Map<String, dynamic>> progressRequests, {
       bool progressAnswers = true,
+      Map<String, dynamic>? node,
     }) =>
         HubFlow(
           events: bus.stream,
@@ -168,7 +171,9 @@ void main() {
                 'run_id': 'r1',
                 'status': 'succeeded',
                 'tasks_used': 1,
-                'tree': tree,
+                'tree': [
+                  {...tree.single, ...?node}
+                ],
               }));
             } else if (frame['type'] == 'flow_node_progress_req') {
               progressRequests.add(Map<String, dynamic>.from(frame));
@@ -200,8 +205,9 @@ void main() {
           },
         );
 
-    Future<void> openImpl(WidgetTester tester, HubFlow hub) async {
-      tester.view.physicalSize = const Size(1200, 900);
+    Future<void> openImpl(WidgetTester tester, HubFlow hub,
+        {Size size = const Size(1200, 900)}) async {
+      tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(_app(hub));
@@ -210,8 +216,7 @@ void main() {
       await _settle(tester);
     }
 
-    testWidgets('输出按 Markdown 渲染；思考与工具调用默认折叠，点开才看到正文',
-        (tester) async {
+    testWidgets('输出按 Markdown 渲染；思考与工具调用默认折叠，点开才看到正文', (tester) async {
       final bus = StreamController<PeerControlEvent>.broadcast();
       addTearDown(bus.close);
       final requests = <Map<String, dynamic>>[];
@@ -226,20 +231,20 @@ void main() {
       expect(find.descendant(of: pane, matching: find.textContaining('结果')),
           findsWidgets);
 
-      // 只为这个节点请求一次步骤。
-      expect(requests, hasLength(1));
-      expect(requests.single['run_id'], 'r1');
-      expect(requests.single['node'], 'impl');
-
-      // 折叠区在，但正文没展开。
+      // 折叠区标题在，但没点开之前不发请求、不转圈。
       expect(find.byKey(const ValueKey('node-progress')), findsOneWidget);
       expect(find.text('思考与工具调用'), findsOneWidget);
-      expect(find.text('1 段思考 · 1 次工具调用'), findsOneWidget);
+      expect(find.byKey(const ValueKey('node-progress-loading')), findsNothing);
+      expect(requests, isEmpty);
       expect(find.text('Bash'), findsNothing);
-      expect(find.textContaining('test result'), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('node-progress-tile')));
       await _settle(tester);
+      // 点开才为这个节点请求一次步骤，取到后标题下写上计数。
+      expect(requests, hasLength(1));
+      expect(requests.single['run_id'], 'r1');
+      expect(requests.single['node'], 'impl');
+      expect(find.text('1 段思考 · 1 次工具调用'), findsOneWidget);
       expect(find.text('更早的 2 段步骤没有保留'), findsOneWidget);
       expect(find.text('Bash'), findsOneWidget);
       expect(find.text('cargo test -p shepaw-api'), findsOneWidget);
@@ -255,19 +260,144 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('老主机不应答步骤请求时不画折叠区，输出照常显示', (tester) async {
+    testWidgets('老主机不应答：打开节点不转圈，点开后超时写「没有记录」', (tester) async {
       final bus = StreamController<PeerControlEvent>.broadcast();
       addTearDown(bus.close);
       final requests = <Map<String, dynamic>>[];
       final hub = client(bus, requests, progressAnswers: false);
       await openImpl(tester, hub);
-      expect(find.byKey(const ValueKey('node-progress-loading')), findsOneWidget);
+      expect(find.byKey(const ValueKey('node-progress-loading')), findsNothing);
+      expect(find.byKey(const ValueKey('node-progress')), findsOneWidget);
+      expect(requests, isEmpty);
+
+      await tester.tap(find.byKey(const ValueKey('node-progress-tile')));
+      await _settle(tester);
+      expect(requests, hasLength(1));
+      expect(
+          find.byKey(const ValueKey('node-progress-loading')), findsOneWidget);
       // 等过请求超时。
       await tester.pump(const Duration(seconds: 20));
       await _settle(tester);
       expect(find.byKey(const ValueKey('node-progress-loading')), findsNothing);
-      expect(find.byKey(const ValueKey('node-progress')), findsNothing);
+      expect(find.byKey(const ValueKey('node-progress-empty')), findsOneWidget);
+      expect(find.text('没有记录到思考或工具调用'), findsOneWidget);
       expect(find.byKey(const ValueKey('node-text-impl')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('请求在途时关掉面板：放弃等待，不留超时计时器', (tester) async {
+      final bus = StreamController<PeerControlEvent>.broadcast();
+      addTearDown(bus.close);
+      final requests = <Map<String, dynamic>>[];
+      final hub = client(bus, requests, progressAnswers: false);
+      await openImpl(tester, hub);
+      await tester.tap(find.byKey(const ValueKey('node-progress-tile')));
+      await _settle(tester);
+      expect(requests, hasLength(1));
+      expect(
+          find.byKey(const ValueKey('node-progress-loading')), findsOneWidget);
+      // 关掉侧栏：面板销毁 → cancel 完成 → 10 秒计时器随即释放。
+      await tester.tap(find.byKey(const ValueKey('flow-node-detail-close')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('node-progress')), findsNothing);
+      // 测试结束时若还挂着计时器，testWidgets 会直接判失败。
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('nodeProgress：cancel 完成即返回 null，不再等超时', (tester) async {
+      final bus = StreamController<PeerControlEvent>.broadcast();
+      addTearDown(bus.close);
+      final hub = HubFlow(events: bus.stream, send: (_, __) async => true);
+      final cancel = Completer<void>();
+      var done = false;
+      FlowNodeProgress? result = const FlowNodeProgress();
+      unawaited(hub
+          .nodeProgress('p1', 'r1', 'impl', cancel: cancel.future)
+          .then((value) {
+        result = value;
+        done = true;
+      }));
+      await tester.pump();
+      expect(done, isFalse);
+      cancel.complete();
+      await tester.pump();
+      expect(done, isTrue);
+      expect(result, isNull);
+    });
+
+    testWidgets('状态 / 轮次变了：展开着立刻重取，折叠着等下次点开', (tester) async {
+      final bus = StreamController<PeerControlEvent>.broadcast();
+      addTearDown(bus.close);
+      final requests = <Map<String, dynamic>>[];
+      final node = <String, dynamic>{};
+      await openImpl(tester, client(bus, requests, node: node));
+      // 点标题栏：展开后 tile 中心落在正文区。
+      await tester.tap(find.text('思考与工具调用'));
+      await _settle(tester);
+      expect(requests, hasLength(1));
+
+      void bump(int attempt) {
+        node['attempt'] = attempt;
+        bus.add(PeerControlEvent(peerId: 'p1', data: {
+          'type': 'flow.node.changed',
+          'run_id': 'r1',
+          'node': 'impl',
+          'status': 'done',
+          'attempt': attempt,
+        }));
+      }
+
+      bump(2);
+      await _settle(tester);
+      await tester.pump(const Duration(milliseconds: 500));
+      await _settle(tester);
+      expect(requests, hasLength(2), reason: '展开着，轮次变了马上重取');
+
+      // 收起后再变：不发请求；再点开才取。
+      await tester.tap(find.text('思考与工具调用'));
+      await _settle(tester);
+      bump(3);
+      await _settle(tester);
+      await tester.pump(const Duration(milliseconds: 500));
+      await _settle(tester);
+      expect(requests, hasLength(2));
+      await tester.tap(find.text('思考与工具调用'));
+      await _settle(tester);
+      expect(requests, hasLength(3));
+      // 同一轮次再点开不重复请求。
+      await tester.tap(find.text('思考与工具调用'));
+      await _settle(tester);
+      await tester.tap(find.text('思考与工具调用'));
+      await _settle(tester);
+      expect(requests, hasLength(3));
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('手机弹层跟着运行更新：轮次变了重取步骤', (tester) async {
+      final bus = StreamController<PeerControlEvent>.broadcast();
+      addTearDown(bus.close);
+      final requests = <Map<String, dynamic>>[];
+      final node = <String, dynamic>{};
+      await openImpl(tester, client(bus, requests, node: node),
+          size: const Size(400, 900));
+      expect(find.byKey(const ValueKey('flow-node-detail-pane')), findsNothing);
+      expect(find.byType(BottomSheet), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('node-progress-tile')));
+      await _settle(tester);
+      expect(requests, hasLength(1));
+
+      node['attempt'] = 2;
+      bus.add(PeerControlEvent(peerId: 'p1', data: {
+        'type': 'flow.node.changed',
+        'run_id': 'r1',
+        'node': 'impl',
+        'status': 'done',
+        'attempt': 2,
+      }));
+      await _settle(tester);
+      await tester.pump(const Duration(milliseconds: 500));
+      await _settle(tester);
+      expect(requests, hasLength(2));
       await tester.pumpWidget(const SizedBox());
     });
 
@@ -287,13 +417,51 @@ void main() {
     });
 
     test('步骤帧走控制通道', () {
-      expect(PeerConnection.isControlFrameType('flow_node_progress_resp'),
-          isTrue);
+      expect(
+          PeerConnection.isControlFrameType('flow_node_progress_resp'), isTrue);
       expect(HubFlow.nodeProgressFrame('r1', 'build#2/impl'), {
         'type': 'flow_node_progress_req',
         'run_id': 'r1',
         'node': 'build#2/impl',
       });
+    });
+  });
+
+  group('节点输出链接', () {
+    Widget markdown(String data) => MaterialApp(
+          locale: const Locale('zh'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(body: FlowMarkdown(data)),
+        );
+
+    Future<void> tapLink(WidgetTester tester, String label) async {
+      await tester.tap(find.textContaining(label, findRichText: true).first);
+      await tester.pump();
+      await tester.pump();
+    }
+
+    testWidgets('外部链接打不开时提示，不抛异常', (tester) async {
+      const channel = MethodChannel('plugins.flutter.io/url_launcher');
+      tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async => false);
+      addTearDown(() => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null));
+      await tester.pumpWidget(markdown('[打开文档](https://example.com/doc)'));
+      await tapLink(tester, '打开文档');
+      expect(tester.takeException(), isNull);
+      expect(find.text('无法打开链接: https://example.com/doc'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('相对链接没有工作区根：直接提示打不开', (tester) async {
+      await tester.pumpWidget(markdown('[说明](docs/readme.md)'));
+      await tapLink(tester, '说明');
+      expect(tester.takeException(), isNull);
+      expect(find.text('无法打开链接: docs/readme.md'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpWidget(const SizedBox());
     });
   });
 
@@ -327,8 +495,11 @@ void main() {
         ..._runResponse(status: 'running'),
         'error': '超出 max_tasks 上限',
       })!;
-      expect(running.withRunStatus(FlowRunStatus.running,
-          eventError: '运行中告警').error, '超出 max_tasks 上限');
+      expect(
+          running
+              .withRunStatus(FlowRunStatus.running, eventError: '运行中告警')
+              .error,
+          '超出 max_tasks 上限');
       expect(running.withRunStatus(FlowRunStatus.failed).error, isNull,
           reason: '没有权威原因时仍要清掉旧告警');
       expect(
@@ -414,7 +585,18 @@ void main() {
                     'status': 'failed',
                     'error': '工作流日志写入失败：磁盘满了',
                   },
-                  {'run_id': 'r2', 'flow': 'dev', 'status': 'succeeded'},
+                  {
+                    'run_id': 'r2',
+                    'flow': 'dev',
+                    'status': 'succeeded',
+                    'error': '预算告警：不该显示',
+                  },
+                  {
+                    'run_id': 'r3',
+                    'flow': 'dev',
+                    'status': 'cancelled',
+                    'error': '用户手动取消',
+                  },
                 ],
               },
             ));
@@ -427,6 +609,10 @@ void main() {
       expect(find.byKey(const ValueKey('run-error-r1')), findsOneWidget);
       expect(find.textContaining('工作流日志写入失败：磁盘满了'), findsOneWidget);
       expect(find.byKey(const ValueKey('run-error-r2')), findsNothing);
+      expect(find.textContaining('预算告警'), findsNothing);
+      // 取消原因同样写在行上。
+      expect(find.byKey(const ValueKey('run-error-r3')), findsOneWidget);
+      expect(find.text('取消原因：用户手动取消'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       await bus.close();
     });

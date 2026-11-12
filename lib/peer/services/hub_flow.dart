@@ -615,6 +615,8 @@ class HubFlow {
         onTimeout: () => false,
       );
       if (!sent) return null;
+      // 发送期间已经取消：不必再起超时计时器。
+      if (done.isCompleted) return await done.future;
       timer = Timer(const Duration(seconds: 10), giveUp);
       return await done.future;
     } catch (_) {

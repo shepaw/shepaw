@@ -9865,6 +9865,14 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get flow_nodeProgressEmpty => '没有记录到思考或工具调用';
+
+  @override
+  String flow_runsCancelReason(String reason) {
+    return '取消原因：$reason';
+  }
+
+  @override
   String flow_runsFailureReason(String reason) {
     return '失败原因：$reason';
   }

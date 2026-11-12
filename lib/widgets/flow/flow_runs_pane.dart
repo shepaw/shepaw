@@ -319,7 +319,7 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
       _groupLabel(run.group, l10n),
       run.runId,
       run.flow,
-      run.error ?? '',
+      run.endReason ?? '',
       if (revision != null) '$revision',
       if (revision != null) l10n.flow_revisionLabel(revision),
     ].join('\n').toLowerCase();
@@ -415,9 +415,9 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
         titled.isNotEmpty &&
         widget.name.isEmpty &&
         run.flow.isNotEmpty;
-    // 失败原因直接写在列表行上：执行历史是「点流程先进列表」的入口，
-    // 只写 failed 再要求点进去一次，等于看不到原因。
-    final reason = run.isFailed ? (run.error?.trim() ?? '') : '';
+    // 失败 / 取消原因直接写在列表行上：执行历史是「点流程先进列表」的入口，
+    // 要求点进去一次才看得到，等于看不到原因。和搜索用同一个口径。
+    final reason = run.endReason?.trim() ?? '';
     final showReason = reason.isNotEmpty;
     return ListTile(
       key: ValueKey('run-${run.runId}'),
@@ -454,11 +454,14 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
           if (showReason) ...[
             const SizedBox(height: 2),
             Text(
-              l10n.flow_runsFailureReason(reason),
+              run.isFailed
+                  ? l10n.flow_runsFailureReason(reason)
+                  : l10n.flow_runsCancelReason(reason),
               key: ValueKey('run-error-${run.runId}'),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+              style: theme.textTheme.bodySmall?.copyWith(
+                  color: run.isFailed ? scheme.error : scheme.onSurfaceVariant),
             ),
           ],
         ],

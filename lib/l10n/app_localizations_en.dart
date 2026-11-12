@@ -10267,6 +10267,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get flow_nodeProgressEmpty =>
+      'No thinking or tool calls were recorded';
+
+  @override
+  String flow_runsCancelReason(String reason) {
+    return 'Cancelled: $reason';
+  }
+
+  @override
   String flow_runsFailureReason(String reason) {
     return 'Failed: $reason';
   }

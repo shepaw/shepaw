@@ -6006,6 +6006,15 @@
       }
     }
   },
+  "flow_nodeProgressEmpty": "没有记录到思考或工具调用",
+  "flow_runsCancelReason": "取消原因：{reason}",
+  "@flow_runsCancelReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
   "flow_runsFailureReason": "失败原因：{reason}",
   "@flow_runsFailureReason": {
     "placeholders": {

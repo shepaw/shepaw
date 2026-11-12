@@ -17927,6 +17927,18 @@ abstract class AppLocalizations {
   /// **'更早的 {count} 段步骤没有保留'**
   String flow_nodeProgressOmitted(int count);
 
+  /// No description provided for @flow_nodeProgressEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有记录到思考或工具调用'**
+  String get flow_nodeProgressEmpty;
+
+  /// No description provided for @flow_runsCancelReason.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消原因：{reason}'**
+  String flow_runsCancelReason(String reason);
+
   /// No description provided for @flow_runsFailureReason.
   ///
   /// In zh, this message translates to:

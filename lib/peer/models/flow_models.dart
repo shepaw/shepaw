@@ -950,6 +950,15 @@ class FlowRunSummary {
 
   bool get isFailed => status.toLowerCase() == 'failed';
 
+  bool get isCancelled => switch (status.toLowerCase()) {
+        'cancelled' || 'canceled' => true,
+        _ => false,
+      };
+
+  /// 列表行要显示（也只按它搜索）的原因：失败和取消才有意义。主机在非终态
+  /// 也会写 `error`（预算告警等），别让它冒充原因。
+  String? get endReason => isFailed || isCancelled ? error : null;
+
   bool get isRunning => status == 'running';
 
   /// 运行列表分组：要人拍板的排最前，其次运行中的，最后已结束的。
