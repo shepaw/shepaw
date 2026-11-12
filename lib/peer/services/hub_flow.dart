@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../storage/pouch_session.dart';
 import '../models/flow_models.dart';
+import '../models/flow_node_progress.dart';
 import 'peer_connection_manager.dart';
 
 /// 工作流帧的收发（方案 B.8 / C.7）。主机是权威：流程库、运行、关卡都在
@@ -147,6 +148,18 @@ class HubFlow {
         'type': 'flow_run_get_req',
         if (requestId != null) 'request_id': requestId,
         'run_id': runId,
+      };
+
+  static Map<String, dynamic> nodeProgressFrame(
+    String runId,
+    String nodeKey, {
+    String? requestId,
+  }) =>
+      {
+        'type': 'flow_node_progress_req',
+        if (requestId != null) 'request_id': requestId,
+        'run_id': runId,
+        'node': nodeKey,
       };
 
   static Map<String, dynamic> gateFrame(
@@ -527,6 +540,25 @@ class HubFlow {
     return FlowRunView.fromResponse(response);
   }
 
+  /// 节点最近一轮的思考 / 工具步骤。只在用户点开节点时取（正文可能几十 KB，
+  /// 不放进每个事件都会重拉的 `flow_run_get_resp`）。主机没应答返回 null。
+  /// [cancel] 完成（面板关掉）就不再等。
+  Future<FlowNodeProgress?> nodeProgress(
+    String peerId,
+    String runId,
+    String nodeKey, {
+    Future<void>? cancel,
+  }) async {
+    final response = await _request(
+      peerId,
+      nodeProgressFrame(runId, nodeKey),
+      responseType: 'flow_node_progress_resp',
+      cancel: cancel,
+    );
+    if (response == null) return null;
+    return FlowNodeProgress.fromResponse(response);
+  }
+
   /// 主机推来的运行与节点事件。
   Stream<FlowEvent> runEvents(String peerId) {
     return events
@@ -554,30 +586,41 @@ class HubFlow {
     return FlowCall.fromResponse(response);
   }
 
+  /// [cancel] 完成时按「没应答」收场（返回 null），并立即释放超时计时器：
+  /// 面板关了就不必再等主机——老主机不认的请求原本要白挂 10 秒。
   Future<Map<String, dynamic>?> _request(
     String peerId,
     Map<String, dynamic> frame, {
     required String responseType,
+    Future<void>? cancel,
   }) async {
     final requestId = frame['request_id'] as String? ?? _uuid.v4();
     frame['request_id'] = requestId;
     final done = Completer<Map<String, dynamic>?>();
+    void giveUp() {
+      if (!done.isCompleted) done.complete(null);
+    }
+
     final sub = events.listen((event) {
       if (done.isCompleted) return;
       if (event.peerId != peerId || event.type != responseType) return;
       if (event.data['request_id'] != requestId) return;
       done.complete(event.data);
     });
+    unawaited(cancel?.then((_) => giveUp()));
+    Timer? timer;
     try {
       final sent = await _send(peerId, frame).timeout(
         sendTimeout,
         onTimeout: () => false,
       );
       if (!sent) return null;
-      return await done.future.timeout(const Duration(seconds: 10));
+      timer = Timer(const Duration(seconds: 10), giveUp);
+      return await done.future;
     } catch (_) {
       return null;
     } finally {
+      timer?.cancel();
       unawaited(sub.cancel());
     }
   }

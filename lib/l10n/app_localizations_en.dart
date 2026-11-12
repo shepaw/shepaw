@@ -10236,6 +10236,42 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_runSession => 'Run session';
 
   @override
+  String get flow_runInputsTitle => 'Initial input';
+
+  @override
+  String get flow_runInputsExpand => 'Show all';
+
+  @override
+  String get flow_runInputsCollapse => 'Show less';
+
+  @override
+  String get flow_nodeProgressTitle => 'Thinking & tool calls';
+
+  @override
+  String get flow_nodeProgressLoading => 'Loading thinking and tool calls…';
+
+  @override
+  String get flow_nodeProgressThought => 'Thinking';
+
+  @override
+  String get flow_nodeProgressTool => 'Tool call';
+
+  @override
+  String flow_nodeProgressSummary(int thoughts, int tools) {
+    return '$thoughts thoughts · $tools tool calls';
+  }
+
+  @override
+  String flow_nodeProgressOmitted(int count) {
+    return '$count earlier steps were not kept';
+  }
+
+  @override
+  String flow_runsFailureReason(String reason) {
+    return 'Failed: $reason';
+  }
+
+  @override
   String get flow_gotoAnswer => 'Go answer';
 
   @override

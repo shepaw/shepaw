@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
+import 'flow_node_output.dart';
 import 'flow_node_tree.dart';
 
 /// 点开循环后，在详情里按轮次折叠每一轮的产出。
@@ -168,7 +169,7 @@ class _RoundStep extends StatelessWidget {
           else if (node.text != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: SelectableText(
+              child: FlowMarkdown(
                 node.text!,
                 key: ValueKey('loop-round-text-${node.key}'),
               ),

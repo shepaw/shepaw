@@ -17873,6 +17873,66 @@ abstract class AppLocalizations {
   /// **'运行会话'**
   String get flow_runSession;
 
+  /// No description provided for @flow_runInputsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'初始输入'**
+  String get flow_runInputsTitle;
+
+  /// No description provided for @flow_runInputsExpand.
+  ///
+  /// In zh, this message translates to:
+  /// **'展开全文'**
+  String get flow_runInputsExpand;
+
+  /// No description provided for @flow_runInputsCollapse.
+  ///
+  /// In zh, this message translates to:
+  /// **'收起'**
+  String get flow_runInputsCollapse;
+
+  /// No description provided for @flow_nodeProgressTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'思考与工具调用'**
+  String get flow_nodeProgressTitle;
+
+  /// No description provided for @flow_nodeProgressLoading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在读取思考与工具调用…'**
+  String get flow_nodeProgressLoading;
+
+  /// No description provided for @flow_nodeProgressThought.
+  ///
+  /// In zh, this message translates to:
+  /// **'思考'**
+  String get flow_nodeProgressThought;
+
+  /// No description provided for @flow_nodeProgressTool.
+  ///
+  /// In zh, this message translates to:
+  /// **'工具调用'**
+  String get flow_nodeProgressTool;
+
+  /// No description provided for @flow_nodeProgressSummary.
+  ///
+  /// In zh, this message translates to:
+  /// **'{thoughts} 段思考 · {tools} 次工具调用'**
+  String flow_nodeProgressSummary(int thoughts, int tools);
+
+  /// No description provided for @flow_nodeProgressOmitted.
+  ///
+  /// In zh, this message translates to:
+  /// **'更早的 {count} 段步骤没有保留'**
+  String flow_nodeProgressOmitted(int count);
+
+  /// No description provided for @flow_runsFailureReason.
+  ///
+  /// In zh, this message translates to:
+  /// **'失败原因：{reason}'**
+  String flow_runsFailureReason(String reason);
+
   /// No description provided for @flow_gotoAnswer.
   ///
   /// In zh, this message translates to:

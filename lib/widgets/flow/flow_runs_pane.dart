@@ -319,6 +319,7 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
       _groupLabel(run.group, l10n),
       run.runId,
       run.flow,
+      run.error ?? '',
       if (revision != null) '$revision',
       if (revision != null) l10n.flow_revisionLabel(revision),
     ].join('\n').toLowerCase();
@@ -414,9 +415,14 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
         titled.isNotEmpty &&
         widget.name.isEmpty &&
         run.flow.isNotEmpty;
+    // 失败原因直接写在列表行上：执行历史是「点流程先进列表」的入口，
+    // 只写 failed 再要求点进去一次，等于看不到原因。
+    final reason = run.isFailed ? (run.error?.trim() ?? '') : '';
+    final showReason = reason.isNotEmpty;
     return ListTile(
       key: ValueKey('run-${run.runId}'),
       selected: widget.selectedRunId == run.runId,
+      isThreeLine: showReason,
       leading: Icon(
         needsAction
             ? Icons.report_problem_outlined
@@ -433,11 +439,29 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
         headline,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text(
-        showFlow ? '${run.flow} · $when' : when,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: scheme.onSurfaceVariant,
-        ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            showFlow ? '${run.flow} · $when' : when,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          if (showReason) ...[
+            const SizedBox(height: 2),
+            Text(
+              l10n.flow_runsFailureReason(reason),
+              key: ValueKey('run-error-${run.runId}'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+            ),
+          ],
+        ],
       ),
       trailing: run.revision == null
           ? null

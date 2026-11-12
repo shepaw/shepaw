@@ -9834,6 +9834,42 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_runSession => '运行会话';
 
   @override
+  String get flow_runInputsTitle => '初始输入';
+
+  @override
+  String get flow_runInputsExpand => '展开全文';
+
+  @override
+  String get flow_runInputsCollapse => '收起';
+
+  @override
+  String get flow_nodeProgressTitle => '思考与工具调用';
+
+  @override
+  String get flow_nodeProgressLoading => '正在读取思考与工具调用…';
+
+  @override
+  String get flow_nodeProgressThought => '思考';
+
+  @override
+  String get flow_nodeProgressTool => '工具调用';
+
+  @override
+  String flow_nodeProgressSummary(int thoughts, int tools) {
+    return '$thoughts 段思考 · $tools 次工具调用';
+  }
+
+  @override
+  String flow_nodeProgressOmitted(int count) {
+    return '更早的 $count 段步骤没有保留';
+  }
+
+  @override
+  String flow_runsFailureReason(String reason) {
+    return '失败原因：$reason';
+  }
+
+  @override
   String get flow_gotoAnswer => '去回答';
 
   @override

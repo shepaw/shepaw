@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../peer/models/flow_models.dart';
+import '../peer/models/flow_node_progress.dart';
 import '../peer/peer_approval_payload.dart';
 import '../peer/services/flow_session_open.dart';
 import '../peer/services/hub_artifact.dart';
@@ -16,7 +17,9 @@ import '../storage/pouch_scope.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/flow/flow_artifact_card.dart';
 import '../widgets/flow/flow_loop_rounds.dart';
+import '../widgets/flow/flow_node_output.dart';
 import '../widgets/flow/flow_node_tree.dart';
+import '../widgets/flow/flow_run_inputs_card.dart';
 import '../widgets/flow/flow_yaml.dart';
 import '../widgets/flow/flow_yaml_editor.dart';
 
@@ -492,7 +495,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
             agentId: event.agentId,
           );
         } else if (event.runStatus != null) {
-          _run = run.withRunStatus(event.runStatus!);
+          _run = run.withRunStatus(event.runStatus!, eventError: event.error);
         }
       });
     }
@@ -732,6 +735,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
                   Navigator.pop(sheetContext);
                   unawaited(_patchNode(node));
                 },
+                loadProgress: _loadNodeProgress,
               ),
             ],
           ),
@@ -739,6 +743,11 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       },
     );
   }
+
+  Future<FlowNodeProgress?> _loadNodeProgress(
+          FlowNode node, Future<void> cancel) =>
+      _client.nodeProgress(widget.peerId, widget.runId, node.key,
+          cancel: cancel);
 
   Widget _sidePane(FlowNode node) {
     final l10n = AppLocalizations.of(context);
@@ -785,6 +794,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
                   onOpenSession: () => _openSession(node),
                   onOpenChildSession: _openSession,
                   onPatch: () => unawaited(_patchNode(node)),
+                  loadProgress: _loadNodeProgress,
                 ),
               ],
             ),
@@ -926,6 +936,13 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
           onCancel: _cancel,
           onDelete: _deleteRun,
         ),
+        // 开跑时填的初始提示词 / 参数。放在最上面：点开一条历史运行，
+        // 第一眼就该能确认「当时到底让它做什么」。老主机不下发 inputs，
+        // 卡片自己会渲染成空，不影响其余内容。
+        if (run.inputs.isNotEmpty) ...[
+          FlowRunInputsCard(inputs: run.inputs),
+          const SizedBox(height: 8),
+        ],
         FlowArtifactCard(
           artifacts: _runArtifacts,
           instanceArtifacts: _instanceArtifacts,
@@ -984,6 +1001,7 @@ class _NodeDetailContent extends StatelessWidget {
     required this.onOpenSession,
     required this.onPatch,
     this.onOpenChildSession,
+    this.loadProgress,
   });
 
   final FlowNode node;
@@ -992,6 +1010,22 @@ class _NodeDetailContent extends StatelessWidget {
   final VoidCallback onOpenSession;
   final VoidCallback onPatch;
   final void Function(FlowNode node)? onOpenChildSession;
+
+  /// 取这个节点最近一轮的思考 / 工具步骤；为 null 时不显示折叠区。
+  final Future<FlowNodeProgress?> Function(FlowNode node, Future<void> cancel)?
+      loadProgress;
+
+  /// 只有真正派出去跑过的叶子节点才有步骤：容器（seq / loop / if）和还没开跑
+  /// 的节点不发请求。
+  bool get _hasProgress {
+    final status = node.status;
+    return loadProgress != null &&
+        node.children.isEmpty &&
+        node.iterations.isEmpty &&
+        status != null &&
+        status != FlowNodeStatus.pending &&
+        status != FlowNodeStatus.skipped;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1014,7 +1048,18 @@ class _NodeDetailContent extends StatelessWidget {
         ],
         if (node.text != null) ...[
           const SizedBox(height: 12),
-          SelectableText(node.text!),
+          // 节点输出多是 agent 写的 Markdown（标题、列表、代码块），按聊天
+          // 气泡同一套规则渲染，仍可选中复制。
+          FlowMarkdown(node.text!, key: ValueKey('node-text-${node.key}')),
+        ],
+        if (_hasProgress) ...[
+          const SizedBox(height: 12),
+          // 状态 / 轮次变了换 key 重取：跑完一轮、重试一次都会写新的步骤。
+          FlowNodeProgressSection(
+            key: ValueKey(
+                'node-progress-${node.key}-${node.status?.name}-${node.attempt}'),
+            load: (cancel) => loadProgress!(node, cancel),
+          ),
         ],
         if (node.iterations.isNotEmpty) ...[
           const SizedBox(height: 12),

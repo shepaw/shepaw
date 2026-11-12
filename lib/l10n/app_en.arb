@@ -5542,6 +5542,40 @@
   },
   "flow_sessionBanner": "Workflow · node {node}",
   "flow_runSession": "Run session",
+  "flow_runInputsTitle": "Initial input",
+  "flow_runInputsExpand": "Show all",
+  "flow_runInputsCollapse": "Show less",
+  "flow_nodeProgressTitle": "Thinking & tool calls",
+  "flow_nodeProgressLoading": "Loading thinking and tool calls…",
+  "flow_nodeProgressThought": "Thinking",
+  "flow_nodeProgressTool": "Tool call",
+  "flow_nodeProgressSummary": "{thoughts} thoughts · {tools} tool calls",
+  "@flow_nodeProgressSummary": {
+    "placeholders": {
+      "thoughts": {
+        "type": "int"
+      },
+      "tools": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_nodeProgressOmitted": "{count} earlier steps were not kept",
+  "@flow_nodeProgressOmitted": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_runsFailureReason": "Failed: {reason}",
+  "@flow_runsFailureReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
   "flow_gotoAnswer": "Go answer",
   "flow_nodeWaitingUser": "Waiting for you",
   "flow_tabOverview": "Overview",

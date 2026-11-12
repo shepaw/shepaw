@@ -400,6 +400,7 @@ class FlowRunView {
     this.instanceId,
     this.instanceScope,
     this.runScope,
+    this.inputs = const {},
   });
 
   final String runId;
@@ -429,6 +430,11 @@ class FlowRunView {
   final String? instanceScope;
   final String? runScope;
 
+  /// 开跑表单填的初始输入（用户最初的要求 / 参数）原文。主机从 Run 快照
+  /// 回填到 `flow_run_get_resp.inputs`；老主机没这个字段就是空 Map。
+  /// 列表里的 `input_title` 只是截出来的第一行，不能代替它。
+  final Map<String, dynamic> inputs;
+
   /// 未来「再跑一次」按钮把这个 id 传回 [HubFlow.start]，复用同一业务实例。
   /// 运行页状态按「start 响应 → run 快照」的优先级保留它。
   String? get rerunInstanceId => instanceId;
@@ -446,6 +452,18 @@ class FlowRunView {
     final host = ctx is Map ? ctx['host'] : null;
     final raw = response['host_meta'] ?? host;
     return raw is Map ? Map<String, dynamic>.from(raw) : const {};
+  }
+
+  /// 初始输入是任意 JSON 对象：值可能是字符串、数字、布尔或嵌套结构。
+  /// 只做键的字符串化，值原样留给 UI 渲染；不是对象就当老主机没下发。
+  static Map<String, dynamic> _inputs(Map<String, dynamic> response) {
+    final raw = response['inputs'];
+    if (raw is! Map) return const {};
+    return {
+      for (final entry in raw.entries)
+        if (entry.key.toString().trim().isNotEmpty)
+          entry.key.toString(): entry.value,
+    };
   }
 
   // 老的两段式 `run:<rid>` 不在三层树里，主机产物帧桥会拒；只认 flow 家族
@@ -535,6 +553,7 @@ class FlowRunView {
       instanceId: instanceId,
       instanceScope: instanceScope,
       runScope: runScope,
+      inputs: _inputs(response),
     );
   }
 
@@ -570,28 +589,40 @@ class FlowRunView {
       instanceId: instanceId,
       instanceScope: instanceScope,
       runScope: runScope,
+      inputs: inputs,
     );
   }
 
-  /// 运行级状态变了。事件帧只带状态，不带 `error`；主机在非终态也会写
+  /// 运行级状态变了。事件帧以前只带状态，不带 `error`；主机在非终态也会写
   /// `run.error`（预算告警 / `on_error: continue`），若这里原样保留，看门狗
   /// 取消后的 400ms 重拉窗口里，旧告警会冒充「取消原因」显示在原因卡上。
   /// 切到终态时先清掉本地旧值，由紧接着的 `_load()` 回填主机真值。
-  FlowRunView withRunStatus(FlowRunStatus next) => FlowRunView(
-        runId: runId,
-        status: next,
-        tasksUsed: tasksUsed,
-        tree: tree,
-        error: next == FlowRunStatus.running ? error : null,
-        children: children,
-        yaml: yaml,
-        runSessionId: runSessionId,
-        startedMs: startedMs,
-        flowId: flowId,
-        instanceId: instanceId,
-        instanceScope: instanceScope,
-        runScope: runScope,
-      );
+  ///
+  /// 新主机会在终态事件里直接回带 [eventError]（或 App 从 outcome 解出来），
+  /// 这时立刻用它：重拉失败 / 主机掉线也能看到具体原因。运行中即使带了
+  /// error 也不显示，避免把预算告警当成失败原因。
+  FlowRunView withRunStatus(FlowRunStatus next, {String? eventError}) {
+    final terminalReason =
+        (next == FlowRunStatus.failed || next == FlowRunStatus.cancelled)
+            ? eventError
+            : null;
+    return FlowRunView(
+      runId: runId,
+      status: next,
+      tasksUsed: tasksUsed,
+      tree: tree,
+      error: next == FlowRunStatus.running ? error : terminalReason,
+      children: children,
+      yaml: yaml,
+      runSessionId: runSessionId,
+      startedMs: startedMs,
+      flowId: flowId,
+      instanceId: instanceId,
+      instanceScope: instanceScope,
+      runScope: runScope,
+      inputs: inputs,
+    );
+  }
 }
 
 /// 流程库里的一项（`flow_list_resp`）。
@@ -687,8 +718,11 @@ enum FlowSummaryStatus {
 
 /// 一条运行事件（`flow.run.changed` / `flow.node.changed`）。
 class FlowEvent {
-  const FlowEvent.run({required this.runId, required this.runStatus})
-      : node = null,
+  const FlowEvent.run({
+    required this.runId,
+    required this.runStatus,
+    this.error,
+  })  : node = null,
         nodeStatus = null,
         attempt = 0,
         sessionId = null,
@@ -701,7 +735,8 @@ class FlowEvent {
     this.attempt = 0,
     this.sessionId,
     this.agentId,
-  }) : runStatus = null;
+  })  : runStatus = null,
+        error = null;
 
   final String runId;
   final String? node;
@@ -717,9 +752,24 @@ class FlowEvent {
   /// 主机旧帧里这个字段叫 `agent`，两种都认；缺失时沿用树上已有的值。
   final String? agentId;
 
+  /// `flow.run.changed` 上带的失败 / 取消原因。新主机直接给 `error`，
+  /// 老主机只给 `outcome: {"Failed": {"error": ...}}`；两种都认。
+  /// 有了它终态原因卡不必等 400ms 后的详情重拉，重拉失败也不会丢。
+  final String? error;
+
   static String? _nonEmptyText(Map<String, dynamic> data, String key) {
     final value = data[key];
     return value is String && value.isNotEmpty ? value : null;
+  }
+
+  static String? _runError(Map<String, dynamic> data) {
+    final flat = _nonEmptyText(data, 'error');
+    if (flat != null) return flat;
+    final outcome = data['outcome'];
+    if (outcome is! Map) return null;
+    final failed = outcome['Failed'];
+    if (failed is! Map) return null;
+    return _nonEmptyText(Map<String, dynamic>.from(failed), 'error');
   }
 
   static FlowEvent? parse(String type, Map<String, dynamic> data) {
@@ -729,7 +779,11 @@ class FlowEvent {
       final status = FlowRunStatus.parse(data['status']);
       return status == null
           ? null
-          : FlowEvent.run(runId: runId, runStatus: status);
+          : FlowEvent.run(
+              runId: runId,
+              runStatus: status,
+              error: _runError(data),
+            );
     }
     if (type == 'flow.node.changed') {
       final node = data['node'];
@@ -873,6 +927,7 @@ class FlowRunSummary {
     this.startedMs = 0,
     this.tasksUsed = 0,
     this.inputTitle = '',
+    this.error,
   });
 
   final String runId;
@@ -888,6 +943,12 @@ class FlowRunSummary {
   /// 主机从 `inputs.title` / `goal` / `task` 里取，没有就用第一个非空字符串。
   /// 旧主机不带这个字段，这里就是空串。
   final String inputTitle;
+
+  /// 失败 / 取消原因（新主机的 `flow_run_list_resp.runs[].error`）。
+  /// 旧主机不带这个字段，列表行就不显示原因。
+  final String? error;
+
+  bool get isFailed => status.toLowerCase() == 'failed';
 
   bool get isRunning => status == 'running';
 
@@ -910,6 +971,12 @@ class FlowRunSummary {
     return isRunning ? FlowRunGroup.running : FlowRunGroup.finished;
   }
 
+  static String? _optionalText(dynamic raw) {
+    if (raw is! String) return null;
+    final text = raw.trim();
+    return text.isEmpty ? null : text;
+  }
+
   static List<FlowRunSummary> listFromResponse(Map<String, dynamic> response) {
     if (response['success'] != true) return const [];
     final runs = response['runs'];
@@ -927,6 +994,7 @@ class FlowRunSummary {
             startedMs: (item['started_ms'] as num?)?.toInt() ?? 0,
             tasksUsed: (item['tasks_used'] as num?)?.toInt() ?? 0,
             inputTitle: (item['input_title'] as String?)?.trim() ?? '',
+            error: _optionalText(item['error']),
           ),
     ];
   }
