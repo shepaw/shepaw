@@ -10344,4 +10344,104 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_startPreviewBanner => '这是预览，不会真正开始运行';
+
+  @override
+  String get jadeSlip_executorKind => '执行者';
+
+  @override
+  String get jadeSlip_executorAgent => 'Agent';
+
+  @override
+  String get jadeSlip_executorFlow => '工作流';
+
+  @override
+  String get jadeSlip_flowNone => '未选工作流';
+
+  @override
+  String get jadeSlip_flowPick => '选择工作流模板';
+
+  @override
+  String jadeSlip_flowVersion(int revision) {
+    return '版本 $revision';
+  }
+
+  @override
+  String get jadeSlip_flowRevisionLatest => '最新版';
+
+  @override
+  String get jadeSlip_flowPresetInputs => '预设输入';
+
+  @override
+  String get jadeSlip_flowRoleBindings => '角色绑定';
+
+  @override
+  String get jadeSlip_flowMissing => '模板不存在或钉的版本已删除，请重新选择';
+
+  @override
+  String jadeSlip_flowDispatchTitle(String name) {
+    return '开跑工作流 · $name';
+  }
+
+  @override
+  String get jadeSlip_flowDispatchHint => '输入与角色齐全，确认后直接开跑';
+
+  @override
+  String get jadeSlip_flowGo => '开跑';
+
+  @override
+  String get jadeSlip_flowOldHost => '主机版本较旧，运行不会回写玉简';
+
+  @override
+  String jadeSlip_flowRunStatus(String status) {
+    return '运行：$status';
+  }
+
+  @override
+  String get jadeSlip_flowViewRun => '查看运行';
+
+  @override
+  String jadeSlip_flowFromSlip(String title) {
+    return '来自玉简《$title》';
+  }
+
+  @override
+  String get jadeSlip_flowBackToSlip => '回到玉简';
+
+  @override
+  String get jadeSlip_flowLibraryPublic => '公共库';
+
+  @override
+  String get jadeSlip_flowLibraryGroup => '所属群';
+
+  @override
+  String get jadeSlip_flowBadge => '工作流';
+
+  @override
+  String get jadeSlip_flowNoTemplates => '没有可用的工作流模板';
+
+  @override
+  String get jadeSlip_flowOffline => '主机离线，无法开跑';
+
+  @override
+  String jadeSlip_flowStartFailed(String error) {
+    return '开跑失败：$error';
+  }
+
+  @override
+  String get jadeSlip_flowRunAgain => '已有运行中的工作流，仍要再开一次？';
+
+  @override
+  String get jadeSlip_flowRole => '角色';
+
+  @override
+  String get jadeSlip_flowInput => '输入';
+
+  @override
+  String get jadeSlip_flowEventDone => '工作流运行完成，待验收';
+
+  @override
+  String get jadeSlip_flowEventFailed => '工作流运行失败';
+
+  @override
+  String get jadeSlip_flowEventCancelled => '工作流运行已取消';
 }

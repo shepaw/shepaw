@@ -10759,4 +10759,108 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get flow_startPreviewBanner =>
       'Preview only. This will not start a run';
+
+  @override
+  String get jadeSlip_executorKind => 'Executor';
+
+  @override
+  String get jadeSlip_executorAgent => 'Agent';
+
+  @override
+  String get jadeSlip_executorFlow => 'Workflow';
+
+  @override
+  String get jadeSlip_flowNone => 'No workflow selected';
+
+  @override
+  String get jadeSlip_flowPick => 'Choose a workflow template';
+
+  @override
+  String jadeSlip_flowVersion(int revision) {
+    return 'Revision $revision';
+  }
+
+  @override
+  String get jadeSlip_flowRevisionLatest => 'Latest';
+
+  @override
+  String get jadeSlip_flowPresetInputs => 'Preset inputs';
+
+  @override
+  String get jadeSlip_flowRoleBindings => 'Role bindings';
+
+  @override
+  String get jadeSlip_flowMissing =>
+      'The template or pinned revision no longer exists. Pick another one';
+
+  @override
+  String jadeSlip_flowDispatchTitle(String name) {
+    return 'Start workflow · $name';
+  }
+
+  @override
+  String get jadeSlip_flowDispatchHint =>
+      'Inputs and roles are ready. Confirm to start';
+
+  @override
+  String get jadeSlip_flowGo => 'Start';
+
+  @override
+  String get jadeSlip_flowOldHost =>
+      'Host is older; run results will not be written back to this slip';
+
+  @override
+  String jadeSlip_flowRunStatus(String status) {
+    return 'Run: $status';
+  }
+
+  @override
+  String get jadeSlip_flowViewRun => 'View run';
+
+  @override
+  String jadeSlip_flowFromSlip(String title) {
+    return 'From slip \"$title\"';
+  }
+
+  @override
+  String get jadeSlip_flowBackToSlip => 'Back to slip';
+
+  @override
+  String get jadeSlip_flowLibraryPublic => 'Public library';
+
+  @override
+  String get jadeSlip_flowLibraryGroup => 'Group library';
+
+  @override
+  String get jadeSlip_flowBadge => 'Workflow';
+
+  @override
+  String get jadeSlip_flowNoTemplates => 'No workflow templates available';
+
+  @override
+  String get jadeSlip_flowOffline => 'Host is offline; cannot start a run';
+
+  @override
+  String jadeSlip_flowStartFailed(String error) {
+    return 'Could not start the run: $error';
+  }
+
+  @override
+  String get jadeSlip_flowRunAgain =>
+      'A workflow is already running. Start another one?';
+
+  @override
+  String get jadeSlip_flowRole => 'Role';
+
+  @override
+  String get jadeSlip_flowInput => 'Input';
+
+  @override
+  String get jadeSlip_flowEventDone => 'Workflow finished, awaiting review';
+
+  @override
+  String get jadeSlip_flowEventFailed => 'Workflow run failed';
+
+  @override
+  String get jadeSlip_flowEventCancelled => 'Workflow run cancelled';
 }

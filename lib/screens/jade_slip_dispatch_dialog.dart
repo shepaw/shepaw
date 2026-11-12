@@ -24,12 +24,16 @@ class JadeSlipDispatchChoice {
     required this.avatar,
     required this.sessionTarget,
     this.channelId,
+    this.flowConfirmed = false,
   });
 
   final String agentId;
   final String agentName;
   final String avatar;
   final JadeSlipSessionTarget sessionTarget;
+
+  /// 工作流玉简的弹层确认过「开跑」。纯 Agent 玉简恒为 false。
+  final bool flowConfirmed;
 
   /// 仅 [JadeSlipSessionTarget.specific] 时非空。
   final String? channelId;
@@ -45,6 +49,14 @@ Future<JadeSlipDispatchChoice?> showJadeSlipDispatchDialog(
   required List<RemoteAgent> agents,
   JadeSlipItem? focusItem,
 }) {
+  // 工作流玉简的确认弹层只问「开跑」，不出现 Agent 选择器和会话选项。
+  // 按 executorKind 分流：切到工作流但还没选模板时也不退回 Agent 弹层。
+  if (slip.executorKind == JadeSlipExecutorKind.flow) {
+    return showDialog<JadeSlipDispatchChoice>(
+      context: context,
+      builder: (_) => _JadeSlipFlowDispatchDialog(slip: slip),
+    );
+  }
   return showDialog<JadeSlipDispatchChoice>(
     context: context,
     builder: (_) => _JadeSlipDispatchDialog(
@@ -53,6 +65,122 @@ Future<JadeSlipDispatchChoice?> showJadeSlipDispatchDialog(
       focusItem: focusItem,
     ),
   );
+}
+
+/// 工作流玉简的确认弹层：只列模板与预设数量，不出现 Agent 选择器 / 会话选项。
+class _JadeSlipFlowDispatchDialog extends StatelessWidget {
+  const _JadeSlipFlowDispatchDialog({required this.slip});
+
+  final JadeSlip slip;
+
+  Future<void> _confirm(BuildContext context) async {
+    // 上一条还在跑时再问一次，避免误点连开两个运行。
+    if (slip.latestFlowRun?.status == 'running') {
+      final again = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          final l10n = AppLocalizations.of(dialogContext);
+          return AlertDialog(
+            content: Text(l10n.jadeSlip_flowRunAgain),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(l10n.common_cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(l10n.jadeSlip_flowGo),
+              ),
+            ],
+          );
+        },
+      );
+      if (again != true) {
+        if (context.mounted) Navigator.of(context).pop();
+        return;
+      }
+    }
+    if (!context.mounted) return;
+    Navigator.of(context).pop(
+      const JadeSlipDispatchChoice(
+        agentId: '',
+        agentName: '',
+        avatar: '',
+        sessionTarget: JadeSlipSessionTarget.current,
+        flowConfirmed: true,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final binding = slip.flowBinding;
+    final hasTemplate = binding != null && binding.name.trim().isNotEmpty;
+    final revision = binding?.revision == null
+        ? l10n.jadeSlip_flowRevisionLatest
+        : l10n.jadeSlip_flowVersion(binding!.revision!);
+    return AlertDialog(
+      title: Text(hasTemplate
+          ? l10n.jadeSlip_flowDispatchTitle(binding.name)
+          : l10n.jadeSlip_flowNone),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (hasTemplate) ...[
+              Text(
+                '${binding.scope} / ${binding.name} · $revision',
+                style: theme.textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '${l10n.jadeSlip_flowPresetInputs}: ${binding.inputs.length}',
+                style: theme.textTheme.bodyMedium,
+              ),
+              Text(
+                '${l10n.jadeSlip_flowRoleBindings}: ${binding.bindings.length}',
+                style: theme.textTheme.bodyMedium,
+              ),
+            ] else
+              Text(
+                l10n.jadeSlip_flowPick,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.error,
+                ),
+              ),
+            const SizedBox(height: 10),
+            Text(
+              l10n.jadeSlip_flowDispatchHint,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.common_cancel),
+        ),
+        FilledButton(
+          // 没选模板时不给「开跑」：先回编辑页选，派发本身也会拦住并提示重选。
+          onPressed: hasTemplate ? () => unawaited(_confirm(context)) : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+          child: Text(l10n.jadeSlip_flowGo),
+        ),
+      ],
+    );
+  }
 }
 
 class _JadeSlipDispatchDialog extends StatefulWidget {

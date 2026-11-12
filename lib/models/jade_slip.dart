@@ -2,6 +2,139 @@ import 'package:uuid/uuid.dart';
 
 import '../storage/store_protocol.dart';
 
+/// 玉简的执行者：单个 Agent（缺省、旧数据）或一个工作流模板。
+///
+/// 旧玉简没有 `executor_kind` 字段，一律按 agent 处理，无需迁移。
+enum JadeSlipExecutorKind {
+  agent,
+  flow;
+
+  String get wire => switch (this) {
+        agent => 'agent',
+        flow => 'flow',
+      };
+
+  static JadeSlipExecutorKind parse(String? raw) =>
+      (raw ?? '').trim() == 'flow' ? flow : agent;
+}
+
+/// 玉简绑定的工作流模板。`revision == null` 表示开跑时取最新版。
+class JadeSlipFlowBinding {
+  const JadeSlipFlowBinding({
+    required this.scope,
+    required this.name,
+    this.revision,
+    this.inputs = const {},
+    this.bindings = const {},
+    this.inputFrom = const {},
+  });
+
+  /// `lib` 或 `group:<gid>`。
+  final String scope;
+  final String name;
+  final int? revision;
+
+  /// 预设输入（input name -> 值）。空值留给开跑表单补。
+  final Map<String, String> inputs;
+
+  /// 角色绑定（role -> agentId），可部分预填。
+  final Map<String, String> bindings;
+
+  /// 某个 input 的值来源：`manual`（用户填）或 `slip`（玉简字段自动映射）。
+  final Map<String, String> inputFrom;
+
+  bool get isEmpty => name.trim().isEmpty;
+
+  JadeSlipFlowBinding copyWith({
+    String? scope,
+    String? name,
+    int? revision,
+    bool clearRevision = false,
+    Map<String, String>? inputs,
+    Map<String, String>? bindings,
+    Map<String, String>? inputFrom,
+  }) =>
+      JadeSlipFlowBinding(
+        scope: scope ?? this.scope,
+        name: name ?? this.name,
+        revision: clearRevision ? null : (revision ?? this.revision),
+        inputs: inputs ?? this.inputs,
+        bindings: bindings ?? this.bindings,
+        inputFrom: inputFrom ?? this.inputFrom,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'scope': scope,
+        'name': name,
+        if (revision != null) 'revision': revision,
+        if (inputs.isNotEmpty) 'inputs': inputs,
+        if (bindings.isNotEmpty) 'bindings': bindings,
+        if (inputFrom.isNotEmpty) 'input_from': inputFrom,
+      };
+
+  factory JadeSlipFlowBinding.fromJson(Map<String, dynamic> json) =>
+      JadeSlipFlowBinding(
+        scope: (json['scope'] as String? ?? '').trim(),
+        name: (json['name'] as String? ?? '').trim(),
+        revision: json['revision'] is num
+            ? (json['revision'] as num).toInt()
+            : int.tryParse(json['revision']?.toString() ?? ''),
+        inputs: _stringMap(json['inputs']),
+        bindings: _stringMap(json['bindings']),
+        inputFrom: _stringMap(json['input_from']),
+      );
+}
+
+/// 玉简发起的一次工作流运行。同一模板可以跑多次，按 runId 去重。
+class JadeSlipFlowRun {
+  const JadeSlipFlowRun({
+    required this.runId,
+    this.startedAt = 0,
+    this.status = '',
+    this.hostId = '',
+  });
+
+  final String runId;
+  final int startedAt;
+
+  /// running / succeeded / failed / cancelled。
+  final String status;
+  final String hostId;
+
+  bool get isTerminal =>
+      status == 'succeeded' ||
+      status == 'failed' ||
+      status == 'cancelled';
+
+  JadeSlipFlowRun copyWith({
+    String? runId,
+    int? startedAt,
+    String? status,
+    String? hostId,
+  }) =>
+      JadeSlipFlowRun(
+        runId: runId ?? this.runId,
+        startedAt: startedAt ?? this.startedAt,
+        status: status ?? this.status,
+        hostId: hostId ?? this.hostId,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'run_id': runId,
+        if (startedAt != 0) 'started_at': startedAt,
+        if (status.isNotEmpty) 'status': status,
+        if (hostId.isNotEmpty) 'host_id': hostId,
+      };
+
+  factory JadeSlipFlowRun.fromJson(Map<String, dynamic> json) =>
+      JadeSlipFlowRun(
+        runId: (json['run_id'] as String? ?? '').trim(),
+        startedAt: (json['started_at'] as num?)?.toInt() ?? 0,
+        status: (json['status'] as String? ?? '').trim(),
+        hostId: (json['host_id'] as String? ?? '').trim(),
+      );
+}
+
 /// 玉简条目：储物袋里的待办/笔记，供用户记录、Agent 勾选执行。
 ///
 /// 落盘：切到 v3 后是 `pouch://<pouch_id>/slip:<id>/slip.json`（一条玉简一个
@@ -34,6 +167,10 @@ class JadeSlip {
     this.contractVersion = 1,
     this.decisions = const [],
     this.currentConclusion,
+    this.executorKind = JadeSlipExecutorKind.agent,
+    this.flowBinding,
+    this.flowRuns = const [],
+    this.flowStatus = '',
     required this.deviceId,
     required this.createdAt,
     required this.updatedAt,
@@ -94,6 +231,42 @@ class JadeSlip {
 
   /// 覆盖式「当前结论」；旧结论留在动态里，不再误导。
   final JadeSlipConclusion? currentConclusion;
+
+  /// 执行者类型。旧玉简缺省 agent，行为与改动前完全一致。
+  final JadeSlipExecutorKind executorKind;
+
+  /// executorKind == flow 时绑定的模板。切回 agent 不清空，方便来回切换。
+  final JadeSlipFlowBinding? flowBinding;
+
+  /// 这条玉简发起过的运行，最近 N 条；按 runId 去重。
+  final List<JadeSlipFlowRun> flowRuns;
+
+  /// 主机回写的运行状态锁：`needs_review` / `blocked` / 空。
+  ///
+  /// 每次写玉简都会按清单项重算 status，光改 status 会被覆盖。
+  /// 工作流终态没有对应清单项，用这个显式锁让「待验收 / 受阻」能留住；
+  /// 人验收完（全部 accepted）会清掉它。
+  final String flowStatus;
+
+  bool get isFlowExecutor =>
+      executorKind == JadeSlipExecutorKind.flow && flowBinding != null;
+
+  /// 最近一次运行（按开跑时间），没有则 null。
+  JadeSlipFlowRun? get latestFlowRun {
+    JadeSlipFlowRun? latest;
+    for (final run in flowRuns) {
+      if (run.runId.isEmpty) continue;
+      if (latest == null || run.startedAt >= latest.startedAt) latest = run;
+    }
+    return latest;
+  }
+
+  JadeSlipFlowRun? flowRunById(String runId) {
+    for (final run in flowRuns) {
+      if (run.runId == runId) return run;
+    }
+    return null;
+  }
 
   /// 权威副本所在设备 = 主机（Noise 指纹）。
   ///
@@ -172,6 +345,10 @@ class JadeSlip {
     if (events.isNotEmpty) return false;
     if (decisions.isNotEmpty) return false;
     if (currentConclusion != null) return false;
+    if (executorKind != JadeSlipExecutorKind.agent) return false;
+    if (flowBinding != null) return false;
+    if (flowRuns.isNotEmpty) return false;
+    if (flowStatus.isNotEmpty) return false;
     if (contractVersion != 1) return false;
     if (priority != JadeSlipPriority.none) return false;
     if (status != JadeSlipStatus.open) return false;
@@ -220,6 +397,11 @@ class JadeSlip {
     List<JadeSlipDecision>? decisions,
     JadeSlipConclusion? currentConclusion,
     bool clearConclusion = false,
+    JadeSlipExecutorKind? executorKind,
+    JadeSlipFlowBinding? flowBinding,
+    bool clearFlowBinding = false,
+    List<JadeSlipFlowRun>? flowRuns,
+    String? flowStatus,
     String? deviceId,
     int? updatedAt,
   }) {
@@ -250,6 +432,11 @@ class JadeSlip {
       decisions: decisions ?? this.decisions,
       currentConclusion:
           clearConclusion ? null : (currentConclusion ?? this.currentConclusion),
+      executorKind: executorKind ?? this.executorKind,
+      flowBinding:
+          clearFlowBinding ? null : (flowBinding ?? this.flowBinding),
+      flowRuns: flowRuns ?? this.flowRuns,
+      flowStatus: flowStatus ?? this.flowStatus,
       deviceId: deviceId ?? this.deviceId,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -259,8 +446,19 @@ class JadeSlip {
   /// 全部验收通过才是 done。只要还有一项被堵住，整简就是 blocked。
   /// 还有人要做的是 open / in_progress，都交上来了是 needs_review。
   JadeSlip withDerivedStatus({int? updatedAt}) {
-    if (status == JadeSlipStatus.archived || items.isEmpty) {
+    if (status == JadeSlipStatus.archived) {
       return updatedAt == null ? this : copyWith(updatedAt: updatedAt);
+    }
+    if (items.isEmpty) {
+      // 没有清单项时 status 由人或工作流回写决定；验收完清掉状态锁。
+      final clearLock = flowStatus.isNotEmpty &&
+          (status == JadeSlipStatus.done || status == JadeSlipStatus.archived);
+      return clearLock || updatedAt != null
+          ? copyWith(
+              flowStatus: clearLock ? '' : null,
+              updatedAt: updatedAt,
+            )
+          : this;
     }
     final allSettled = items.every((e) =>
         e.state == JadeSlipItemState.accepted ||
@@ -268,10 +466,23 @@ class JadeSlip {
     final cancelledOk = items.every((e) =>
         e.state != JadeSlipItemState.cancelled ||
         e.cancelledReason.trim().isNotEmpty);
-    final JadeSlipStatus next;
     if (allSettled && cancelledOk) {
-      next = JadeSlipStatus.done;
-    } else if (items.any((e) => e.state == JadeSlipItemState.blocked)) {
+      // 人验收完 → done，工作流的状态锁也随之失效。
+      return copyWith(
+        status: JadeSlipStatus.done,
+        flowStatus: '',
+        updatedAt: updatedAt,
+      );
+    }
+    // 工作流终态没有对应清单项：按主机回写的状态锁，不让清单派生覆盖。
+    final locked = flowStatus == 'needs_review' || flowStatus == 'blocked'
+        ? JadeSlipStatus.parse(flowStatus)
+        : null;
+    if (locked != null) {
+      return copyWith(status: locked, updatedAt: updatedAt);
+    }
+    final JadeSlipStatus next;
+    if (items.any((e) => e.state == JadeSlipItemState.blocked)) {
       next = JadeSlipStatus.blocked;
     } else if (items.any((e) => e.state == JadeSlipItemState.open)) {
       next = items.any((e) => e.state != JadeSlipItemState.open)
@@ -317,6 +528,21 @@ class JadeSlip {
     }
     final eventList = events.values.toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    // 运行记录按 runId 并集：终态优先于 running，避免两端各写一半时丢记录
+    // 或把已结束的运行退回「进行中」。
+    final runs = <String, JadeSlipFlowRun>{};
+    for (final run in [...older.flowRuns, ...newer.flowRuns]) {
+      if (run.runId.isEmpty) continue;
+      final prev = runs[run.runId];
+      if (prev == null || !prev.isTerminal && run.isTerminal) {
+        runs[run.runId] = run;
+      } else if (prev.isTerminal == run.isTerminal &&
+          run.startedAt >= prev.startedAt) {
+        runs[run.runId] = run;
+      }
+    }
+    final runList = runs.values.toList()
+      ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
     return newer
         .copyWith(
           items: items.values.toList(),
@@ -327,6 +553,7 @@ class JadeSlip {
           contractVersion: newer.contractVersion,
           decisions: newer.decisions,
           currentConclusion: newer.currentConclusion,
+          flowRuns: runList,
           updatedAt: newer.updatedAt,
         )
         .withDerivedStatus(updatedAt: newer.updatedAt);
@@ -366,6 +593,12 @@ class JadeSlip {
           'decisions': [for (final d in decisions) d.toJson()],
         if (currentConclusion != null)
           'current_conclusion': currentConclusion!.toJson(),
+        if (executorKind != JadeSlipExecutorKind.agent)
+          'executor_kind': executorKind.wire,
+        if (flowBinding != null) 'flow_binding': flowBinding!.toJson(),
+        if (flowRuns.isNotEmpty)
+          'flow_runs': [for (final r in flowRuns) r.toJson()],
+        if (flowStatus.isNotEmpty) 'flow_status': flowStatus,
         'device_id': deviceId,
         'created_at': createdAt,
         'updated_at': updatedAt,
@@ -450,6 +683,16 @@ class JadeSlip {
           ? JadeSlipConclusion.fromJson(
               (json['current_conclusion'] as Map).cast<String, dynamic>())
           : null,
+      executorKind: JadeSlipExecutorKind.parse(
+          json['executor_kind'] is String ? json['executor_kind'] as String : ''),
+      flowBinding: json['flow_binding'] is Map
+          ? JadeSlipFlowBinding.fromJson(
+              (json['flow_binding'] as Map).cast<String, dynamic>())
+          : null,
+      flowRuns: _flowRunsFrom(json['flow_runs']),
+      flowStatus: json['flow_status'] is String
+          ? (json['flow_status'] as String).trim()
+          : '',
       deviceId: (json['device_id'] as String?)?.trim().isNotEmpty == true
           ? (json['device_id'] as String).trim()
           : (deviceId ?? ''),
@@ -561,6 +804,16 @@ class JadeSlip {
     buf
       ..writeln()
       ..writeln('contract_version: $contractVersion');
+    if (isFlowExecutor) {
+      final binding = flowBinding!;
+      buf.writeln(
+          'executor: flow ${binding.scope}/${binding.name}'
+          '${binding.revision == null ? '' : '@${binding.revision}'}');
+      final latest = latestFlowRun;
+      if (latest != null) {
+        buf.writeln('latest_flow_run: ${latest.runId} ${latest.status}');
+      }
+    }
     if (currentConclusion != null) {
       buf.writeln('current_conclusion: ${currentConclusion!.text}');
     }
@@ -1362,3 +1615,26 @@ List<String> _stringList(Object? raw) => [
       for (final value in (raw as List? ?? const []))
         if (value.toString().trim().isNotEmpty) value.toString().trim(),
     ];
+
+/// 宽容解析 string->string 映射：类型不对、键为空、值为 null 都不该让整条
+/// 玉简读不出来（旧 App / 手工改坏的记录）。
+Map<String, String> _stringMap(Object? raw) {
+  if (raw is! Map) return const {};
+  final out = <String, String>{};
+  raw.forEach((key, value) {
+    final name = key.toString().trim();
+    if (name.isNotEmpty) out[name] = value?.toString() ?? '';
+  });
+  return out;
+}
+
+List<JadeSlipFlowRun> _flowRunsFrom(Object? raw) {
+  if (raw is! List) return const [];
+  final out = <JadeSlipFlowRun>[];
+  for (final item in raw) {
+    if (item is! Map) continue;
+    final run = JadeSlipFlowRun.fromJson(item.cast<String, dynamic>());
+    if (run.runId.isNotEmpty) out.add(run);
+  }
+  return out;
+}

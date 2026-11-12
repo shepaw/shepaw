@@ -340,6 +340,8 @@ class PeerConnection {
     'flow_run_list_resp',
     'flow.run.changed',
     'flow.node.changed',
+    // 工作流运行结束时主机回写了玉简，通知 App 重读那一条（不做载荷传输）。
+    'slip.changed',
     'device.hello',
     'device.welcome',
     // 袋子协议帧（docs/storage_protocol_spec.md，载荷内含 ns/op 子路由）。

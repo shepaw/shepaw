@@ -18808,6 +18808,186 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'这是预览，不会真正开始运行'**
   String get flow_startPreviewBanner;
+
+  /// No description provided for @jadeSlip_executorKind.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行者'**
+  String get jadeSlip_executorKind;
+
+  /// No description provided for @jadeSlip_executorAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent'**
+  String get jadeSlip_executorAgent;
+
+  /// No description provided for @jadeSlip_executorFlow.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流'**
+  String get jadeSlip_executorFlow;
+
+  /// No description provided for @jadeSlip_flowNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'未选工作流'**
+  String get jadeSlip_flowNone;
+
+  /// No description provided for @jadeSlip_flowPick.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择工作流模板'**
+  String get jadeSlip_flowPick;
+
+  /// No description provided for @jadeSlip_flowVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'版本 {revision}'**
+  String jadeSlip_flowVersion(int revision);
+
+  /// No description provided for @jadeSlip_flowRevisionLatest.
+  ///
+  /// In zh, this message translates to:
+  /// **'最新版'**
+  String get jadeSlip_flowRevisionLatest;
+
+  /// No description provided for @jadeSlip_flowPresetInputs.
+  ///
+  /// In zh, this message translates to:
+  /// **'预设输入'**
+  String get jadeSlip_flowPresetInputs;
+
+  /// No description provided for @jadeSlip_flowRoleBindings.
+  ///
+  /// In zh, this message translates to:
+  /// **'角色绑定'**
+  String get jadeSlip_flowRoleBindings;
+
+  /// No description provided for @jadeSlip_flowMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'模板不存在或钉的版本已删除，请重新选择'**
+  String get jadeSlip_flowMissing;
+
+  /// No description provided for @jadeSlip_flowDispatchTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'开跑工作流 · {name}'**
+  String jadeSlip_flowDispatchTitle(String name);
+
+  /// No description provided for @jadeSlip_flowDispatchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入与角色齐全，确认后直接开跑'**
+  String get jadeSlip_flowDispatchHint;
+
+  /// No description provided for @jadeSlip_flowGo.
+  ///
+  /// In zh, this message translates to:
+  /// **'开跑'**
+  String get jadeSlip_flowGo;
+
+  /// No description provided for @jadeSlip_flowOldHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机版本较旧，运行不会回写玉简'**
+  String get jadeSlip_flowOldHost;
+
+  /// No description provided for @jadeSlip_flowRunStatus.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行：{status}'**
+  String jadeSlip_flowRunStatus(String status);
+
+  /// No description provided for @jadeSlip_flowViewRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看运行'**
+  String get jadeSlip_flowViewRun;
+
+  /// No description provided for @jadeSlip_flowFromSlip.
+  ///
+  /// In zh, this message translates to:
+  /// **'来自玉简《{title}》'**
+  String jadeSlip_flowFromSlip(String title);
+
+  /// No description provided for @jadeSlip_flowBackToSlip.
+  ///
+  /// In zh, this message translates to:
+  /// **'回到玉简'**
+  String get jadeSlip_flowBackToSlip;
+
+  /// No description provided for @jadeSlip_flowLibraryPublic.
+  ///
+  /// In zh, this message translates to:
+  /// **'公共库'**
+  String get jadeSlip_flowLibraryPublic;
+
+  /// No description provided for @jadeSlip_flowLibraryGroup.
+  ///
+  /// In zh, this message translates to:
+  /// **'所属群'**
+  String get jadeSlip_flowLibraryGroup;
+
+  /// No description provided for @jadeSlip_flowBadge.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流'**
+  String get jadeSlip_flowBadge;
+
+  /// No description provided for @jadeSlip_flowNoTemplates.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有可用的工作流模板'**
+  String get jadeSlip_flowNoTemplates;
+
+  /// No description provided for @jadeSlip_flowOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机离线，无法开跑'**
+  String get jadeSlip_flowOffline;
+
+  /// No description provided for @jadeSlip_flowStartFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'开跑失败：{error}'**
+  String jadeSlip_flowStartFailed(String error);
+
+  /// No description provided for @jadeSlip_flowRunAgain.
+  ///
+  /// In zh, this message translates to:
+  /// **'已有运行中的工作流，仍要再开一次？'**
+  String get jadeSlip_flowRunAgain;
+
+  /// No description provided for @jadeSlip_flowRole.
+  ///
+  /// In zh, this message translates to:
+  /// **'角色'**
+  String get jadeSlip_flowRole;
+
+  /// No description provided for @jadeSlip_flowInput.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入'**
+  String get jadeSlip_flowInput;
+
+  /// No description provided for @jadeSlip_flowEventDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流运行完成，待验收'**
+  String get jadeSlip_flowEventDone;
+
+  /// No description provided for @jadeSlip_flowEventFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流运行失败'**
+  String get jadeSlip_flowEventFailed;
+
+  /// No description provided for @jadeSlip_flowEventCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流运行已取消'**
+  String get jadeSlip_flowEventCancelled;
 }
 
 class _AppLocalizationsDelegate

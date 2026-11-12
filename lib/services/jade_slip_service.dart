@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import '../models/jade_slip.dart';
+import '../peer/services/peer_connection_manager.dart';
 import '../storage/host_pouch_documents.dart';
 import '../storage/slip_scope_documents.dart';
 import '../storage/store_protocol.dart';
@@ -21,7 +22,11 @@ import 'slip_scope_migration.dart';
 /// 这里的路径一律用 v2 的相对路径（`<id>.json`、`<id>/files/<file>`），
 /// 映射在 SlipScopeDocuments 里做；地址一律经 docs.uri() 出。
 class JadeSlipService {
-  JadeSlipService._();
+  JadeSlipService._() {
+    // 有人开始订阅 changes 才挂主机事件监听：纯单测 / 内存袋子环境不会因此
+    // 去碰连接管理器，也避免重复订阅。
+    _changes.onListen = ensureHostChangeSync;
+  }
   static final JadeSlipService instance = JadeSlipService._();
 
   static const _tag = 'JadeSlip';
@@ -29,6 +34,67 @@ class JadeSlipService {
 
   final _log = LoggerService();
   final _changes = StreamController<void>.broadcast();
+
+  StreamSubscription<PeerControlEvent>? _hostSub;
+  bool _hostSyncStarted = false;
+
+  /// 主机把工作流终态回写进玉简后发 `slip.changed`，这里重读那一条并通知 UI。
+  ///
+  /// 只订阅一次；失败（比如还没配对）也不影响本地读写，下次订阅仍可重试。
+  void ensureHostChangeSync() {
+    if (_hostSyncStarted || _hostSub != null) return;
+    _hostSyncStarted = true;
+    try {
+      _hostSub = PeerConnectionManager.instance.controlEvents.listen(
+        _onControlEvent,
+        onError: (Object e) {
+          _log.warning('host control stream: $e', tag: _tag);
+        },
+      );
+    } catch (e) {
+      _log.warning('cannot subscribe to host control events: $e', tag: _tag);
+    }
+  }
+
+  void _onControlEvent(PeerControlEvent event) {
+    if (event.type != 'slip.changed') return;
+    final slipId = (event.data['slip_id'] as String? ?? '').trim();
+    if (slipId.isEmpty) return;
+    unawaited(refreshFromHost(slipId));
+  }
+
+  /// 测试用：直接灌一条主机控制帧，验证回写通知链路。
+  @visibleForTesting
+  void debugHandleHostEvent(Map<String, dynamic> data) =>
+      _onControlEvent(PeerControlEvent(peerId: 'host', data: data));
+
+  /// 主机权威副本刚被改过：重读并刷新内存快照，然后通知列表/详情。
+  /// 读失败（主机离线等）静默忽略 —— 回写失败不该影响 UI 正常使用。
+  Future<void> refreshFromHost(String id) async {
+    final trimmed = id.trim();
+    if (trimmed.isEmpty) return;
+    try {
+      final docs = await _docs();
+      // 主机直接写了权威副本，本地读缓存可能还是旧字节。
+      docs.invalidate('$trimmed.json');
+      final slip = await _readSlip(
+        docs,
+        '$trimmed.json',
+        forceSnapshot: true,
+      );
+      if (slip != null) _notify();
+    } catch (e) {
+      _log.warning('refresh slip $trimmed after host change: $e', tag: _tag);
+    }
+  }
+
+  /// 测试用：解绑主机事件监听，避免跨用例串味。
+  @visibleForTesting
+  void debugResetHostChangeSync() {
+    unawaited(_hostSub?.cancel());
+    _hostSub = null;
+    _hostSyncStarted = false;
+  }
 
   /// 最近一次在某个 `deviceId` 上读到或写入的玉简内存快照（id -> JadeSlip）。
   /// 供 `childrenOf` / 详情页秒开复用，避免点击详情时再做整表扫描。
@@ -133,11 +199,12 @@ class JadeSlipService {
     }
   }
 
-  void _putSnapshot(JadeSlip slip) {
+  void _putSnapshot(JadeSlip slip, {bool force = false}) {
     _syncDeviceSnapshot(slip.deviceId);
     final existing = _snapshotById[slip.id];
     // 防御并发旧读回包覆盖刚写入的新快照。
-    if (existing != null && existing.updatedAt > slip.updatedAt) {
+    // force：主机回写是权威更新，即使设备时钟有偏差也要收下。
+    if (!force && existing != null && existing.updatedAt > slip.updatedAt) {
       return;
     }
     _snapshotById[slip.id] = slip;
@@ -190,6 +257,7 @@ class JadeSlipService {
     String path, {
     String? knownHash,
     int? knownSize,
+    bool forceSnapshot = false,
   }) async {
     try {
       final bytes = await docs.read(
@@ -210,7 +278,7 @@ class JadeSlipService {
       final normalized = slip.deviceId == docs.deviceId
           ? slip
           : slip.copyWith(deviceId: docs.deviceId);
-      _putSnapshot(normalized);
+      _putSnapshot(normalized, force: forceSnapshot);
       return normalized;
     } on HostOfflineException {
       rethrow; // 「连不上主机」不能降级成「这条简不存在」。
@@ -246,11 +314,17 @@ class JadeSlipService {
     if (prev != null && now <= prev.updatedAt) {
       now = prev.updatedAt + 1;
     }
+    // 人动了清单（勾选 / 验收 / 退回 / 阻塞 / 增删项）就把工作流终态的状态锁
+    // 交回清单派生：否则「待验收」会一直压住用户刚做的改动。
+    // 只改标题、预设输入、flowRuns 时保留锁。
+    final touchedItems =
+        prev != null && !identical(prev.items, next.items);
     final slip = next
         .copyWith(
           title: next.title.trim(),
           deviceId: docs.deviceId,
           updatedAt: now,
+          flowStatus: touchedItems ? '' : null,
         )
         .withDerivedStatus(updatedAt: now);
     _mutationEpoch++;

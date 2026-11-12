@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/jade_slip.dart';
+import '../peer/services/hub_flow.dart';
 import '../services/jade_slip_service.dart';
 import '../storage/host_pouch_documents.dart';
 import '../theme/app_theme.dart';
 import '../utils/layout_utils.dart';
+import 'flow_run_screen.dart';
 import 'jade_slip_editor_screen.dart';
 
 /// 搜索词是否命中玉简标题、正文或清单。与 [JadeSlipService.list] 的过滤一致。
@@ -685,6 +687,33 @@ class _SlipRow extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  /// 点工作流徽标：有最近运行直接进运行页，还没有就回编辑页选模板。
+  Future<void> _openFlowTarget(BuildContext context) async {
+    final latest = slip.latestFlowRun;
+    if (latest == null) {
+      onTap();
+      return;
+    }
+    var host = latest.hostId;
+    if (host.isEmpty) {
+      try {
+        host = await HubFlow().activeHost();
+      } catch (_) {
+        host = '';
+      }
+    }
+    if (!context.mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => FlowRunScreen(
+        peerId: host,
+        runId: latest.runId,
+        title: slip.title,
+        sourceSlipId: slip.id,
+        sourceSlipTitle: slip.title,
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -708,6 +737,11 @@ class _SlipRow extends StatelessWidget {
     if (slip.attachments.isNotEmpty) {
       meta.add(l10n.jadeSlip_attachmentCount(slip.attachments.length));
     }
+    final latestRun = slip.latestFlowRun;
+    if (latestRun != null) {
+      meta.add(l10n.jadeSlip_flowRunStatus(latestRun.status));
+    }
+    final flowBinding = slip.isFlowExecutor ? slip.flowBinding : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -756,6 +790,41 @@ class _SlipRow extends StatelessWidget {
                           decoration: done ? TextDecoration.lineThrough : null,
                         ),
                       ),
+                      if (flowBinding != null) ...[
+                        const SizedBox(height: 4),
+                        GestureDetector(
+                          key: const ValueKey('slip-flow-badge'),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => unawaited(_openFlowTarget(context)),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.account_tree_outlined,
+                                    size: 13, color: AppColors.primary),
+                                const SizedBox(width: 4),
+                                ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 180),
+                                  child: Text(
+                                    '${l10n.jadeSlip_flowBadge} · ${flowBinding.name}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.labelSmall
+                                        ?.copyWith(color: AppColors.primary),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                       if (meta.isNotEmpty) ...[
                         const SizedBox(height: 3),
                         Text(

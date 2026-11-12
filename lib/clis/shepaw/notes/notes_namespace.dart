@@ -68,6 +68,12 @@ Map<String, dynamic> _slipJson(
       'assignee_agent_id': slip.assigneeAgentId,
     if (slip.assigneeAgentName.isNotEmpty)
       'assignee_agent_name': slip.assigneeAgentName,
+    if (slip.isFlowExecutor) ...{
+      'executor_kind': 'flow',
+      'flow_binding': slip.flowBinding!.toJson(),
+      if (slip.latestFlowRun != null)
+        'latest_flow_run': slip.latestFlowRun!.toJson(),
+    },
     if (slip.dueAtMs != null) 'due_at': slip.dueAtMs,
     'updated_at': slip.updatedAt,
     if (full) ...{

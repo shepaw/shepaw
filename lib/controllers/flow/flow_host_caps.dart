@@ -12,6 +12,7 @@ class FlowHostCaps {
     required this.canRetype,
     required this.canMove,
     required this.branchesLabelled,
+    this.flowOrigin = false,
   });
 
   /// 结构编辑（insert / delete / move / wrap / unwrap）齐不齐。
@@ -32,8 +33,15 @@ class FlowHostCaps {
   /// `then`），所以这种情况下 `if` 内一律不给结构操作。
   final bool branchesLabelled;
 
+  /// 主机自报 `caps: ['flow_origin']`：认 `origin`、会在运行终态回写玉简。
+  /// 旧主机不给 caps，默认 false —— 派发前后都要按「不会回写」提示。
+  final bool flowOrigin;
+
   /// 连 `move` 都没有的主机：只给看，不给改。
   bool get readOnly => !canEdit;
+
+  /// 玉简绑定工作流时，能不能指望主机把运行终态写回玉简。
+  bool get canWriteBackToSlip => flowOrigin;
 
   static const FlowHostCaps none = FlowHostCaps(
     canEdit: false,
@@ -61,6 +69,8 @@ class FlowHostCaps {
       canRetype: schema.hasOp('retype'),
       canMove: canMove,
       branchesLabelled: _branchesLabelled(tree),
+      // schema == null 上面已经返回 none，这里 promotion 后可直读。
+      flowOrigin: schema.hasCap('flow_origin'),
     );
   }
 

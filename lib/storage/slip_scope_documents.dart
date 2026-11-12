@@ -86,6 +86,11 @@ class SlipScopeDocuments implements HostPouchDocuments {
     return bytes;
   }
 
+  @override
+  void invalidate(String path) {
+    _cache.remove(path.replaceFirst(RegExp(r'^/+'), '').trim());
+  }
+
   /// 写一份文档：先读当前版本再写（v3 的 `put` 必须声明期望版本）。
   ///
   /// 帧里带的是刚读到的 `expected_version`：真被别人改过就当冲突报错，

@@ -39,6 +39,13 @@ abstract class HostPouchDocuments {
     int? knownSize,
   });
 
+  /// 丢掉这条记录的读缓存。
+  ///
+  /// 主机可能绕过本客户端直接改了权威副本（工作流终态回写玉简），
+  /// 收到 `slip.changed` 后必须先失效缓存再去读，否则拿到旧字节。
+  /// 默认无操作，兼容不带缓存的实现。
+  void invalidate(String path) {}
+
   Future<void> writeBytes(String space, String path, Uint8List bytes);
 
   /// 从磁盘流式写入。返回字节数。

@@ -6,10 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
+import '../controllers/flow/flow_host_caps.dart';
 import '../l10n/app_localizations.dart';
 import '../models/jade_slip.dart';
 import '../models/remote_agent.dart';
 import '../models/store_attachment_ref.dart';
+import '../peer/services/hub_flow.dart';
 import '../services/chat_navigation_service.dart';
 import '../services/jade_slip_service.dart';
 import '../services/jade_slip_wake.dart';
@@ -25,10 +27,26 @@ import '../theme/app_theme.dart';
 import '../widgets/agent_list_avatar.dart';
 import '../widgets/chat/storage_file_picker_screen.dart';
 import '../widgets/discard_changes_scope.dart';
+import '../widgets/jade_slip_flow_binding.dart';
+import 'flow_run_screen.dart';
 import 'jade_slip_agent_picker.dart';
 import 'jade_slip_dispatch.dart';
 import 'jade_slip_dispatch_dialog.dart';
+import 'jade_slip_flow_dispatch.dart';
 import 'storage_shared.dart';
+
+/// 模板选择器的测试替身：编辑页只负责把选中的绑定存下来，选择器本身由派发页
+/// 实现（会连主机拉模板列表）。测试注入假的，不用连主机。
+@visibleForTesting
+typedef JadeSlipFlowTemplatePicker = Future<JadeSlipFlowBinding?> Function(
+  BuildContext context, {
+  required JadeSlip slip,
+  JadeSlipFlowBinding? current,
+});
+
+@visibleForTesting
+JadeSlipFlowTemplatePicker debugJadeSlipTemplatePicker =
+    showJadeSlipFlowTemplatePicker;
 
 /// 玉简编辑：标题、清单勾选、备注、负责人、截止日期。
 class JadeSlipEditorScreen extends StatefulWidget {
@@ -78,6 +96,10 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   bool _didFocusChecklist = false;
   bool _didFocusTitle = false;
   bool _contractOpen = false;
+
+  /// 主机没自报 `flow_origin`：运行终态不会回写玉简，编辑页给个轻提示。
+  bool _flowHostOld = false;
+  int _capsGen = 0;
   String _untitledLabel = '';
   /// 一次附件导入里给临时文件编号，避免同名互相覆盖。
   int _tempSeq = 0;
@@ -105,6 +127,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     }
     unawaited(_load());
     unawaited(_loadAgents());
+    unawaited(_loadFlowCaps());
     _sub = _service.changes.listen((_) {
       if (!_dirty) unawaited(_reloadSilent());
     });
@@ -188,6 +211,239 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   Future<void> _loadAgents() async {
     final agents = await LocalDatabaseService().getAllRemoteAgents();
     if (mounted) setState(() => _agents = agents);
+  }
+
+  /// 问一次主机能力。旧主机 `flow_schema_resp` 不带 `caps`，绑定工作流的玉简
+  /// 要提醒「运行终态不会回写玉简」。整段是尽力而为：没配对、离线、超时都
+  /// 不阻塞 build，也不弹错误。
+  Future<void> _loadFlowCaps() async {
+    final gen = ++_capsGen;
+    try {
+      final hub = HubFlow(sendTimeout: const Duration(seconds: 2));
+      final host = await hub.activeHost();
+      // 没登录主机时不下「旧主机」结论，也省掉一次必然超时的请求。
+      if (host.isEmpty) return;
+      final schema = await hub.schema(host);
+      if (!mounted || gen != _capsGen) return;
+      final old = !FlowHostCaps.of(schema, const []).canWriteBackToSlip;
+      if (_flowHostOld != old) setState(() => _flowHostOld = old);
+    } catch (_) {
+      // 连不上就维持「没提示」；编辑本身不该因为能力探测失败。
+    }
+  }
+
+  /// 切换执行者只改 `executorKind`：Agent 指派和模板绑定都留着，方便来回切。
+  Future<void> _setExecutorKind(
+    JadeSlip slip,
+    JadeSlipExecutorKind kind,
+  ) async {
+    if (slip.executorKind == kind) return;
+    final base = _service.peekById(slip.id) ?? slip;
+    await _persist(base.copyWith(executorKind: kind));
+  }
+
+  Future<void> _pickFlowTemplate(JadeSlip slip) async {
+    final base = _service.peekById(slip.id) ?? slip;
+    final picked = await debugJadeSlipTemplatePicker(
+      context,
+      slip: base,
+      current: base.flowBinding,
+    );
+    if (picked == null || !mounted) return;
+    final current = _service.peekById(slip.id) ?? _slip ?? base;
+    await _persist(current.copyWith(
+      executorKind: JadeSlipExecutorKind.flow,
+      flowBinding: picked,
+    ));
+  }
+
+  Future<void> _persistFlowBinding(
+    JadeSlip slip,
+    JadeSlipFlowBinding binding,
+  ) async {
+    // 表单每次给的是完整绑定，基准取最新快照，避免连打时旧快照盖掉清单改动。
+    final base = _service.peekById(slip.id) ?? _slip ?? slip;
+    await _persist(base.copyWith(flowBinding: binding));
+  }
+
+  Future<void> _openFlowRun(JadeSlip slip, JadeSlipFlowRun run) async {
+    var host = run.hostId;
+    if (host.isEmpty) {
+      try {
+        host = await HubFlow().activeHost();
+      } catch (_) {
+        host = '';
+      }
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => FlowRunScreen(
+        peerId: host,
+        runId: run.runId,
+        title: slip.title,
+        sourceSlipId: slip.id,
+        sourceSlipTitle: slip.title,
+        // 本来就在编辑页：头部「回到玉简」直接退掉运行页即可。
+        onOpenSlip: () {
+          if (context.mounted) Navigator.of(context).pop();
+        },
+      ),
+    ));
+  }
+
+  /// 「执行者」切换。塞进原有 pill 的同一个 [Wrap]：纯 Agent 玉简的纵向布局
+  /// 一寸不移（清单行、备注输入框的位置都不动），只有右边多出两个 chip。
+  Widget _executorSwitch(BuildContext context, JadeSlip slip) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    Widget chip({
+      required String key,
+      required String label,
+      required IconData icon,
+      required JadeSlipExecutorKind kind,
+    }) =>
+        ChoiceChip(
+          key: ValueKey(key),
+          avatar: Icon(icon, size: 16),
+          label: Text(label),
+          selected: slip.executorKind == kind,
+          showCheckmark: false,
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          onSelected: (_) => unawaited(_setExecutorKind(slip, kind)),
+        );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          l10n.jadeSlip_executorKind,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(width: 6),
+        chip(
+          key: 'slip-executor-agent',
+          label: l10n.jadeSlip_executorAgent,
+          icon: Icons.smart_toy_outlined,
+          kind: JadeSlipExecutorKind.agent,
+        ),
+        const SizedBox(width: 6),
+        chip(
+          key: 'slip-executor-flow',
+          label: l10n.jadeSlip_executorFlow,
+          icon: Icons.account_tree_outlined,
+          kind: JadeSlipExecutorKind.flow,
+        ),
+      ],
+    );
+  }
+
+  /// 工作流模式才展开的模板区：模板、预设输入、最近运行、旧主机提示。
+  List<Widget> _flowEditorSection(BuildContext context, JadeSlip slip) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final binding = slip.flowBinding;
+    final latest = slip.latestFlowRun;
+    final caption = theme.textTheme.bodySmall?.copyWith(
+      color: scheme.onSurfaceVariant,
+    );
+
+    if (slip.executorKind != JadeSlipExecutorKind.flow) return const [];
+
+    return [
+      const SizedBox(height: 10),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Icon(Icons.account_tree_outlined,
+                    size: 16, color: scheme.onSurfaceVariant),
+                Text(
+                  binding == null || binding.name.isEmpty
+                      ? l10n.jadeSlip_flowNone
+                      : binding.name,
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                if (binding != null && binding.scope.isNotEmpty)
+                  Text(binding.scope, style: caption),
+                if (binding != null)
+                  Text(
+                    binding.revision == null
+                        ? l10n.jadeSlip_flowRevisionLatest
+                        : l10n.jadeSlip_flowVersion(binding.revision!),
+                    style: caption,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  key: const ValueKey('slip-flow-pick'),
+                  onPressed: () => unawaited(_pickFlowTemplate(slip)),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.tune_outlined, size: 18),
+                  label: Text(l10n.jadeSlip_flowPick),
+                ),
+                if (latest != null)
+                  TextButton.icon(
+                    key: const ValueKey('slip-flow-view-run'),
+                    onPressed: () => unawaited(_openFlowRun(slip, latest)),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.open_in_new, size: 16),
+                    label: Text(l10n.jadeSlip_flowViewRun),
+                  ),
+              ],
+            ),
+            if (latest != null) ...[
+              const SizedBox(height: 6),
+              Text(l10n.jadeSlip_flowRunStatus(latest.status), style: caption),
+            ],
+            if (binding != null) ...[
+              const SizedBox(height: 12),
+              JadeSlipFlowBindingForm(
+                binding: binding,
+                onChanged: (updated) =>
+                    unawaited(_persistFlowBinding(slip, updated)),
+              ),
+            ],
+          ],
+        ),
+      ),
+      if (_flowHostOld) ...[
+        const SizedBox(height: 6),
+        Text(
+          l10n.jadeSlip_flowOldHost,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    ];
   }
 
   Future<void> _load() async {
@@ -639,6 +895,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     }
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final isFlow = slip.executorKind == JadeSlipExecutorKind.flow;
 
     final body = Column(
       children: [
@@ -751,20 +1008,24 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                         : () =>
                             unawaited(_persist(slip.copyWith(clearDue: true))),
                   ),
-                  _AssigneePill(
-                    label: slip.assigneeAgentName.isEmpty
-                        ? l10n.jadeSlip_assigneeNone
-                        : slip.assigneeAgentName,
-                    active: slip.assigneeAgentName.isNotEmpty,
-                    agents: _agents,
-                    currentAgentId: slip.assigneeAgentId,
-                    onSelected: (id, name) => unawaited(_persist(slip.copyWith(
-                      assigneeAgentId: id,
-                      assigneeAgentName: name,
-                    ))),
-                  ),
+                  if (!isFlow)
+                    _AssigneePill(
+                      label: slip.assigneeAgentName.isEmpty
+                          ? l10n.jadeSlip_assigneeNone
+                          : slip.assigneeAgentName,
+                      active: slip.assigneeAgentName.isNotEmpty,
+                      agents: _agents,
+                      currentAgentId: slip.assigneeAgentId,
+                      onSelected: (id, name) =>
+                          unawaited(_persist(slip.copyWith(
+                        assigneeAgentId: id,
+                        assigneeAgentName: name,
+                      ))),
+                    ),
+                  _executorSwitch(context, slip),
                 ],
               ),
+              ..._flowEditorSection(context, slip),
               const SizedBox(height: 28),
               _SectionLabel(
                 label: l10n.jadeSlip_checklist,
@@ -1435,8 +1696,12 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     if (focusItem == null) {
       target = null;
       // 顶栏入口只交待办。待办为空就没有可交给 Agent 的活——清单为空
-      // 是另一回事，那条玉简只有备注，仍然可以派发。
-      if (latest.items.isNotEmpty && latest.openItems.isEmpty) {
+      // 是另一回事，那条玉简只有备注，仍然可以派发。工作流执行者不受清单
+      // 限制：模板可以被反复重跑，派发入口要一直能打开。按 executorKind 判断，
+      // 跟派发页一致——刚切到「工作流」还没选模板也不能掉回 Agent 分支。
+      if (latest.executorKind != JadeSlipExecutorKind.flow &&
+          latest.items.isNotEmpty &&
+          latest.openItems.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(AppLocalizations.of(context).jadeSlip_noOpenItems),

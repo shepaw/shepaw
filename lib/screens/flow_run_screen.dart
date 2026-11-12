@@ -23,6 +23,7 @@ import '../widgets/flow/flow_node_tree.dart';
 import '../widgets/flow/flow_run_inputs_card.dart';
 import '../widgets/flow/flow_yaml.dart';
 import '../widgets/flow/flow_yaml_editor.dart';
+import 'jade_slip_editor_screen.dart';
 
 /// P6：「去回答」要定位到那张待答卡片。孤儿卡落的确定性消息行是
 /// `peer_form_<approval_id>`；提醒项 id 是 `action:<form_id>`（form_id 就等于
@@ -94,6 +95,9 @@ class FlowRunScreen extends StatefulWidget {
     this.runScope,
     this.artifactClient,
     this.openArtifactUri,
+    this.sourceSlipId = '',
+    this.sourceSlipTitle = '',
+    this.onOpenSlip,
   });
 
   final String peerId;
@@ -130,6 +134,14 @@ class FlowRunScreen extends StatefulWidget {
   final HubArtifact? artifactClient;
   final Future<void> Function(BuildContext context, String uri)?
       openArtifactUri;
+
+  /// 这次运行由玉简发起：头部显示「来自玉简」并可回跳。运行详情里若带了
+  /// `origin`（新主机），优先用它，旧主机只能靠调用方透传这两个参数。
+  final String sourceSlipId;
+  final String sourceSlipTitle;
+
+  /// 调用方已经知道怎么回玉简（例如分栏里切选中项）；没给就 push 编辑页。
+  final VoidCallback? onOpenSlip;
 
   /// 是否订阅连接事件流。真实 [HubFlow] 的 `send` 为 null（走连接管理器），
   /// 测试 stub 一定注入了 `send`。只有「注入 stub 又不给连接流」才跳过订阅，
@@ -878,7 +890,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
               // 却什么都没改。YAML 里的步骤仍按 id 定位，所以上面用 target.id。
               final result = await _client.patch(
                   widget.peerId, widget.runId, target.key, steps);
-              if (!mounted) return;
+              if (!mounted || !sheet.mounted) return;
               if (!result.ok) {
                 _snack(result.reachable
                     ? (result.error ?? l10n.flow_patchFailed)
@@ -927,86 +939,177 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     );
   }
 
+  /// 新主机在运行详情里带 `origin`，比调用方透传的构造参数更权威。
+  String _sourceSlipId(FlowRunView? run) {
+    final origin = run?.origin;
+    if (origin != null && origin.isSlip) return origin.slipId;
+    return widget.sourceSlipId;
+  }
+
+  void _openSourceSlip(String slipId) {
+    final callback = widget.onOpenSlip;
+    if (callback != null) {
+      callback();
+      return;
+    }
+    if (!mounted || slipId.isEmpty) return;
+    unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => JadeSlipEditorScreen(slipId: slipId),
+    )));
+  }
+
   Widget _body(FlowRunView? run) {
+    final sourceSlipId = _sourceSlipId(run);
+    late final Widget content;
     if (run == null) {
-      if (_loading) return const Center(child: CircularProgressIndicator());
-      final l10n = AppLocalizations.of(context);
-      return Center(
-          child:
-              Text(_loadFailed ? l10n.flow_runLoadFailed : l10n.flow_noData));
+      if (_loading) {
+        content = const Center(child: CircularProgressIndicator());
+      } else {
+        final l10n = AppLocalizations.of(context);
+        content = Center(
+            child:
+                Text(_loadFailed ? l10n.flow_runLoadFailed : l10n.flow_noData));
+      }
+    } else {
+      final selectedKey = _selectedKey;
+      final selected = _useSidePane(_bodyWidth) && selectedKey != null
+          ? _nodeByKey(selectedKey)
+          : null;
+      if (selectedKey != null && selected == null && _useSidePane(_bodyWidth)) {
+        final missing = selectedKey;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _selectedKey != missing) return;
+          if (_nodeByKey(missing) != null) return;
+          setState(() => _selectedKey = null);
+        });
+      }
+      final list = ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          _RunStatusStrip(
+            run: run,
+            onCancel: _cancel,
+            onDelete: _deleteRun,
+          ),
+          // 开跑时填的初始提示词 / 参数。放在最上面：点开一条历史运行，
+          // 第一眼就该能确认「当时到底让它做什么」。老主机不下发 inputs，
+          // 卡片自己会渲染成空，不影响其余内容。
+          if (run.inputs.isNotEmpty) ...[
+            FlowRunInputsCard(inputs: run.inputs),
+            const SizedBox(height: 8),
+          ],
+          FlowArtifactCard(
+            artifacts: _runArtifacts,
+            instanceArtifacts: _instanceArtifacts,
+            instanceScopeAvailable: _instanceScope != null,
+            loading: _artifactsLoading,
+            failed: _artifactsFailed,
+            onRetry: _loadArtifacts,
+            onOpenUri: widget.openArtifactUri,
+          ),
+          // 运行级失败 / 取消原因。主机把 Failed 的 error 和 Cancel 的 reason
+          // 都写进 `flow_run_get_resp.error`；之前只有节点级 error 被渲染，
+          // 用户主动停止、看门狗按卡住收敛时都只看到「已取消」却不知道为什么。
+          // 只在终态的失败 / 取消显示：主机在非终态也会写 `run.error`
+          // （`on_error: continue` 的失败分支、宽限期、预算告警），运行中或
+          // 已成功的运行挂一张「失败原因」会误导用户。
+          if ((run.status == FlowRunStatus.failed ||
+                  run.status == FlowRunStatus.cancelled) &&
+              run.error != null &&
+              run.error!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _RunErrorCard(run: run),
+          ],
+          // 群运行的对话在群里，不画这个入口（runSessionId 为空）。
+          // 点进去优先打开节点自己的 agent 会话，而不是惜宝私聊。
+          if (run.runSessionId != null) ...[
+            const SizedBox(height: 8),
+            _RunSessionEntry(onTap: () => _openRunConversation(run)),
+          ],
+          const SizedBox(height: 12),
+          FlowNodeTree(
+            nodes: run.tree,
+            onTapNode: _showNode,
+            onOpenSession: _openSession,
+            onAnswerGate: _answer,
+            selectedIds: selected == null ? const {} : {selected.id},
+          ),
+        ],
+      );
+      content = selected == null
+          ? list
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: list),
+                SizedBox(
+                    width: _sidePaneWidth(_bodyWidth),
+                    child: _sidePane(selected)),
+              ],
+            );
     }
-    final selectedKey = _selectedKey;
-    final selected = _useSidePane(_bodyWidth) && selectedKey != null
-        ? _nodeByKey(selectedKey)
-        : null;
-    if (selectedKey != null && selected == null && _useSidePane(_bodyWidth)) {
-      final missing = selectedKey;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _selectedKey != missing) return;
-        if (_nodeByKey(missing) != null) return;
-        setState(() => _selectedKey = null);
-      });
-    }
-    final list = ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        _RunStatusStrip(
-          run: run,
-          onCancel: _cancel,
-          onDelete: _deleteRun,
-        ),
-        // 开跑时填的初始提示词 / 参数。放在最上面：点开一条历史运行，
-        // 第一眼就该能确认「当时到底让它做什么」。老主机不下发 inputs，
-        // 卡片自己会渲染成空，不影响其余内容。
-        if (run.inputs.isNotEmpty) ...[
-          FlowRunInputsCard(inputs: run.inputs),
-          const SizedBox(height: 8),
-        ],
-        FlowArtifactCard(
-          artifacts: _runArtifacts,
-          instanceArtifacts: _instanceArtifacts,
-          instanceScopeAvailable: _instanceScope != null,
-          loading: _artifactsLoading,
-          failed: _artifactsFailed,
-          onRetry: _loadArtifacts,
-          onOpenUri: widget.openArtifactUri,
-        ),
-        // 运行级失败 / 取消原因。主机把 Failed 的 error 和 Cancel 的 reason
-        // 都写进 `flow_run_get_resp.error`；之前只有节点级 error 被渲染，
-        // 用户主动停止、看门狗按卡住收敛时都只看到「已取消」却不知道为什么。
-        // 只在终态的失败 / 取消显示：主机在非终态也会写 `run.error`
-        // （`on_error: continue` 的失败分支、宽限期、预算告警），运行中或
-        // 已成功的运行挂一张「失败原因」会误导用户。
-        if ((run.status == FlowRunStatus.failed ||
-                run.status == FlowRunStatus.cancelled) &&
-            run.error != null &&
-            run.error!.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          _RunErrorCard(run: run),
-        ],
-        // 群运行的对话在群里，不画这个入口（runSessionId 为空）。
-        // 点进去优先打开节点自己的 agent 会话，而不是惜宝私聊。
-        if (run.runSessionId != null) ...[
-          const SizedBox(height: 8),
-          _RunSessionEntry(onTap: () => _openRunConversation(run)),
-        ],
-        const SizedBox(height: 12),
-        FlowNodeTree(
-          nodes: run.tree,
-          onTapNode: _showNode,
-          onOpenSession: _openSession,
-          onAnswerGate: _answer,
-          selectedIds: selected == null ? const {} : {selected.id},
-        ),
-      ],
-    );
-    if (selected == null) return list;
-    return Row(
+    if (sourceSlipId.isEmpty) return content;
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(child: list),
-        SizedBox(width: _sidePaneWidth(_bodyWidth), child: _sidePane(selected)),
+        _FlowFromSlipCard(
+          title: widget.sourceSlipTitle.isNotEmpty
+              ? widget.sourceSlipTitle
+              : (widget.title ?? ''),
+          onTap: () => _openSourceSlip(sourceSlipId),
+        ),
+        Expanded(child: content),
       ],
+    );
+  }
+}
+
+/// 玉简发起的运行：头部一张轻卡片，点「回到玉简」可跳回编辑页。
+class _FlowFromSlipCard extends StatelessWidget {
+  const _FlowFromSlipCard({required this.title, required this.onTap});
+
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return GestureDetector(
+      key: const ValueKey('flow-run-from-slip'),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.auto_stories_outlined, size: 18, color: scheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                l10n.jadeSlip_flowFromSlip(title),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              l10n.jadeSlip_flowBackToSlip,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: scheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

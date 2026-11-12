@@ -15,6 +15,7 @@ import '../services/logger_service.dart';
 import '../services/remote_agent_service.dart';
 import '../services/she_service.dart';
 import 'jade_slip_agent_picker.dart';
+import 'jade_slip_flow_dispatch.dart';
 
 /// 派发到哪条会话。
 enum JadeSlipSessionTarget {
@@ -44,6 +45,18 @@ Future<bool> dispatchJadeSlip(
   JadeSlipSessionTarget sessionTarget = JadeSlipSessionTarget.current,
   String? channelId,
 }) async {
+  // 绑定工作流的玉简走独立派发：不挑 Agent、不选会话、不写 sourceChannelId。
+  // 用 executorKind 而不是 isFlowExecutor：用户切到「工作流」但还没选模板时
+  // 也不该退回去弹 Agent 选择器，而是由 flow 派发提示去选模板。
+  // 纯 Agent 路径下面一字不改。
+  if (slip.executorKind == JadeSlipExecutorKind.flow) {
+    return dispatchJadeSlipFlow(
+      context,
+      slip,
+      focusItem: focusItem,
+      confirmed: true,
+    );
+  }
   final l10n = AppLocalizations.of(context);
   final db = LocalDatabaseService();
   var agentId = (preferredAgentId ?? slip.assigneeAgentId).trim();

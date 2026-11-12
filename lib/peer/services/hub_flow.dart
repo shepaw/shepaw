@@ -99,6 +99,7 @@ class HubFlow {
     String taskId = '',
     String? instanceId,
     String? requestId,
+    Map<String, dynamic>? origin,
   }) =>
       {
         'type': 'flow_run_start_req',
@@ -114,6 +115,7 @@ class HubFlow {
         if (taskId.isNotEmpty) 'task_id': taskId,
         if (instanceId != null && instanceId.isNotEmpty)
           'instance_id': instanceId,
+        if (origin != null) 'origin': origin,
       };
 
   /// 运行列表（M8'）。`scope` / `name` 为空表示不过滤。
@@ -461,6 +463,7 @@ class HubFlow {
     String sessionId = '',
     String taskId = '',
     String? instanceId,
+    Map<String, dynamic>? origin,
   }) =>
       _call(
         peerId,
@@ -475,6 +478,7 @@ class HubFlow {
           sessionId: sessionId,
           taskId: taskId,
           instanceId: instanceId,
+          origin: origin,
         ),
         'flow_run_start_resp',
       );
@@ -646,6 +650,8 @@ class FlowCall {
   final bool reachable;
   final bool ok;
   final String? error;
+
+  /// 原始响应帧（不做字段白名单过滤，`origin_ack` 之类的新键会原样留下来）。
   final Map<String, dynamic> data;
 
   /// 不同的帧有的回 `success`，有的回 `ok`，这里一起认。
@@ -668,6 +674,10 @@ class FlowCall {
   /// 三层分区坐标；旧主机不带这两个字段，取到 null 就按新实例处理。
   String? get instanceId => data['instance_id'] as String?;
   String? get instanceScope => data['instance_scope'] as String?;
+
+  /// 主机接受了 `flow_run_start_req.origin` 才给 `true`。旧主机没有这个键，
+  /// 也就是「不会把运行终态回写到玉简」的权威信号。
+  bool get originAck => data['origin_ack'] == true;
 }
 
 /// `flow_validate_resp`：节点树 + 诊断。

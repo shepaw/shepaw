@@ -384,6 +384,52 @@ String? flowRunSheSessionId(Iterable<FlowNode> tree) {
   return null;
 }
 
+/// `flow_run_start_req.origin` / `flow_run_list_resp.runs[].origin` /
+/// `flow_run_get_resp.origin`：这次运行是从哪来的（玉简绑定工作流）。
+///
+/// App 开跑时带上 origin，主机接受后在 `flow_run_start_resp` 回
+/// `origin_ack: true`，落盘后随运行列表和运行详情再下发。旧主机两端都没有这些
+/// 字段：解析统一走 [tryParse]（非 Map 给 null），类型不对也不许抛异常。
+class FlowRunOrigin {
+  const FlowRunOrigin({
+    this.kind = '',
+    this.slipId = '',
+    this.deviceId = '',
+  });
+
+  final String kind;
+  final String slipId;
+  final String deviceId;
+
+  /// 只有 `kind == 'slip'` 且带非空玉简 id 才算玉简运行。
+  bool get isSlip => kind == 'slip' && slipId.isNotEmpty;
+
+  /// 线上用 snake_case；空字段不发。
+  Map<String, dynamic> toJson() => {
+        if (kind.isNotEmpty) 'kind': kind,
+        if (slipId.isNotEmpty) 'slip_id': slipId,
+        if (deviceId.isNotEmpty) 'device_id': deviceId,
+      };
+
+  static String _text(Object? raw) => raw is String ? raw : '';
+
+  /// 非 Map（null / 字符串 / 旧主机没给）返回 null；Map 里字段类型不对时
+  /// 该字段退化成空串，整帧不崩。
+  static FlowRunOrigin? tryParse(dynamic raw) {
+    if (raw is! Map) return null;
+    return FlowRunOrigin(
+      kind: _text(raw['kind']),
+      slipId: _text(raw['slip_id']),
+      deviceId: _text(raw['device_id']),
+    );
+  }
+
+  /// 容错版：factory 不能返回 null，[tryParse] 失败时给空对象。
+  /// 需要区分「旧主机没给」的调用方请用 [tryParse]。
+  factory FlowRunOrigin.fromJson(dynamic raw) =>
+      tryParse(raw) ?? const FlowRunOrigin();
+}
+
 /// `flow_run_get_resp` 的内容。
 class FlowRunView {
   const FlowRunView({
@@ -401,6 +447,7 @@ class FlowRunView {
     this.instanceScope,
     this.runScope,
     this.inputs = const {},
+    this.origin,
   });
 
   final String runId;
@@ -472,6 +519,9 @@ class FlowRunView {
       value.startsWith('flow:') &&
       value.contains(':run:') &&
       PouchScope.tryParse(value) != null;
+
+  /// 玉简绑定工作流时这次运行的来源；旧主机不下发，为 null。
+  final FlowRunOrigin? origin;
 
   static FlowRunView? fromResponse(Map<String, dynamic> response) {
     if (response['success'] != true) return null;
@@ -554,6 +604,7 @@ class FlowRunView {
       instanceScope: instanceScope,
       runScope: runScope,
       inputs: _inputs(response),
+      origin: FlowRunOrigin.tryParse(response['origin']),
     );
   }
 
@@ -590,6 +641,7 @@ class FlowRunView {
       instanceScope: instanceScope,
       runScope: runScope,
       inputs: inputs,
+      origin: origin,
     );
   }
 
@@ -621,6 +673,7 @@ class FlowRunView {
       instanceScope: instanceScope,
       runScope: runScope,
       inputs: inputs,
+      origin: origin,
     );
   }
 }
@@ -928,6 +981,7 @@ class FlowRunSummary {
     this.tasksUsed = 0,
     this.inputTitle = '',
     this.error,
+    this.origin,
   });
 
   final String runId;
@@ -958,6 +1012,8 @@ class FlowRunSummary {
   /// 列表行要显示（也只按它搜索）的原因：失败和取消才有意义。主机在非终态
   /// 也会写 `error`（预算告警等），别让它冒充原因。
   String? get endReason => isFailed || isCancelled ? error : null;
+  /// 玉简绑定工作流时这次运行的来源；旧主机不下发，为 null。
+  final FlowRunOrigin? origin;
 
   bool get isRunning => status == 'running';
 
@@ -1004,6 +1060,7 @@ class FlowRunSummary {
             tasksUsed: (item['tasks_used'] as num?)?.toInt() ?? 0,
             inputTitle: (item['input_title'] as String?)?.trim() ?? '',
             error: _optionalText(item['error']),
+            origin: FlowRunOrigin.tryParse(item['origin']),
           ),
     ];
   }
@@ -1017,6 +1074,7 @@ class FlowSchema {
     required this.common,
     required this.kinds,
     this.ops = const [],
+    this.caps = const <String>{},
   });
 
   final List<FlowSchemaField> common;
@@ -1026,6 +1084,12 @@ class FlowSchema {
   final List<String> ops;
 
   bool hasOp(String name) => ops.contains(name);
+
+  /// `flow_schema_resp.caps`：主机自报的功能能力（如 `flow_origin`）。
+  /// 旧主机不给 `caps`，就是空集合。
+  final Set<String> caps;
+
+  bool hasCap(String name) => caps.contains(name);
 
   List<FlowSchemaField> fieldsFor(String kind) => [...common, ...?kinds[kind]];
 
@@ -1055,6 +1119,12 @@ class FlowSchema {
             in response['ops'] is List ? response['ops'] as List : const [])
           if (item is String) item,
       ],
+      // `caps` 是可选的：旧主机整个不给；给错类型也不能让 schema 解析崩。
+      caps: response['caps'] is List
+          ? {
+              for (final item in response['caps'] as List) item.toString(),
+            }
+          : const <String>{},
     );
   }
 }
