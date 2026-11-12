@@ -84,6 +84,8 @@ void main() {
     expect(find.byKey(const ValueKey('run-delete')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('run-delete')));
     await tester.pumpAndSettle();
+    // 删运行会连同三层 scope 里的产物一起进回收站，确认框明确说出来。
+    expect(find.textContaining('含所有版本'), findsOneWidget);
     // 先确认，再真的删。
     await tester.tap(find.text('删除运行'));
     await _settle(tester);

@@ -389,4 +389,51 @@ void main() {
     expect(summary, contains('目录已存在: true'));
     expect(summary, contains('附加: 文档'));
   });
+
+  testWidgets('表单卡正文和标题是同一句时只画一次', (tester) async {
+    const title = '第 9 轮怎么走';
+    await tester.binding.setSurfaceSize(narrow);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: MessageBubble(
+            message: Message(
+              id: 'm-dup',
+              content: title,
+              timestampMs: 0,
+              from: MessageFrom(id: 'a-1', type: 'agent', name: '惜宝'),
+              type: MessageType.text,
+              metadata: {
+                'form': {
+                  'form_id': 'form-9',
+                  'title': title,
+                  'description': '接下来怎么收尾这个分支？',
+                  'fields': [
+                    {
+                      'type': 'single_select',
+                      'field_id': 'next',
+                      'label': '接下来怎么收尾这个分支？',
+                      'options': [
+                        {'id': 'a', 'label': '直接合入 main'},
+                      ],
+                    },
+                  ],
+                },
+              },
+            ),
+            isMyMessage: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(title), findsOneWidget);
+    expect(find.text('接下来怎么收尾这个分支？'), findsWidgets);
+    expect(find.text('直接合入 main'), findsOneWidget);
+  });
 }

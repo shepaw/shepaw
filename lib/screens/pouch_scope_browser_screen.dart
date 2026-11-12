@@ -15,6 +15,7 @@ import '../storage/pouch_scope.dart';
 import '../storage/pouch_scope_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
+import '../widgets/flow/flow_artifact_card.dart';
 
 /// 最小可用的 scope 浏览器（G4 / B 4.5）。
 ///
@@ -412,13 +413,29 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     await (await _store()).write(scope, path, bytes);
   }
 
+  /// 删工作流 scope 里的 `artifacts/**` 时把「产物会一起删」说清楚；不是
+  /// 新增删除动作，只是沿用已有文件 / 批量删除的确认框。
+  bool _isArtifactPath(String path) {
+    final normalized = path.replaceAll(RegExp(r'^/+'), '');
+    return normalized == 'artifacts' || normalized.startsWith('artifacts/');
+  }
+
+  String _deleteMessage(PouchScope scope, List<String> paths, String base) {
+    if (scope.family != PouchScopeFamily.flow ||
+        !paths.any(_isArtifactPath)) {
+      return base;
+    }
+    return '$base\n\n${flowArtifactDeletionWarning(context)}';
+  }
+
   /// 删除一份文件（操作菜单里的「删除」）；确认框先过一道。
   Future<void> _deleteEntry(PouchScope scope, StoreEntry entry) async {
     final l10n = AppLocalizations.of(context);
     final name = entry.path.split('/').last;
     final confirmed = await _confirmDelete(
       title: l10n.storage_deleteFileTitle,
-      message: l10n.storage_deleteFileConfirm(name),
+      message: _deleteMessage(
+          scope, [entry.path], l10n.storage_deleteFileConfirm(name)),
     );
     if (confirmed != true) return;
     await _deletePaths(scope, [entry.path], deletedMessage: '已删除 $name');
@@ -431,7 +448,8 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     if (paths.isEmpty) return;
     final confirmed = await _confirmDelete(
       title: l10n.storage_deleteFileTitle,
-      message: l10n.storage_deleteManyConfirm(paths.length),
+      message: _deleteMessage(
+          scope, paths, l10n.storage_deleteManyConfirm(paths.length)),
     );
     if (confirmed != true) return;
     await _deletePaths(scope, paths);
@@ -990,20 +1008,30 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              group.subtitle,
+              group.family == PouchScopeFamily.flow
+                  ? '${group.subtitle}\n${flowScopeCountsLabel(group.scopes)}'
+                  : group.subtitle,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
             ),
           ),
           for (final scope in group.scopes)
-            ListTile(
-              selected: _scope?.id == scope.id,
-              leading: Icon(_iconFor(scope.kind)),
-              title: Text(scope.displayName),
-              subtitle: Text(scope.id),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _openScope(scope),
+            Padding(
+              // 工作流三层按 模板 → 实例 → 运行 缩进，别把运行平铺在顶层。
+              padding: EdgeInsets.only(
+                left: group.family == PouchScopeFamily.flow
+                    ? 16.0 * scope.flowDepth
+                    : 0,
+              ),
+              child: ListTile(
+                selected: _scope?.id == scope.id,
+                leading: Icon(_iconFor(scope.kind)),
+                title: Text(scope.displayName),
+                subtitle: Text(scope.id),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openScope(scope),
+              ),
             ),
         ],
         if (widget.onOpenLegacy != null) ...[
@@ -1292,6 +1320,9 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
         PouchScopeKind.skill => Icons.auto_awesome_outlined,
         PouchScopeKind.instruction => Icons.menu_book_outlined,
         PouchScopeKind.slip => Icons.sticky_note_2_outlined,
+        PouchScopeKind.flow => Icons.account_tree_outlined,
+        PouchScopeKind.instance => Icons.layers_outlined,
+        PouchScopeKind.run => Icons.play_arrow_outlined,
       };
 
   String _formatSize(int bytes) {

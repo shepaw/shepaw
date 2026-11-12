@@ -84,6 +84,8 @@ class HubFlow {
       };
 
   /// 开跑：给 `yaml`，或者给库里的 `scope` + `name`。
+  /// `instanceId` 传上次开跑响应的 `instance_id`：重跑同一业务时复用同一实例
+  /// （重跑 / 子运行共用产物权限树）；不带就由主机铸新实例。旧主机忽略该字段。
   static Map<String, dynamic> startFrame({
     String yaml = '',
     String scope = '',
@@ -94,6 +96,7 @@ class HubFlow {
     String groupId = '',
     String sessionId = '',
     String taskId = '',
+    String? instanceId,
     String? requestId,
   }) =>
       {
@@ -108,6 +111,8 @@ class HubFlow {
         if (groupId.isNotEmpty) 'group_id': groupId,
         if (sessionId.isNotEmpty) 'session_id': sessionId,
         if (taskId.isNotEmpty) 'task_id': taskId,
+        if (instanceId != null && instanceId.isNotEmpty)
+          'instance_id': instanceId,
       };
 
   /// 运行列表（M8'）。`scope` / `name` 为空表示不过滤。
@@ -430,7 +435,7 @@ class HubFlow {
   Future<FlowCall> delete(String peerId, String name, {String scope = ''}) =>
       _call(peerId, deleteFrame(name, scope: scope), 'flow_delete_resp');
 
-  /// 开跑。成功时 [FlowCall.data] 里有 `run_id`。
+  /// 开跑。成功时 [FlowCall.data] 里有 `run_id` / `instance_id` / `instance_scope`。
   Future<FlowCall> start(
     String peerId, {
     String yaml = '',
@@ -442,6 +447,7 @@ class HubFlow {
     String groupId = '',
     String sessionId = '',
     String taskId = '',
+    String? instanceId,
   }) =>
       _call(
         peerId,
@@ -455,6 +461,7 @@ class HubFlow {
           groupId: groupId,
           sessionId: sessionId,
           taskId: taskId,
+          instanceId: instanceId,
         ),
         'flow_run_start_resp',
       );
@@ -612,6 +619,10 @@ class FlowCall {
   }
 
   String? get runId => data['run_id'] as String?;
+
+  /// 三层分区坐标；旧主机不带这两个字段，取到 null 就按新实例处理。
+  String? get instanceId => data['instance_id'] as String?;
+  String? get instanceScope => data['instance_scope'] as String?;
 }
 
 /// `flow_validate_resp`：节点树 + 诊断。

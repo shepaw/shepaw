@@ -254,6 +254,8 @@ void main() {
     expect(find.byTooltip('最近失败'), findsNothing);
     await tester.tap(find.text('dev'));
     await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('executions-edit')));
+    await _settle(tester);
     expect(find.byType(FlowDesignScreen), findsOneWidget);
     expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -265,6 +267,9 @@ void main() {
     await _pumpWorkspace(tester, host);
 
     await tester.tap(find.text('dev'));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('executions-edit')));
     await _settle(tester);
     expect(find.byType(FlowDesignScreen), findsOneWidget);
     expect(find.byKey(const ValueKey('detail-tab-overview')), findsNothing);
@@ -294,6 +299,8 @@ void main() {
     addTearDown(host.close);
     await _pumpWorkspace(tester, host);
     await tester.tap(find.text('dev'));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('executions-edit')));
     await _settle(tester);
 
     expect(
@@ -409,6 +416,8 @@ void main() {
     await _pumpWorkspace(tester, host);
     await tester.tap(find.text('dev'));
     await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('executions-edit')));
+    await _settle(tester);
 
     expect(find.byType(AlertDialog), findsNothing, reason: '恢复草稿不能再用阻塞式弹窗');
     expect(find.byKey(const ValueKey('draft-banner')), findsOneWidget);
@@ -419,7 +428,39 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('手机直接进编辑页：没有概览 / 运行 Tab，保存和步骤都在', (tester) async {
+  testWidgets('手机上未保存草稿提示单独占一行，按钮不会被缩小', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({
+      'flow_draft_v1|p1||dev': jsonEncode({
+        'yaml': 'flow: dev\nsteps:\n- id: impl\n  task: {prompt: 改过}\n',
+        'base_revision': 2,
+        'saved_ms': DateTime.now().millisecondsSinceEpoch,
+      }),
+    });
+    final host = _Host();
+    addTearDown(host.close);
+    await _pumpWorkspace(tester, host);
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('executions-edit')));
+    await _settle(tester);
+
+    final status = tester.getRect(find.byKey(const ValueKey('save-status')));
+    final banner = tester.getRect(find.byKey(const ValueKey('draft-banner')));
+    final restore = tester.getRect(find.byKey(const ValueKey('draft-restore')));
+    expect(banner.top, greaterThanOrEqualTo(status.bottom - 1),
+        reason: '提示要在保存状态下面单独一行');
+    expect(banner.width, greaterThan(300), reason: '这一行要铺开，不能缩成一小粒');
+    expect(restore.height, greaterThanOrEqualTo(32),
+        reason: '恢复按钮要保持能点的高度');
+    await tester.tap(find.byKey(const ValueKey('draft-restore')));
+    await _settle(tester);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('手机从执行历史进编辑页：没有概览 / 运行 Tab，保存和步骤都在', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -427,6 +468,9 @@ void main() {
     addTearDown(host.close);
     await _pumpWorkspace(tester, host);
     await tester.tap(find.text('dev'));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('executions-edit')));
     await _settle(tester);
 
     expect(find.byKey(const ValueKey('detail-tab-overview')), findsNothing);

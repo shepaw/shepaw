@@ -274,6 +274,31 @@ class MessageBubble extends StatelessWidget {
         MessageImplicitPrompt.stripImplicitBlocks(message.content),
       );
 
+  /// 卡片自己已经画了标题或提问。消息正文如果只是同一句，再画一遍就是
+  /// 气泡里两个一样的标题。正文还有别的话时照常显示。
+  bool _bodyRepeatsCardHeading(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return false;
+    final metadata = message.metadata;
+    if (metadata == null) return false;
+    bool same(Object? raw, {required bool titleFirst}) {
+      final card = FormFieldShape.stringKeyMap(raw);
+      if (card == null) return false;
+      final title = FormFieldShape.asString(card['title'])?.trim() ?? '';
+      final prompt = FormFieldShape.asString(card['prompt'])?.trim() ?? '';
+      final heading = titleFirst
+          ? (title.isNotEmpty ? title : prompt)
+          : (prompt.isNotEmpty ? prompt : title);
+      return heading.isNotEmpty && heading == trimmed;
+    }
+
+    return same(metadata['form'], titleFirst: true) ||
+        same(metadata['single_select'], titleFirst: false) ||
+        same(metadata['multi_select'], titleFirst: false) ||
+        same(metadata['file_upload'], titleFirst: false) ||
+        same(metadata['action_confirmation'], titleFirst: false);
+  }
+
   @override
   Widget build(BuildContext context) {
     // 审核消息卡片 - 全宽居中显示
@@ -984,7 +1009,8 @@ class MessageBubble extends StatelessWidget {
         final rawContent = displayText.isEmpty && _displayContent.isEmpty
             ? '...'
             : displayText;
-        final hasAnswer = displayText.trim().isNotEmpty;
+        final hasAnswer = displayText.trim().isNotEmpty &&
+            !_bodyRepeatsCardHeading(displayText);
         // 最新一条不折：回合刚结束时把正文换成折叠头，用户会以为回复没出来。
         // 历史里的长回答仍然折叠，避免每次整列重建都布局几千字 Markdown。
         final collapseLongBody = !isStreaming &&

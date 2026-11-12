@@ -14,6 +14,7 @@ import '../services/local_database_service.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/services/hub_flow.dart';
 import '../peer/services/peer_agent_ids.dart';
+import '../storage/pouch_scope.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/flow/flow_context_panel.dart';
@@ -24,7 +25,7 @@ import 'flow_detail_screen.dart';
 import 'flow_execution_history_screen.dart';
 import 'flow_start_screen.dart';
 
-/// 流程库工作台：左边列表，右边一个流程的设计视图。
+/// 流程库工作台：左边列表，点一条先看执行历史，编辑从历史页的图标进入。
 ///
 /// 这是流程库的**常驻入口**。原来的 [FlowLibraryScreen] 只能从会话列表的
 /// 「工作流」折叠组进，而主机对空折叠组直接不返回
@@ -87,15 +88,18 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   bool _editorDirty = false;
   FlowEditorController? _editor;
 
-  /// 再点当前这条流程时，设计页回到流程设置。
-  VoidCallback? _openFlowSettings;
-
   /// 执行历史里正在看某一次运行。系统返回先退回列表，再关掉这一页。
   bool _executionDetailOpen = false;
   VoidCallback? _executionBack;
 
   /// 区分「这一页」和已经被换掉的上一页，避免卸掉时把新页的返回清掉。
   Object? _executionToken;
+
+  /// 执行历史是从左侧列表点进来的。返回时回到流程库，不露出底下的编辑页。
+  bool _historyFromList = false;
+
+  /// 右侧盖层正在看哪个流程的执行历史。同一条再点一次不重开。
+  String? _openExecutionFlow;
 
   /// 手机上的整页属性有没有开。ModalRoute 会把同一次系统返回通知给所有
   /// PopEntry，外层 PopScope 得靠它让设计页先关整页，不能连详情一起退掉。
@@ -199,9 +203,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     final maxList = total - _minDetailWidth - _splitterWidth;
     final hi = maxList < _minListPaneWidth ? _minListPaneWidth : maxList;
     final next = _listPaneWidth + dx;
-    final width = next < _minListPaneWidth
-        ? _minListPaneWidth
-        : (next > hi ? hi : next);
+    final width =
+        next < _minListPaneWidth ? _minListPaneWidth : (next > hi ? hi : next);
     if (width == _listPaneWidth) return;
     setState(() => _listPaneWidth = width);
   }
@@ -232,17 +235,37 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
 
   void _select(FlowSummary flow) {
     final same = _selectedName == flow.name;
-    // 新建 / 开跑 / 历史盖在右侧时，点一条流程就回到它的编辑页，不用先按返回。
-    // 已经在看这条流程时，再点一次回到流程设置。
-    if (same && _pane == null) {
-      _openFlowSettings?.call();
+    // 已经在看这条的执行历史列表时，再点一次不用重开。
+    if (same &&
+        _openExecutionFlow == flow.name &&
+        _pane != null &&
+        !_executionDetailOpen &&
+        _cover == null) {
       return;
     }
     unawaited(() async {
       if (!same && !await _guardDirty()) return;
       if (!mounted) return;
-      _dropPane();
+      // 已经停在这条的编辑页上时，历史盖上去，返回仍回到编辑页。
+      final overEditor = same && _pane == null;
       setState(() {
+        if (!same) {
+          _detailToken++;
+          _selectedName = flow.name;
+        }
+      });
+      _showExecutions(flow, fromList: !overEditor);
+    }());
+  }
+
+  /// 从执行历史（或版本历史）进入编辑页。底下已经是这个流程时直接揭开。
+  void _openEditor(FlowSummary flow) {
+    final same = _selectedName == flow.name;
+    unawaited(() async {
+      if (!same && !await _guardDirty()) return;
+      if (!mounted) return;
+      setState(() {
+        _dropPane();
         if (!same) {
           _detailToken++;
           _selectedName = flow.name;
@@ -256,6 +279,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     _executionToken = null;
     _executionDetailOpen = false;
     _executionBack = null;
+    _historyFromList = false;
+    _openExecutionFlow = null;
     final done = _paneDone;
     _pane = null;
     _paneDone = null;
@@ -269,13 +294,29 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       _executionBack!();
       return;
     }
-    if (_pane != null) {
-      _closePane();
-      return;
-    }
+    if (await _dismissPane()) return;
     if (!await _guardDirty()) return;
     if (!mounted) return;
     setState(() => _selectedName = null);
+  }
+
+  /// 关掉盖在右侧的那一层。
+  ///
+  /// 从列表点进来的执行历史会连同选中一起清掉，回到流程库。
+  /// 从编辑页打开的历史只揭开编辑页。返回 true 表示这次返回已经处理完。
+  Future<bool> _dismissPane() async {
+    if (_pane == null) return false;
+    if (_historyFromList) {
+      if (!await _guardDirty()) return true;
+      if (!mounted) return true;
+      setState(() {
+        _dropPane();
+        _selectedName = null;
+      });
+      return true;
+    }
+    _closePane();
+    return true;
   }
 
   /// 系统返回键 / 隐含返回按钮统一走这里，按层级逐级退：
@@ -285,7 +326,11 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     unawaited(_handlePop());
   }
 
-  Future<T?> _showPane<T>(Widget Function(void Function(T? result) finish) build) {
+  Future<T?> _showPane<T>(
+      Widget Function(void Function(T? result) finish) build) {
+    // 换一层盖层时，上一层的「从列表进来」不再算数；执行历史自己再标上去。
+    _historyFromList = false;
+    _openExecutionFlow = null;
     final previous = _paneDone;
     if (previous != null && !previous.isCompleted) previous.complete(null);
     final done = Completer<Object?>();
@@ -336,10 +381,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       _executionBack!();
       return;
     }
-    if (_pane != null) {
-      _closePane();
-      return;
-    }
+    if (await _dismissPane()) return;
     // 整页属性开着时，设计页自己的 PopScope 会关掉它；这次返回不能同时
     // 把详情也退回列表（一次 didPop=false 会通知到两个 PopScope）。
     if (_detailPageOpen.value) return;
@@ -371,8 +413,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     // 新版主机在 flow_get_resp 里直接给出需要绑定的角色；老主机没给就退回
     // 客户端的保守扫描。整份定义只在这里解析一次，inputs / 角色默认值一起
     // 算好传给表单页，页面不再重复解析 YAML。
-    var form = FlowRunFormData.parse(yaml,
-        requiredRoles: fetched.requiredRoles);
+    var form =
+        FlowRunFormData.parse(yaml, requiredRoles: fetched.requiredRoles);
     var plan = await _openStart(
       flowName: flow.name,
       yaml: yaml,
@@ -453,6 +495,11 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       flow,
       runId: runId,
       runTitle: _startedTitle(plan, flow.name),
+      instanceId: result.instanceId,
+      instanceScope: result.instanceScope,
+      runScope: result.instanceScope == null
+          ? null
+          : PouchScope.buildFlowRunScope(result.instanceScope!, runId),
     );
   }
 
@@ -722,14 +769,15 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   /// 列表行 `⋯` 里的「查看历史」：看旧版本，选中某一版就存成本地草稿，
   /// 概览页顶部会出现恢复横幅（不阻塞、不直接改库里的定义）。
   Future<void> _showHistory(FlowSummary flow) async {
-    final choice = await _showPane<FlowHistoryChoice>((finish) => FlowHistorySheet(
-          client: _client,
-          peerId: _host,
-          scope: widget.scope,
-          name: flow.name,
-          latest: flow.latest,
-          onChosen: finish,
-        ));
+    final choice =
+        await _showPane<FlowHistoryChoice>((finish) => FlowHistorySheet(
+              client: _client,
+              peerId: _host,
+              scope: widget.scope,
+              name: flow.name,
+              latest: flow.latest,
+              onChosen: finish,
+            ));
     if (choice == null || !mounted) return;
     await _drafts.save(
       peerId: _host,
@@ -739,23 +787,37 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       baseRevision: flow.latest,
     );
     if (!mounted) return;
-    _select(flow);
+    _openEditor(flow);
   }
 
   /// 这个流程开过的运行。点一条在同一页打开详情，返回回到列表。
-  void _showExecutions(FlowSummary flow, {String? runId, String? runTitle}) {
+  ///
+  /// [fromList]：从左侧列表点进来。返回时回到流程库，而不是编辑页。
+  void _showExecutions(
+    FlowSummary flow, {
+    String? runId,
+    String? runTitle,
+    String? instanceId,
+    String? instanceScope,
+    String? runScope,
+    bool fromList = false,
+  }) {
     final token = Object();
     _executionToken = token;
     _executionDetailOpen = runId != null;
     _executionBack = null;
-    unawaited(_showPane<void>((finish) => FlowExecutionHistoryScreen(
+    unawaited(_showPane<void>((_) => FlowExecutionHistoryScreen(
           client: _client,
           peerId: _host,
           scope: widget.scope,
           flowName: flow.name,
           initialRunId: runId,
           initialTitle: runTitle,
-          onClose: () => finish(null),
+          initialInstanceId: instanceId,
+          initialInstanceScope: instanceScope,
+          initialRunScope: runScope,
+          onClose: () => unawaited(_closeDetailGuarded()),
+          onEdit: () => _openEditor(flow),
           onBindBack: (back) {
             if (!identical(_executionToken, token)) return;
             _executionBack = back;
@@ -765,6 +827,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
             _executionDetailOpen = open;
           },
         )));
+    // _showPane 会清掉这两个标记，这里按这次打开的方式再写上。
+    _historyFromList = fromList;
+    _openExecutionFlow = flow.name;
   }
 
   void _snack(String message) {
@@ -779,8 +844,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       builder: (context, constraints) {
         final wide = _wideFor(constraints);
         _wide = wide;
-        final showingNarrowDetail = !wide &&
-            (_selectedName != null || _pane != null || _cover != null);
+        final showingNarrowDetail =
+            !wide && (_selectedName != null || _pane != null || _cover != null);
         final hideOuterAppBar = widget.embedded && wide;
         // 只有真的要自己处理时才拦返回：窄屏详情（先退回列表）或编辑区
         // 有未保存改动。列表态且干净就放行，别无条件吃掉 iOS 侧滑 / 原生 pop。
@@ -819,68 +884,65 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                     ],
                   ),
             body: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: _loading
-                                ? const Center(child: CircularProgressIndicator())
-                                : _error != null
-                                    ? _buildError(l10n)
-                                    : wide
-                                ? Row(
-                                    children: [
-                                      SizedBox(
-                                        key: const ValueKey(
-                                            'flow-library-pane'),
-                                        width: _fitListWidth(
-                                            constraints.maxWidth),
-                                        child: _buildListPane(l10n,
-                                            showHeader: hideOuterAppBar),
-                                      ),
-                                      FlowPaneSplitter(
-                                        handleKey: const ValueKey(
-                                            'flow-library-splitter'),
-                                        onDrag: (dx) => _dragList(
-                                            dx, constraints.maxWidth),
-                                      ),
-                                      Expanded(
-                                          child: _buildDetail(l10n,
-                                              showHeader: true)),
-                                    ],
-                                  )
-                                : showingNarrowDetail
-                                    ? _buildDetail(l10n, showHeader: false)
-                                    : _buildListPane(l10n, showHeader: false),
-                          ),
-                          if (_pane != null)
-                            Positioned(
-                              left: wide
-                                  ? _fitListWidth(constraints.maxWidth) +
-                                      _splitterWidth
-                                  : 0,
-                              right: 0,
-                              top: 0,
-                              bottom: 0,
-                              child: Material(
-                                color: Theme.of(context).colorScheme.surface,
-                                child: _pane,
-                              ),
-                            ),
-                          if (_cover != null)
-                            Positioned(
-                              left: wide
-                                  ? _fitListWidth(constraints.maxWidth) +
-                                      _splitterWidth
-                                  : 0,
-                              right: 0,
-                              top: 0,
-                              bottom: 0,
-                              child: Material(
-                                color: Theme.of(context).colorScheme.surface,
-                                child: _cover,
-                              ),
-                            ),
-                        ],
-                      ),
+              children: [
+                Positioned.fill(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                          ? _buildError(l10n)
+                          : wide
+                              ? Row(
+                                  children: [
+                                    SizedBox(
+                                      key: const ValueKey('flow-library-pane'),
+                                      width:
+                                          _fitListWidth(constraints.maxWidth),
+                                      child: _buildListPane(l10n,
+                                          showHeader: hideOuterAppBar),
+                                    ),
+                                    FlowPaneSplitter(
+                                      handleKey: const ValueKey(
+                                          'flow-library-splitter'),
+                                      onDrag: (dx) =>
+                                          _dragList(dx, constraints.maxWidth),
+                                    ),
+                                    Expanded(
+                                        child: _buildDetail(l10n,
+                                            showHeader: true)),
+                                  ],
+                                )
+                              : showingNarrowDetail
+                                  ? _buildDetail(l10n, showHeader: false)
+                                  : _buildListPane(l10n, showHeader: false),
+                ),
+                if (_pane != null)
+                  Positioned(
+                    left: wide
+                        ? _fitListWidth(constraints.maxWidth) + _splitterWidth
+                        : 0,
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Material(
+                      color: Theme.of(context).colorScheme.surface,
+                      child: _pane,
+                    ),
+                  ),
+                if (_cover != null)
+                  Positioned(
+                    left: wide
+                        ? _fitListWidth(constraints.maxWidth) + _splitterWidth
+                        : 0,
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Material(
+                      color: Theme.of(context).colorScheme.surface,
+                      child: _cover,
+                    ),
+                  ),
+              ],
+            ),
           ),
         );
       },
@@ -934,52 +996,52 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: TextField(
-              key: const ValueKey('flow-search'),
-              controller: _search,
-              decoration: InputDecoration(
-                hintText: l10n.common_search,
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border: const OutlineInputBorder(),
-              ),
-              onChanged: (_) => setState(() {}),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TextField(
+            key: const ValueKey('flow-search'),
+            controller: _search,
+            decoration: InputDecoration(
+              hintText: l10n.common_search,
+              prefixIcon: const Icon(Icons.search),
+              isDense: true,
+              border: const OutlineInputBorder(),
             ),
+            onChanged: (_) => setState(() {}),
           ),
-          Expanded(
-            child: visible.isEmpty
-                ? _buildEmptyLibrary(l10n)
-                : ListView(
-                    children: [
-                      for (final flow in visible)
-                        FlowSummaryTile(
-                          flow: flow,
-                          selected: _selectedName == flow.name,
-                          hasDraft: _drafts.hasDraft(
-                            peerId: _host,
-                            scope: widget.scope,
-                            name: flow.name,
-                          ),
-                          needsApproval: flow.lastRunNeedsApproval,
-                          onTap: () => _select(flow),
-                          onStart: () => unawaited(_start(flow)),
-                          onExecutions: () => _showExecutions(flow),
-                          onDuplicate: () => _duplicate(flow),
-                          onDelete: () => unawaited(_deleteFlow(flow)),
-                          onHistory: () => unawaited(_showHistory(flow)),
-                          onApproval: flow.lastRunId == null
-                              ? null
-                              : () => _showExecutions(
-                                    flow,
-                                    runId: flow.lastRunId,
-                                    runTitle: flow.name,
-                                  ),
+        ),
+        Expanded(
+          child: visible.isEmpty
+              ? _buildEmptyLibrary(l10n)
+              : ListView(
+                  children: [
+                    for (final flow in visible)
+                      FlowSummaryTile(
+                        flow: flow,
+                        selected: _selectedName == flow.name,
+                        hasDraft: _drafts.hasDraft(
+                          peerId: _host,
+                          scope: widget.scope,
+                          name: flow.name,
                         ),
-                    ],
-                  ),
-          ),
+                        needsApproval: flow.lastRunNeedsApproval,
+                        onTap: () => _select(flow),
+                        onStart: () => unawaited(_start(flow)),
+                        onExecutions: () => _showExecutions(flow),
+                        onDuplicate: () => _duplicate(flow),
+                        onDelete: () => unawaited(_deleteFlow(flow)),
+                        onHistory: () => unawaited(_showHistory(flow)),
+                        onApproval: flow.lastRunId == null
+                            ? null
+                            : () => _showExecutions(
+                                  flow,
+                                  runId: flow.lastRunId,
+                                  runTitle: flow.name,
+                                ),
+                      ),
+                  ],
+                ),
+        ),
       ],
     );
   }
@@ -1005,8 +1067,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
             const SizedBox(height: 16),
             FilledButton.tonal(
               key: const ValueKey('library-from-template'),
-              onPressed: () => unawaited(
-                  _create(initialSource: FlowNewSource.template)),
+              onPressed: () =>
+                  unawaited(_create(initialSource: FlowNewSource.template)),
               child: Text(l10n.flow_libraryFromTemplate),
             ),
           ],
@@ -1036,9 +1098,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
         ),
       );
     }
-    final flow = _flows
-            ?.where((f) => f.name == name)
-            .firstOrNull ??
+    final flow = _flows?.where((f) => f.name == name).firstOrNull ??
         FlowSummary(name: name, latest: 0, scope: widget.scope);
     return FlowDetailScreen(
       // A6-1：同名流程可能同时存在于两台主机。key 带上 _host，切主机时
@@ -1053,7 +1113,6 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       showHeader: showHeader,
       pageOpen: _detailPageOpen,
       onOpenExecutions: () => _showExecutions(flow),
-      onBindSettings: (open) => _openFlowSettings = open,
       onDirtyChanged: (dirty) {
         if (_editorDirty == dirty) return;
         _editorDirty = dirty;

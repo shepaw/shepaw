@@ -36,6 +36,39 @@ void main() {
     });
   });
 
+  test(
+      'start frame carries instance_id for reruns, response exposes scope coords',
+      () {
+    const iid = 'in_0123456789abcdef';
+    final frame = HubFlow.startFrame(
+      name: 'bugfix',
+      scope: 'group:g1',
+      instanceId: iid,
+    );
+    expect(frame['instance_id'], iid);
+    // 不带时不发字段，旧主机照常收帧。
+    expect(
+        HubFlow.startFrame(name: 'bugfix').containsKey('instance_id'), isFalse);
+    expect(
+        HubFlow.startFrame(name: 'bugfix', instanceId: '')
+            .containsKey('instance_id'),
+        isFalse);
+
+    final call = FlowCall.fromResponse({
+      'success': true,
+      'run_id': 'run_1',
+      'instance_id': iid,
+      'instance_scope': 'flow:fl_1:instance:$iid',
+    });
+    expect(call.ok, isTrue);
+    expect(call.instanceId, iid);
+    expect(call.instanceScope, 'flow:fl_1:instance:$iid');
+    // 旧主机没这两个字段。
+    final legacy = FlowCall.fromResponse({'success': true, 'run_id': 'run_1'});
+    expect(legacy.instanceId, isNull);
+    expect(legacy.instanceScope, isNull);
+  });
+
   test('every flow frame type is routed as a control frame', () {
     for (final type in [
       'flow_list_resp',
@@ -421,5 +454,40 @@ void designModelTests() {
     expect(HubFlow.rehearseFrame('y', requestId: 'r')['type'],
         'flow_rehearse_req');
     expect(HubFlow.schemaFrame()['type'], 'flow_schema_req');
+  });
+
+  /// 历史运行没有开跑响应的坐标，全靠 flow_run_get_resp 回填，否则产物卡
+  /// 永远显示空态。也验证 App 不会自己拿畸形 run_id 拼 scope。
+  test('a historical run response carries the three-layer coordinates', () {
+    const fid = 'fl_0123456789abcdef0123456789abcdef';
+    const iid = 'in_0123456789abcdef';
+    const rid = 'run_0123456789abcdef0123456789abcdef';
+    final run = FlowRunView.fromResponse({
+      'success': true,
+      'run_id': rid,
+      'status': 'succeeded',
+      'tasks_used': 1,
+      'tree': <dynamic>[],
+      'flow_id': fid,
+      'instance_id': iid,
+      'instance_scope': 'flow:$fid:instance:$iid',
+      'run_scope': 'flow:$fid:instance:$iid:run:$rid',
+    });
+    expect(run, isNotNull);
+    expect(run!.flowId, fid);
+    expect(run.instanceId, iid);
+    expect(run.instanceScope, 'flow:$fid:instance:$iid');
+    expect(run.runScope, 'flow:$fid:instance:$iid:run:$rid');
+    // 旧主机只给 ctx.host 里的 fid/iid 时也能补出坐标。
+    final legacy = FlowRunView.fromResponse({
+      'success': true,
+      'run_id': rid,
+      'status': 'succeeded',
+      'tree': <dynamic>[],
+      'ctx': {
+        'host': {'flow_id': fid, 'instance_id': iid}
+      },
+    });
+    expect(legacy?.instanceScope, 'flow:$fid:instance:$iid');
   });
 }

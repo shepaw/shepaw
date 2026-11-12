@@ -34,7 +34,8 @@ class _Transport implements PouchScopeTransport {
     required String pouchId,
     required PouchScope scope,
     required String path,
-  }) async => null;
+  }) async =>
+      null;
 
   @override
   Future<PouchListPage> list({
@@ -54,7 +55,8 @@ class _Transport implements PouchScopeTransport {
     required String pouchId,
     required PouchScope scope,
     required String path,
-  }) async => null;
+  }) async =>
+      null;
 
   @override
   Future<void> write({
@@ -95,7 +97,8 @@ Widget _screen(
 
 /// 文件页的一条假数据：docs 下两层 + 根目录一个文件 + 一个内部占位文件。
 List<StoreEntry> _fileEntries() => <StoreEntry>[
-      StoreEntry(path: 'docs/report.pdf', size: 1200, sha256: '', mtimeMs: 3000),
+      StoreEntry(
+          path: 'docs/report.pdf', size: 1200, sha256: '', mtimeMs: 3000),
       StoreEntry(path: 'note.md', size: 10, sha256: '', mtimeMs: 1000),
       StoreEntry(path: 'docs/sub/old.md', size: 5, sha256: '', mtimeMs: 500),
       StoreEntry(path: '.keep', size: 0, sha256: '', mtimeMs: 9000),
@@ -136,6 +139,23 @@ void main() {
     expect(find.text('技能 writer'), findsOneWidget);
     // 会话不占顶层。
     expect(find.text('会话 s_1'), findsNothing);
+  });
+
+  testWidgets('工作流组头显示模板 / 实例 / 运行数量', (tester) async {
+    _setViewport(tester, w: 1200, h: 3000);
+    final store = PouchScopeStore(
+      transport: _Transport(scopeIds: <String>[
+        'flow:fl_1',
+        'flow:fl_1:instance:in_1',
+        'flow:fl_1:instance:in_1:run:run_1',
+        'run:old_run',
+      ]),
+      pouchId: 'p1',
+    );
+    await tester.pumpWidget(_screen(store));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('模板 1 · 实例 1 · 运行 2'), findsOneWidget);
   });
 
   testWidgets('空 scope 说「还没有文件」，不是报错', (tester) async {
@@ -226,7 +246,8 @@ void main() {
       reason: '群共享的 files/ 前缀由 GroupSharedFiles 加',
     );
     expect(
-      PouchScopeBrowserScreen.uploadDirFor(PouchScope.slip('sl1'), 'files/docs'),
+      PouchScopeBrowserScreen.uploadDirFor(
+          PouchScope.slip('sl1'), 'files/docs'),
       'files/docs',
     );
   });
@@ -433,8 +454,7 @@ void main() {
     );
   });
 
-  testWidgets('文件页左栏是「最近 / 全部文件 / 文件夹」，不再只列一个 files',
-      (tester) async {
+  testWidgets('文件页左栏是「最近 / 全部文件 / 文件夹」，不再只列一个 files', (tester) async {
     _setViewport(tester, w: 1400, h: 1000);
     final store = PouchScopeStore(
       transport: _Transport(entries: _fileEntries()),
@@ -495,7 +515,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(popScope().canPop, isFalse);
 
-    final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
+    final navigator =
+        tester.state<NavigatorState>(find.byType(Navigator).first);
     // PopScope 吃掉这次返回：didPop=false 的那一路，页面留着、往上走一级。
     final popped = await navigator.maybePop();
     await tester.pumpAndSettle();

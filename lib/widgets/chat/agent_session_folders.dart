@@ -13,11 +13,39 @@ import '../session_folders.dart';
 import 'folded_session_items.dart';
 import 'folded_session_open.dart' show flowFoldedSessionId, pushFlowRunScreen;
 
+/// 按主机 + Agent 记住上次问到的折叠组摘要。
+///
+/// 抽屉收起会拆掉整棵列表。不记住的话，下次打开要等主机回包才把
+/// 「引擎客户端 / 引擎终端」画出来，私聊行跟着下移。
+class FoldedFolderMemory {
+  static final Map<String, List<SessionFolderSummary>> _cache = {};
+
+  static String _key(String peerId, String agentId) => '$peerId\n$agentId';
+
+  static List<SessionFolderSummary> read(String peerId, String agentId) =>
+      _cache[_key(peerId, agentId)] ?? const [];
+
+  static void write(
+    String peerId,
+    String agentId,
+    List<SessionFolderSummary> folders,
+  ) {
+    _cache[_key(peerId, agentId)] = List<SessionFolderSummary>.of(folders);
+  }
+
+  @visibleForTesting
+  static void debugClear() => _cache.clear();
+}
+
 /// 私聊会话列表顶部的折叠组（折叠方案 §2.1）：群聊、其他 Agent 发起、工作流、
 /// 引擎客户端、引擎终端，只在不为空时出现。
 ///
 /// 主机是权威：这里自己向主机要摘要，主机没回（离线、旧版本不认折叠视图）就
 /// 什么都不画，不影响原来的列表。
+///
+/// 抽屉每次打开都是新的 State。摘要若等回包才出现，私聊行会整体下移，
+/// 手指落下时点到的已经不是刚才那一行。所以按主机 + Agent 记住上次的摘要，
+/// 打开时先画出来，回包到了再换。
 ///
 /// 「工作流」例外：主机那一组列的是运行（开跑时的那句话），运行记录在工作流
 /// 页面看。抽屉里这一组改放这个 Agent 自己的节点会话（[flowTasks]）。
@@ -88,7 +116,19 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
   @override
   void initState() {
     super.initState();
+    _folders = FoldedFolderMemory.read(widget.peerId, widget.remoteAgentId);
     widget.refreshTick?.addListener(_load);
+    unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(covariant AgentSessionFolders oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.peerId == widget.peerId &&
+        oldWidget.remoteAgentId == widget.remoteAgentId) {
+      return;
+    }
+    _folders = FoldedFolderMemory.read(widget.peerId, widget.remoteAgentId);
     unawaited(_load());
   }
 
@@ -99,14 +139,41 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
   }
 
   Future<void> _load() async {
-    final summary = await _client.summary(widget.peerId, widget.remoteAgentId);
+    final peerId = widget.peerId;
+    final agentId = widget.remoteAgentId;
+    final summary = await _client.summary(peerId, agentId);
     if (!mounted || summary == null) return;
-    setState(() => _folders = summary.folders);
+    if (widget.peerId != peerId || widget.remoteAgentId != agentId) return;
+    final next = summary.folders;
+    FoldedFolderMemory.write(peerId, agentId, next);
+    // 和上次画出来的一样就别 setState：重建会让私聊行抖一下，点下去容易点错。
+    if (!_sameFolders(_folders, next)) {
+      setState(() => _folders = next);
+    }
     // 条数可能变了：让外层固定那一行跟着更新（收着的时候不用管）。
     final kind = widget.expandedKind;
     // 「工作流」由本机节点会话组成，主机没这一组也不代表该收起。
     if (kind == SessionFolderKind.flow && widget.flowTasks.isNotEmpty) return;
     if (kind != null) widget.onExpandedChanged?.call(_summaryOf(kind));
+  }
+
+  bool _sameFolders(
+    List<SessionFolderSummary> a,
+    List<SessionFolderSummary> b,
+  ) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final left = a[i];
+      final right = b[i];
+      if (left.kind != right.kind ||
+          left.count != right.count ||
+          left.updatedAt != right.updatedAt ||
+          left.latestTitle != right.latestTitle) {
+        return false;
+      }
+    }
+    return true;
   }
 
   SessionFolderSummary? _summaryOf(SessionFolderKind kind) {
