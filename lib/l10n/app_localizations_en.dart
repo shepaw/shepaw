@@ -10268,7 +10268,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get flow_nodeProgressUnavailable =>
-      'Couldn\'t load thinking and tool calls (no response from host)';
+      'Couldn\'t load thinking and tool calls';
 
   @override
   String get flow_nodeProgressEmpty =>

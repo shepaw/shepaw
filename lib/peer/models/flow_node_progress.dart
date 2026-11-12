@@ -52,7 +52,7 @@ class FlowNodeProgress {
   int get toolCount => blocks.where((b) => !b.isThought).length;
 
   /// 主机明确失败（success:false）返回 null；老主机不认这条请求时调用方
-  /// 拿到的是超时 null，同样按「没有步骤」处理。
+  /// 拿到的是超时 null。两种都由面板显示成「没取到」+ 重试。
   static FlowNodeProgress? fromResponse(Map<String, dynamic> response) {
     if (response['success'] != true) return null;
     final raw = response['progress'];

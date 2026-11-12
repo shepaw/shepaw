@@ -282,7 +282,7 @@ void main() {
       // 没取到 ≠ 没有步骤：不能告诉用户「没有记录」。
       expect(find.byKey(const ValueKey('node-progress-empty')), findsNothing);
       expect(find.byKey(const ValueKey('node-progress-failed')), findsOneWidget);
-      expect(find.text('没有取到思考与工具调用（主机未回应）'), findsOneWidget);
+      expect(find.text('没有取到思考与工具调用'), findsOneWidget);
       expect(find.byKey(const ValueKey('node-text-impl')), findsOneWidget);
 
       // 点重试再发一次。

@@ -5568,7 +5568,7 @@
       }
     }
   },
-  "flow_nodeProgressUnavailable": "Couldn't load thinking and tool calls (no response from host)",
+  "flow_nodeProgressUnavailable": "Couldn't load thinking and tool calls",
   "flow_nodeProgressEmpty": "No thinking or tool calls were recorded",
   "flow_runsCancelReason": "Cancelled: {reason}",
   "@flow_runsCancelReason": {

@@ -69,8 +69,9 @@ class FlowMarkdown extends StatelessWidget {
 ///
 /// 第一次点开时才向主机取（[load]）——老主机不认这条请求，若一打开节点就发，
 /// 每个节点都要挂 10 秒转圈。[revision]（节点状态 / 轮次）变了：展开着就
-/// 立刻重取，折叠着就等下次点开再取。没取到 / 没有步骤时，展开区里写一句
-/// 「没有记录」，标题始终在。每一块再各自折叠：思考按 Markdown，工具输出按
+/// 立刻重取，折叠着就等下次点开再取。没有步骤时写「没有记录」；没取到
+/// （超时、断线、主机报错）写「没取到」+ 重试，结果不缓存。标题始终在。
+/// 每一块再各自折叠：思考按 Markdown，工具输出按
 /// 等宽原文（多是命令输出）。`ExpansionTile` 折叠时不构建子树。
 class FlowNodeProgressSection extends StatefulWidget {
   const FlowNodeProgressSection({

@@ -17930,7 +17930,7 @@ abstract class AppLocalizations {
   /// No description provided for @flow_nodeProgressUnavailable.
   ///
   /// In zh, this message translates to:
-  /// **'没有取到思考与工具调用（主机未回应）'**
+  /// **'没有取到思考与工具调用'**
   String get flow_nodeProgressUnavailable;
 
   /// No description provided for @flow_nodeProgressEmpty.
