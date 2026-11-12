@@ -280,10 +280,10 @@ class HostStatusPill extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final (color, label) = switch (status) {
       HostReachability.online => (const Color(0xFF2E9E5B), l10n.hostStatus_online),
-      HostReachability.connecting =>
+      HostReachability.connecting ||
+      HostReachability.unknown =>
         (scheme.outline, l10n.hostStatus_connecting),
       HostReachability.offline => (scheme.error, l10n.hostStatus_offline),
-      HostReachability.unknown => (scheme.outline, l10n.hostStatus_offline),
     };
     final suffix = thisComputer ? ' · ${l10n.unlock_hostThisComputer}' : '';
     return Row(
@@ -292,8 +292,10 @@ class HostStatusPill extends StatelessWidget {
         Icon(
           switch (status) {
             HostReachability.online => Icons.circle,
-            HostReachability.connecting => Icons.pending_outlined,
-            _ => Icons.circle_outlined,
+            HostReachability.offline => Icons.circle_outlined,
+            HostReachability.connecting ||
+            HostReachability.unknown =>
+              Icons.pending_outlined,
           },
           size: 10,
           color: color,
@@ -324,8 +326,11 @@ class HostStatusPill extends StatelessWidget {
 /// 主机的连通情况。
 enum HostReachability { unknown, connecting, online, offline }
 
-/// 离线 / 失败时的一张说明卡。带一个可折叠的「详情」，原始错误只在这里露出来。
-class GateStatusCard extends StatelessWidget {
+/// 离线 / 失败时的一张说明卡。
+///
+/// 和输入框、主按钮同一宽度：不用 [Card]，它自带 4px 外边距，会和旁边的按钮错开。
+/// 「详情」跟操作放在同一行，展开后才占下面一行，不留一块空的折叠条。
+class GateStatusCard extends StatefulWidget {
   const GateStatusCard({
     super.key,
     required this.title,
@@ -348,55 +353,102 @@ class GateStatusCard extends StatelessWidget {
   final int? shakeKey;
 
   @override
+  State<GateStatusCard> createState() => _GateStatusCardState();
+}
+
+class _GateStatusCardState extends State<GateStatusCard> {
+  bool _open = false;
+
+  @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      color: scheme.errorContainer.withValues(alpha: 0.5),
+    final detail = widget.detail?.trim() ?? '';
+    final hasDetail = detail.isNotEmpty;
+    final hasActions = widget.primaryLabel != null ||
+        widget.secondaryLabel != null ||
+        hasDetail;
+    final buttonStyle = TextButton.styleFrom(
+      visualDensity: VisualDensity.compact,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+    );
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.error.withValues(alpha: 0.22)),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(title, style: Theme.of(context).textTheme.titleSmall),
-            if (body != null) ...[
-              const SizedBox(height: 8),
-              Text(body!),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Text(
+                widget.title,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            if (widget.body != null) ...[
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(
+                  widget.body!,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
             ],
-            if (primaryLabel != null || secondaryLabel != null) ...[
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
+            if (hasActions) ...[
+              const SizedBox(height: 8),
+              Row(
                 children: [
-                  if (primaryLabel != null)
+                  if (widget.primaryLabel != null)
                     FilledButton(
-                      onPressed: onPrimary,
-                      child: Text(primaryLabel!),
+                      onPressed: widget.onPrimary,
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(widget.primaryLabel!),
                     ),
-                  if (secondaryLabel != null)
+                  if (widget.secondaryLabel != null)
                     OutlinedButton(
-                      onPressed: onSecondary,
-                      child: Text(secondaryLabel!),
+                      onPressed: widget.onSecondary,
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(widget.secondaryLabel!),
+                    ),
+                  const Spacer(),
+                  if (hasDetail)
+                    TextButton(
+                      onPressed: () => setState(() => _open = !_open),
+                      style: buttonStyle,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(l10n.gate_details),
+                          Icon(
+                            _open ? Icons.expand_less : Icons.expand_more,
+                            size: 18,
+                          ),
+                        ],
+                      ),
                     ),
                 ],
               ),
             ],
-            if (detail != null && detail!.isNotEmpty)
-              ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                title: Text(
-                  l10n.gate_details,
+            if (_open && hasDetail)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 4, 8, 8),
+                child: SelectableText(
+                  detail,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: SelectableText(
-                      detail!,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                ],
               ),
           ],
         ),

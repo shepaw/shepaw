@@ -45,6 +45,8 @@ class FakeDeps {
     this.connectError,
     this.listError,
     this.restoreResult = RestoreResult.none,
+    this.resolveLocal,
+    this.listPending,
   });
 
   final PouchSession? current;
@@ -53,6 +55,8 @@ class FakeDeps {
   final Object? connectError;
   final Object? listError;
   final RestoreResult restoreResult;
+  final Future<PairedPeer?> Function()? resolveLocal;
+  final Completer<List<PouchDescriptor>>? listPending;
 
   final List<PouchSession> persisted = [];
   final List<PouchSession> installed = [];
@@ -61,6 +65,7 @@ class FakeDeps {
   int loginCalls = 0;
   int connectCalls = 0;
   int restoreCalls = 0;
+  int listCalls = 0;
   String? lastPassword;
 
   GateDeps build() {
@@ -68,6 +73,9 @@ class FakeDeps {
       readSession: () async => current,
       lookupPeer: (id) async => peer(id),
       listPouches: (_) async {
+        listCalls++;
+        final pending = listPending;
+        if (pending != null) return pending.future;
         final error = listError;
         if (error != null) throw error;
         return pouches;
@@ -96,6 +104,7 @@ class FakeDeps {
         restoreCalls++;
         return restoreResult;
       },
+      resolveLocalHost: resolveLocal,
     );
   }
 }
@@ -113,6 +122,55 @@ void main() {
     expect(gate.reach, HostReachability.online);
     expect(gate.error, isNull);
     gate.dispose();
+  });
+
+  testWidgets('没记住袋子时先连上再问名单', (tester) async {
+    final fake = FakeDeps();
+    final gate = build(fake);
+    await gate.load('peer-1');
+    await tester.pump();
+    expect(fake.connectCalls, 1);
+    expect(gate.reach, HostReachability.online);
+    expect(gate.error, isNull);
+    gate.dispose();
+  });
+
+  testWidgets('本机主机还没带上 peer id 时先认本机，不把空地址探成连不上', (tester) async {
+    final local = peer('peer-local');
+    final fake = FakeDeps(resolveLocal: () async => local);
+    final gate = build(fake);
+    await gate.load('');
+    await tester.pump();
+    expect(gate.hostPeerId, 'peer-local');
+    expect(gate.peer?.id, 'peer-local');
+    expect(fake.connectCalls, 1);
+    expect(gate.reach, HostReachability.online);
+    expect(gate.error, isNull);
+    gate.dispose();
+  });
+
+  testWidgets('认不出本机主机时不发名单请求', (tester) async {
+    final fake = FakeDeps(resolveLocal: () async => null);
+    final gate = build(fake);
+    await gate.load('');
+    await tester.pump();
+    expect(fake.listCalls, 0);
+    expect(fake.connectCalls, 0);
+    expect(gate.error, isNull);
+    expect(gate.reach, HostReachability.offline);
+    gate.dispose();
+  });
+
+  testWidgets('页面关掉之后名单超时不再通知', (tester) async {
+    final pending = Completer<List<PouchDescriptor>>();
+    final fake = FakeDeps(listPending: pending);
+    final gate = build(fake);
+    final loading = gate.load('peer-1');
+    await tester.pump();
+    gate.dispose();
+    pending.completeError(TimeoutException('主机没有回应'));
+    await loading;
+    await tester.pump();
   });
 
   testWidgets('本机没记住袋子时问主机', (tester) async {

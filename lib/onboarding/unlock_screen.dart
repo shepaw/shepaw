@@ -124,6 +124,11 @@ class _UnlockScreenState extends State<UnlockScreen> {
     final reason = args?.reason ?? UnlockReason.expired;
     final locked = _gate.lockedFor;
     final error = _gate.error;
+    final offline = _gate.reach == HostReachability.offline;
+    // 离线卡片已经说明连不上。再写一行「连不上主机」会和卡片、状态行叠在一起。
+    final looseError = error != null &&
+        error.kind != GateErrorKind.credentialRejected &&
+        !(offline && error.kind == GateErrorKind.unreachable);
 
     return PopScope(
       canPop: false,
@@ -140,31 +145,13 @@ class _UnlockScreenState extends State<UnlockScreen> {
               hostName: hostName.isEmpty ? l10n.appTitle : hostName,
               status: _gate.reach,
               thisComputer: _gate.thisComputer,
-              onRetry: () => _gate.retryConnect(),
             ),
           ),
           if (_reasonText(l10n, reason) != null) ...[
             const SizedBox(height: 16),
             _ReasonBar(text: _reasonText(l10n, reason)!),
           ],
-          const SizedBox(height: 20),
-          PasswordField(
-            controller: _password,
-            focusNode: _focus,
-            autofocus: true,
-            enabled: !_gate.busy && locked == null,
-            shakeKey: _gate.shakeKey,
-            onSubmitted: (_) => _submit(),
-          ),
-          if (error != null &&
-              error.kind != GateErrorKind.credentialRejected) ...[
-            const SizedBox(height: 12),
-            Text(
-              gateErrorTitle(l10n, error),
-              style: TextStyle(color: scheme.error),
-            ),
-          ],
-          if (_gate.reach == HostReachability.offline) ...[
+          if (offline) ...[
             const SizedBox(height: 16),
             GateStatusCard(
               title: _gate.thisComputer
@@ -176,11 +163,27 @@ class _UnlockScreenState extends State<UnlockScreen> {
             ),
           ],
           const SizedBox(height: 20),
+          PasswordField(
+            controller: _password,
+            focusNode: _focus,
+            autofocus: true,
+            enabled: !_gate.busy && locked == null,
+            shakeKey: _gate.shakeKey,
+            onSubmitted: (_) => _submit(),
+          ),
+          if (looseError) ...[
+            const SizedBox(height: 12),
+            Text(
+              gateErrorTitle(l10n, error),
+              style: TextStyle(color: scheme.error),
+            ),
+          ],
+          const SizedBox(height: 20),
           FilledButton(
             onPressed: _gate.busy || locked != null ? null : _submit,
             child: Text(_buttonLabel(l10n, locked)),
           ),
-          if (_gate.reach == HostReachability.offline && _gate.pouch != null)
+          if (offline && _gate.pouch != null)
             TextButton(
               onPressed: _gate.busy ? null : _enterOffline,
               child: Text(l10n.gate_enterOffline),

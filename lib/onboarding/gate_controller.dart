@@ -34,6 +34,7 @@ class GateDeps {
     this.inviteLogin,
     this.connectedIds,
     this.restore,
+    this.resolveLocalHost,
     this.log,
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
@@ -69,6 +70,12 @@ class GateDeps {
 
   /// 用设备凭据静默续期。没有登录态但连上了主机时试一次。
   final Future<RestoreResult> Function(String hostPeerId)? restore;
+
+  /// 页面只知道「主机就是这台电脑」、还没有 peer id 时，认正在跑的本机 CLI。
+  ///
+  /// 退出登录会打开没有参数的解锁页。不认的话，后面的名单请求发到空地址，
+  /// 干等 8 秒超时，人还没输密码就被说成「连不上主机」。
+  final Future<PairedPeer?> Function()? resolveLocalHost;
 
   final void Function(String message)? log;
   final DateTime Function() _now;
@@ -124,6 +131,19 @@ class GateDeps {
             .map((_) => PeerConnectionManager.instance.connectedPeerIds.toSet()),
         restore: (hostPeerId) async =>
             productionCredentialRestore().run(hostPeerId: hostPeerId),
+        resolveLocalHost: () async {
+          final cli = await CliHost.detect();
+          if (cli == null) return null;
+          try {
+            return await CliHost.ensurePaired(cli);
+          } catch (error) {
+            LoggerService().warning(
+              'local host resolve failed: $error',
+              tag: 'Gate',
+            );
+            return null;
+          }
+        },
         log: (message) => LoggerService().info(message, tag: 'Gate'),
       );
 }
@@ -154,6 +174,7 @@ class GateController extends ChangeNotifier {
   int _shakeKey = 0;
   Timer? _tick;
   StreamSubscription<Set<String>>? _connectSub;
+  bool _disposed = false;
 
   String get hostPeerId => _hostPeerId;
   PairedPeer? get peer => _peer;
@@ -180,24 +201,50 @@ class GateController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _tick?.cancel();
     _connectSub?.cancel();
     super.dispose();
   }
 
-  /// 进页面：推出袋子，顺便探一下主机在不在。
-  Future<void> load(String hostPeerId) async {
-    _hostPeerId = hostPeerId;
-    _peer = await _deps.lookupPeer(hostPeerId);
-    _pouch = await _rememberedPouch(hostPeerId);
-    _watchConnectivity();
-    if (_pouch == null) {
-      // 本机没记住就问主机。问不到也不锁住输入，用户可以先输着。
-      unawaited(_probe(hostPeerId));
-    } else {
-      unawaited(_connectThenProbe(hostPeerId));
-    }
+  void _emit() {
+    if (_disposed) return;
     notifyListeners();
+  }
+
+  /// 进页面：推出袋子，顺便探一下主机在不在。
+  ///
+  /// 还没有 peer id 时先认本机 CLI，再连上，最后才问袋子名单。
+  /// 空地址直接去问，8 秒后只会超时，页面却把它画成「连不上主机」。
+  Future<void> load(String hostPeerId) async {
+    var id = hostPeerId.trim();
+    if (id.isEmpty) {
+      _setReach(HostReachability.connecting);
+      final local = await _deps.resolveLocalHost?.call();
+      if (_disposed) return;
+      final resolved = local?.id.trim() ?? '';
+      if (local != null && resolved.isNotEmpty) {
+        id = resolved;
+        _peer = local;
+      }
+    }
+    _hostPeerId = id;
+    if (_peer == null && id.isNotEmpty) {
+      _peer = await _deps.lookupPeer(id);
+      if (_disposed) return;
+    }
+    _pouch = id.isEmpty ? null : await _rememberedPouch(id);
+    if (_disposed) return;
+    _watchConnectivity();
+    if (_peer != null) {
+      unawaited(_connectThenProbe(id));
+    } else if (id.isNotEmpty) {
+      // 有 id、本地还没有配对记录。问不到也不锁住输入。
+      unawaited(_probe(id));
+    } else {
+      _reach = HostReachability.offline;
+    }
+    _emit();
   }
 
   /// 主机会在后台自己重连。连上的时候把登录态接回来，不用用户再点一次。
@@ -228,10 +275,10 @@ class GateController extends ChangeNotifier {
     final restore = _deps.restore;
     if (restore == null || _restored) return;
     try {
-      if (await restore(_hostPeerId) == RestoreResult.restored) {
-        _restored = true;
-        notifyListeners();
-      }
+      final restored = await restore(_hostPeerId) == RestoreResult.restored;
+      if (_disposed || !restored) return;
+      _restored = true;
+      _emit();
     } catch (error) {
       _deps.log?.call('silent restore failed: $error');
     }
@@ -258,21 +305,28 @@ class GateController extends ChangeNotifier {
 
   Future<void> _connectThenProbe(String hostPeerId) async {
     final peer = _peer;
-    if (peer == null) return;
+    if (peer == null || _disposed) return;
     _setReach(HostReachability.connecting);
     try {
       await _deps.connect(peer, redial: false);
+      if (_disposed) return;
       _setReach(HostReachability.online);
     } catch (_) {
+      if (_disposed) return;
       _setReach(HostReachability.offline);
     }
     await _probe(hostPeerId);
   }
 
-  /// 问主机要袋子名单。失败只提示，不清掉已经推出来的袋子。
+  /// 问主机要袋子名单。失败只把主机标成离线，不清掉已经推出来的袋子。
+  ///
+  /// 还没记住袋子时，把这次超时写进 [error]，给离线卡片的「详情」。
+  /// 页面上不要再另起一行红字：卡片已经说明连不上了。
   Future<void> _probe(String hostPeerId) async {
+    if (hostPeerId.trim().isEmpty || _disposed) return;
     try {
       final pouches = await _deps.listPouches(hostPeerId);
+      if (_disposed) return;
       _noPouch = pouches.isEmpty;
       if (pouches.isNotEmpty) {
         _pouch = pouches.first;
@@ -280,6 +334,7 @@ class GateController extends ChangeNotifier {
       }
       _setReach(HostReachability.online);
     } catch (error) {
+      if (_disposed) return;
       _deps.log?.call('pouch list failed: $error');
       if (_pouch == null) {
         _noPouch = false;
@@ -287,13 +342,13 @@ class GateController extends ChangeNotifier {
       }
       _setReach(HostReachability.offline);
     }
-    notifyListeners();
+    _emit();
   }
 
   void _setReach(HostReachability next) {
-    if (_reach == next) return;
+    if (_disposed || _reach == next) return;
     _reach = next;
-    notifyListeners();
+    _emit();
   }
 
   Future<void> retryConnect() async {
@@ -309,7 +364,7 @@ class GateController extends ChangeNotifier {
       _setReach(HostReachability.offline);
       _error = mapGateError(error);
     }
-    notifyListeners();
+    _emit();
   }
 
   /// 输密码进入。成功返回 true。
@@ -317,7 +372,7 @@ class GateController extends ChangeNotifier {
     if (_busy || locked) return false;
     _busy = true;
     _error = null;
-    notifyListeners();
+    _emit();
     try {
       var pouch = _pouch;
       pouch ??= await _resolvePouch();
@@ -345,7 +400,7 @@ class GateController extends ChangeNotifier {
       return false;
     } finally {
       _busy = false;
-      notifyListeners();
+      _emit();
     }
   }
 
@@ -357,7 +412,7 @@ class GateController extends ChangeNotifier {
     if (inviteLogin == null || _busy || locked) return false;
     _busy = true;
     _error = null;
-    notifyListeners();
+    _emit();
     try {
       final grant = await inviteLogin(
         hostPeerId: _hostPeerId,
@@ -381,7 +436,7 @@ class GateController extends ChangeNotifier {
       return false;
     } finally {
       _busy = false;
-      notifyListeners();
+      _emit();
     }
   }
 
@@ -438,7 +493,7 @@ class GateController extends ChangeNotifier {
       _lockedUntil = null;
       _tick = null;
       _error = null;
-      notifyListeners();
+      _emit();
     });
   }
 
@@ -450,7 +505,7 @@ class GateController extends ChangeNotifier {
 
   void clearError() {
     _error = null;
-    notifyListeners();
+    _emit();
   }
 }
 

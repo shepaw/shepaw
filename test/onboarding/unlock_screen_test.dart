@@ -73,6 +73,24 @@ void main() {
     expect(find.byType(GateStatusCard), findsOneWidget);
     expect(find.textContaining('Boom'), findsNothing);
     expect(find.textContaining('Exception'), findsNothing);
+    // 说明卡在密码框上面，表单不再被错误行拆开。
+    expect(
+      tester.getTopLeft(find.byType(GateStatusCard)).dy,
+      lessThan(tester.getTopLeft(find.byType(TextField)).dy),
+    );
+    // 状态行里不再塞一颗重试，重试只留在卡片上。
+    expect(find.text('重试'), findsOneWidget);
+  });
+
+  testWidgets('空的本机主机不会多写一行「连不上主机」', (tester) async {
+    final l10n = await pumpUnlock(
+      tester,
+      args: const UnlockArgs(hostPeerId: ''),
+      fake: Harness(resolveLocal: () async => null),
+    );
+    expect(find.text(l10n.gate_errorUnreachable), findsNothing);
+    expect(find.text(l10n.hostOffline_local), findsOneWidget);
+    expect(find.text(l10n.gate_retry), findsOneWidget);
   });
 
   testWidgets('锁定后主按钮变成倒计时', (tester) async {
