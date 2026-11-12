@@ -260,7 +260,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('老主机不应答：打开节点不转圈，点开后超时写「没有记录」', (tester) async {
+    testWidgets('老主机不应答 / 断线：不转圈，超时后写「没取到」并可重试', (tester) async {
       final bus = StreamController<PeerControlEvent>.broadcast();
       addTearDown(bus.close);
       final requests = <Map<String, dynamic>>[];
@@ -279,9 +279,29 @@ void main() {
       await tester.pump(const Duration(seconds: 20));
       await _settle(tester);
       expect(find.byKey(const ValueKey('node-progress-loading')), findsNothing);
-      expect(find.byKey(const ValueKey('node-progress-empty')), findsOneWidget);
-      expect(find.text('没有记录到思考或工具调用'), findsOneWidget);
+      // 没取到 ≠ 没有步骤：不能告诉用户「没有记录」。
+      expect(find.byKey(const ValueKey('node-progress-empty')), findsNothing);
+      expect(find.byKey(const ValueKey('node-progress-failed')), findsOneWidget);
+      expect(find.text('没有取到思考与工具调用（主机未回应）'), findsOneWidget);
       expect(find.byKey(const ValueKey('node-text-impl')), findsOneWidget);
+
+      // 点重试再发一次。
+      await tester.tap(find.byKey(const ValueKey('node-progress-retry')));
+      await _settle(tester);
+      expect(requests, hasLength(2));
+      await tester.pump(const Duration(seconds: 20));
+      await _settle(tester);
+      // 失败结果不缓存：收起再展开也会重取（点标题行，展开后瓦片中心落在正文上）。
+      final header = find.descendant(
+          of: find.byKey(const ValueKey('node-progress-tile')),
+          matching: find.byType(ListTile));
+      await tester.tap(header.first);
+      await _settle(tester);
+      await tester.tap(header.first);
+      await _settle(tester);
+      expect(requests, hasLength(3));
+      await tester.pump(const Duration(seconds: 20));
+      await _settle(tester);
       await tester.pumpWidget(const SizedBox());
     });
 

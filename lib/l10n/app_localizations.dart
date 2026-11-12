@@ -17927,6 +17927,12 @@ abstract class AppLocalizations {
   /// **'更早的 {count} 段步骤没有保留'**
   String flow_nodeProgressOmitted(int count);
 
+  /// No description provided for @flow_nodeProgressUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有取到思考与工具调用（主机未回应）'**
+  String get flow_nodeProgressUnavailable;
+
   /// No description provided for @flow_nodeProgressEmpty.
   ///
   /// In zh, this message translates to:

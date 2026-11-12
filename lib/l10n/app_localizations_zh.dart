@@ -9865,6 +9865,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get flow_nodeProgressUnavailable => '没有取到思考与工具调用（主机未回应）';
+
+  @override
   String get flow_nodeProgressEmpty => '没有记录到思考或工具调用';
 
   @override

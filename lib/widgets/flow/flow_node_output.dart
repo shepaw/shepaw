@@ -98,6 +98,10 @@ class _FlowNodeProgressSectionState extends State<FlowNodeProgressSection> {
   /// 当前 [FlowNodeProgressSection.revision] 下是否已经取过（含在途）。
   bool _fetched = false;
   bool _loading = false;
+
+  /// 上一次没取到（超时、断线、老主机不认这个请求）。不当成「没有步骤」，
+  /// 也不缓存：给重试按钮，收起再展开也会重取。
+  bool _failed = false;
   FlowNodeProgress? _progress;
 
   @override
@@ -107,6 +111,7 @@ class _FlowNodeProgressSectionState extends State<FlowNodeProgressSection> {
     _abort();
     _fetched = false;
     _loading = false;
+    _failed = false;
     _progress = null;
     if (_expanded) _fetch();
   }
@@ -136,6 +141,7 @@ class _FlowNodeProgressSectionState extends State<FlowNodeProgressSection> {
     _cancel = cancel;
     _fetched = true;
     _loading = true;
+    _failed = false;
     unawaited(_await(seq, cancel));
   }
 
@@ -151,6 +157,8 @@ class _FlowNodeProgressSectionState extends State<FlowNodeProgressSection> {
     setState(() {
       _progress = result;
       _loading = false;
+      _failed = result == null;
+      if (_failed) _fetched = false;
     });
   }
 
@@ -207,8 +215,26 @@ class _FlowNodeProgressSectionState extends State<FlowNodeProgressSection> {
                 ],
               ),
             )
+          else if (_failed)
+            Padding(
+              key: const ValueKey('node-progress-failed'),
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child:
+                        Text(l10n.flow_nodeProgressUnavailable, style: muted),
+                  ),
+                  TextButton(
+                    key: const ValueKey('node-progress-retry'),
+                    onPressed: () => setState(_fetch),
+                    child: Text(l10n.common_retry),
+                  ),
+                ],
+              ),
+            )
           else if (!known)
-            // 老主机 / 没记过步骤（惜宝节点、远程 worker）。
+            // 没记过步骤（惜宝节点、远程 worker、老运行）。
             Padding(
               key: const ValueKey('node-progress-empty'),
               padding: const EdgeInsets.symmetric(vertical: 8),
