@@ -6,14 +6,16 @@ import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/token_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/remote_agent_service.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'storage/test_harness.dart';
 
 /// Needs path_provider + sqflite harness; excluded from default CI via `needs-plugins`.
 void main() {
-  setUpAll(() {
-    // 初始化 FFI
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
+  setUpAll(() async {
+    // 没有这一步，AppPaths.documents 会走 path_provider 的平台通道，
+    // 报 "Binding has not yet been initialized"。harness 把 FFI、平台通道
+    // 和 AppPaths 根目录一起钉到临时目录。
+    await StorageTestHarness.init();
   });
 
   group('Remote Agent Creation Integration Test', () {

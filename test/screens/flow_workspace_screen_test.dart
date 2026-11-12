@@ -1018,6 +1018,15 @@ class _Harness {
                       ]
                     : [],
               },
+            // 一有草稿，FlowEditorController 就会自动问差异。不回包会让
+            // HubFlow._request 挂着 10 秒超时 Timer，flutter_test 在用例
+            // 结束时报「A Timer is still pending」。
+            'flow_diff_req' => {
+                'type': 'flow_diff_resp',
+                'success': true,
+                'nodes': <dynamic>[],
+                'header': <dynamic>[],
+              },
             'flow_validate_req' => {
                 'type': 'flow_validate_resp',
                 'success': true,

@@ -4,14 +4,16 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/dispatch_task.dart';
 import 'package:shepaw/services/local_database_service.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import '../../storage/test_harness.dart';
 
 /// dispatch_tasks 表的状态机测试（DAO 层）。
 /// Needs path_provider + sqflite harness; excluded from default CI via `needs-plugins`.
 void main() {
-  setUpAll(() {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
+  setUpAll(() async {
+    // harness 里已经做了 sqfliteFfiInit 并把 AppPaths 钉到临时目录，
+    // 少了它会因平台通道未初始化而整个文件失败。
+    await StorageTestHarness.init();
   });
 
   group('DispatchTaskDao state machine', () {

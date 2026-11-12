@@ -7,7 +7,15 @@ import 'package:shepaw/services/token_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/remote_agent_service.dart';
 
+import 'storage/test_harness.dart';
+
 void main() {
+  setUpAll(() async {
+    // 数据库要落盘：把 path_provider / sqflite / AppPaths 都钉到临时目录，
+    // 否则无插件环境下会报 "Binding has not yet been initialized"。
+    await StorageTestHarness.init();
+  });
+
   group('Service Layer Integration Tests', () {
     test('Create agent workflow', () async {
       // 模拟创建助手的完整流程

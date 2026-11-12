@@ -1,12 +1,17 @@
 @Tags(['needs-plugins'])
 library;
 
+import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive_io.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/services/data_export_import_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/local_file_storage_service.dart';
 import 'package:shepaw/services/logger_service.dart';
+
+import '../storage/test_harness.dart';
 
 /// 核心功能集成测试
 ///
@@ -18,9 +23,21 @@ import 'package:shepaw/services/logger_service.dart';
 /// Needs path_provider / filesystem harness; excluded from default CI via `needs-plugins`.
 
 void main() {
-  // 测试在移动端运行，无需特殊初始化
-  setUpAll(() {
-    // 测试初始化
+  setUpAll(() async {
+    // 导出/导入要碰 AppPaths 和 getTemporaryDirectory：统一装平台 harness，
+    // 不然本地跑会报 "Binding has not yet been initialized"。
+    await StorageTestHarness.init();
+    // 打全量备份时 _createMetadata 要读 package_info_plus；无插件环境下
+    // 给一份假版本，否则 exportAllData 会吞掉 MissingPluginException 返回 null。
+    const packageInfo = MethodChannel('dev.fluttercommunity.plus/package_info');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(packageInfo, (call) async => <String, dynamic>{
+              'appName': 'ShePaw Test',
+              'packageName': 'com.shepaw.test',
+              'version': '1.0.0',
+              'buildNumber': '1',
+              'buildSignature': '',
+            });
   });
 
   group('核心功能集成测试', () {
@@ -57,19 +74,24 @@ void main() {
       test('应该能导出和导入 Channel 数据', () async {
         final db = await dbService.database;
 
+        // 按当前 schema 补齐 NOT NULL 列（created_at/updated_at 是 TEXT）。
+        final now = DateTime.now().millisecondsSinceEpoch.toString();
+
         // 创建测试 Channel
         await db.insert('channels', {
           'id': 'test-channel-1',
           'name': 'Test Channel',
           'type': 'group',
-          'created_at': DateTime.now().millisecondsSinceEpoch,
+          'created_at': now,
+          'updated_at': now,
+          'created_by': 'user-1',
         });
 
         // 添加成员
         await db.insert('channel_members', {
           'channel_id': 'test-channel-1',
-          'user_id': 'user-1',
-          'joined_at': DateTime.now().millisecondsSinceEpoch,
+          'agent_id': 'user-1',
+          'joined_at': now,
         });
 
         // 添加消息
@@ -77,8 +99,10 @@ void main() {
           'id': 'msg-1',
           'channel_id': 'test-channel-1',
           'sender_id': 'user-1',
+          'sender_type': 'user',
+          'sender_name': 'User 1',
           'content': 'Test message',
-          'created_at': DateTime.now().millisecondsSinceEpoch,
+          'created_at': now,
         });
 
         // 导出 Channel
@@ -110,16 +134,21 @@ void main() {
       });
 
       test('应该能验证元数据', () async {
-        // 创建有效的元数据目录
-        final tempDir = Directory.systemTemp.createTempSync('test_metadata_');
-        final metadataFile = File('${tempDir.path}/metadata.json');
-        await metadataFile.writeAsString('{"version":"1.0"}');
+        final zipPath = await exportImportService.exportAllData();
+        expect(zipPath, isNotNull, reason: '全量导出不该被平台插件挡住');
 
-        final valid = await exportImportService.exportAllData();
-        expect(valid, isNotNull);
-
-        // 清理
-        await tempDir.delete(recursive: true);
+        // 包里要有 _validateMetadata 认得的 metadata.json。
+        final archive = ZipDecoder()
+            .decodeBytes(await File(zipPath!).readAsBytes());
+        // ZipFileEncoder.addDirectory 会把外层 export_<ts>/ 一起打进去。
+        final metadataFile =
+            archive.firstWhere((f) => f.name.endsWith('/metadata.json'));
+        final metadata = json.decode(
+          utf8.decode(metadataFile.content as List<int>),
+        ) as Map<String, dynamic>;
+        expect(metadata['version'], '1.0',
+            reason: '_validateMetadata 只认 version=1.0');
+        expect(metadata['appVersion'], isNotEmpty);
       });
     });
   });

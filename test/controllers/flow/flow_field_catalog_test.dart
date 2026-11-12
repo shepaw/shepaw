@@ -36,11 +36,15 @@ void main() {
     final paths = specs.map((s) => s.path).toList();
     expect(paths.first, 'desc');
     expect(paths, contains('task.prompt'));
-    expect(paths, contains('task.uses'));
+    // 执行者改成检查器顶部的专用选择器，不再混在普通字段里（169d2579）。
+    expect(paths, isNot(contains('task.uses')));
     expect(paths, contains('task.output'));
     expect(paths, contains('task.context'));
     expect(paths, contains('when'));
-    expect(paths.indexOf('desc'), lessThan(paths.indexOf('task.uses')));
+    // 主机给的字段在前，客户端独有的补在后面；拿客户端补的字段来验顺序。
+    expect(paths.indexOf('desc'), lessThan(paths.indexOf('when')));
+    expect(paths.indexOf('task.session'),
+        lessThan(paths.indexOf('task.output')));
     expect(paths.where((p) => p == 'desc').length, 1);
     // 标签仍用主机的。
     final desc = specs.firstWhere((s) => s.path == 'desc');

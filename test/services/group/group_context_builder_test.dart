@@ -111,8 +111,11 @@ void main() {
       final cli = ctx['cli'] as Map<String, dynamic>;
       expect(cli['method'], 'shepaw pouch');
       expect(cli['note'], contains('Hub'));
-      expect(cli['note'], contains('forwarded to the paired App'));
+      // 玉简 / 技能现在都由本机 Hub 直接落盘，不再转给配对的 App gate（79f435c7）。
+      expect(cli['note'], contains('run locally on this host'));
+      expect(cli['note'], isNot(contains('forwarded to the paired App')));
       expect(cli['note'], contains('Do not use hub.cli.execute'));
+      expect(cli['note'], contains('submit --summary'));
       expect(cli['note'], isNot(contains('New sessions')));
       expect(cli['note'], isNot(contains('session create')));
     });
