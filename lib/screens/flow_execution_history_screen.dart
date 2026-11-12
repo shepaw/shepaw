@@ -77,6 +77,24 @@ class _FlowExecutionHistoryScreenState
     if (_runId != null) widget.onRunOpenChanged?.call(true);
   }
 
+  /// 左侧换了一条流程时，这一页会被原地更新而不是拆掉重建。
+  /// 不把打开的运行清掉，右边就会一直停在上一条的执行详情。
+  @override
+  void didUpdateWidget(FlowExecutionHistoryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final switched = oldWidget.peerId != widget.peerId ||
+        oldWidget.scope != widget.scope ||
+        oldWidget.flowName != widget.flowName;
+    if (!switched) return;
+    _runId = widget.initialRunId;
+    _title = widget.initialTitle;
+    _instanceId = widget.initialInstanceId;
+    _instanceScope = widget.initialInstanceScope;
+    _runScope = widget.initialRunScope;
+    widget.onBindBack?.call(_runId == null ? null : _backToList);
+    widget.onRunOpenChanged?.call(_runId != null);
+  }
+
   @override
   void dispose() {
     widget.onBindBack?.call(null);

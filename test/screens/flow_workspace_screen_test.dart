@@ -424,6 +424,53 @@ steps:
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('看执行详情时换一条流程，右边换成新流程的历史', (tester) async {
+    final harness = _Harness()
+      ..flows = [
+        {'name': 'dev', 'latest': 3},
+        {'name': 'other', 'latest': 1},
+      ]
+      ..runs = [
+        {
+          'run_id': 'run_dev',
+          'flow': 'dev',
+          'status': 'failed',
+          'started_ms': 1700000000000,
+          'input_title': '旧流程的这一次',
+        },
+        {
+          'run_id': 'run_other',
+          'flow': 'other',
+          'status': 'succeeded',
+          'started_ms': 1700000001000,
+          'input_title': '新流程的这一次',
+        },
+      ];
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byKey(const ValueKey('flow-row-dev')));
+    await _settle(tester);
+    await tester.tap(find.text('旧流程的这一次'));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-execution-run-run_dev')),
+        findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('flow-row-other')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-execution-run-run_dev')),
+        findsNothing);
+    expect(find.byKey(const ValueKey('flow-executions-page')), findsOneWidget);
+    expect(find.text('新流程的这一次'), findsOneWidget);
+    expect(find.text('旧流程的这一次'), findsNothing);
+    expect(
+      harness.sent.any((frame) =>
+          frame['type'] == 'flow_run_list_req' && frame['name'] == 'other'),
+      isTrue,
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('设计页菜单能打开执行历史', (tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;

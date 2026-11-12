@@ -807,6 +807,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     _executionDetailOpen = runId != null;
     _executionBack = null;
     unawaited(_showPane<void>((_) => FlowExecutionHistoryScreen(
+          // 换流程必须换成另一页。同类型、没 key 时 Flutter 会复用旧 State，
+          // 打开中的运行详情就留在右边。
+          key: ValueKey('flow-exec-history-${_host}|${widget.scope}|${flow.name}'),
           client: _client,
           peerId: _host,
           scope: widget.scope,
