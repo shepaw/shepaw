@@ -115,7 +115,8 @@ void main() {
     await controller.refresh();
 
     expect(controller.latestMessages[agentId]?['id'], 'm-newer-$suffix');
-    // 预览指向有消息的那条会话，而不是最近被碰过的空壳。
+    // 没记过人工激活时，入口沿用「最新消息落在哪条会话」的预览频道。
+    // 有人工激活指针时的覆盖规则见 conversation_list_last_activated_test.dart。
     expect(controller.agentChannelId(agentId), newer);
     // 两条未读里扣掉正在看的那条，只剩旧会话的 1 条。
     expect(controller.unreadCounts[agentId], 1);

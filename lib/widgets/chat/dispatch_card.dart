@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/dispatch_task.dart';
@@ -5,6 +7,7 @@ import '../../models/message.dart';
 import '../../peer/services/hub_group_sessions.dart';
 import '../../screens/chat_screen.dart';
 import '../../services/dispatch/dispatch_service.dart';
+import '../../services/session/activated_session_recorder.dart';
 import '../../services/session/dm_session_create_service.dart';
 
 /// She 任务派发状态卡（在 She↔用户 频道中渲染）。
@@ -462,6 +465,9 @@ class GroupSessionSwitchCard extends StatelessWidget {
                         );
                         return;
                       }
+                      // 「打开」会话切换卡也是人工点选：这里直接 push
+                      // ChatScreen，不走 ChatNavigationService，得自己补记。
+                      unawaited(rememberActivatedDmChannel(newSessionId));
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => ChatScreen(

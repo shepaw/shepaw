@@ -65,6 +65,7 @@ import 'group_member_detail_screen.dart';
 import 'agent_storage_bag_screen.dart';
 import 'storage_directory_opener.dart';
 import '../services/logger_service.dart';
+import '../services/session/activated_session_recorder.dart';
 import '../services/error_handler_service.dart';
 import '../services/she_service.dart';
 import 'channel_trace_screen.dart';
@@ -593,7 +594,8 @@ class _ChatScreenState extends State<ChatScreen>
           :final agentId,
           :final agentName,
           :final agentAvatar,
-          :final embedded
+          :final embedded,
+          :final manualActivation
         ):
         // 新建/切换会话（createNewSession 等）会导航替换当前页：必须先关抽屉
         // 并等它彻底销毁，否则共享动画控制器随本页 dispose，抽屉冻结在屏幕
@@ -605,6 +607,7 @@ class _ChatScreenState extends State<ChatScreen>
           agentName: agentName,
           agentAvatar: agentAvatar,
           embedded: embedded,
+          manualActivation: manualActivation,
         ));
       case ShowLoadingOverlayEvent(:final message):
         _showClearingOverlay(
@@ -2853,6 +2856,20 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  /// 记下「用户亲手点开的是哪条会话」，供对话入口恢复。
+  ///
+  /// 只在明确的会话点选（抽屉行 / 新建 / 分叉 / 复制 / 搜索命中）时调用。从
+  /// 对话列表点进来不算：那只是打开这个 agent，用户并没有挑过会话，记下来会
+  /// 把当时兜底解析出的频道永久钉住。
+  ///
+  /// 群会话 / 群成员中转 / She 中转都不是会话列表里 agent 行的落点，由
+  /// [rememberActivatedDmChannel] 校验后拒绝；只用 channelId 打开的页面
+  /// （widget.agentId 为空）也由它从频道成员里解析出 agent。
+  void _rememberActivatedSession(String channelId, {String? agentId}) {
+    if (channelId.isEmpty) return;
+    unawaited(rememberActivatedDmChannel(channelId, agentId: agentId));
+  }
+
   /// [NavigateToSessionEvent] 处理器：先关抽屉并等它彻底销毁，再原地替换
   /// 聊天页。停靠面板且同 family 时原位换频道（含桌面嵌入）；否则嵌入模式
   /// 走 [onSwitchChannel] 重建右栏。避免共享动画控制器被 dispose 导致抽屉
@@ -2863,7 +2880,13 @@ class _ChatScreenState extends State<ChatScreen>
     String? agentName,
     String? agentAvatar,
     bool embedded = false,
+    bool manualActivation = true,
   }) async {
+    // 新建 / 分叉 / 复制带来的会话点选：对话入口要回到这里。清空 / 删除后
+    // 算出来的兜底频道不是人工点选，不写指针。
+    if (manualActivation) {
+      _rememberActivatedSession(channelId, agentId: agentId);
+    }
     await _closeDrawerAndWait();
     if (!mounted) return;
     // 固定面板：新建会话 / 分叉 / 重置等（createNewSession 等发出本事件）
@@ -2998,6 +3021,8 @@ class _ChatScreenState extends State<ChatScreen>
     String channelId, {
     String? highlightMessageId,
   }) async {
+    // 抽屉行 / 搜索命中：用户亲手挑了这条会话。
+    _rememberActivatedSession(channelId);
     // 离开当前会话：若它是「新建会话」留下的空会话，自动删除。输入框里
     // 还有没发出去的内容时，草稿先落盘，清理逻辑会把这条会话留下。
     _persistUnsentComposerBeforeLeave();

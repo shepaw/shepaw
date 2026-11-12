@@ -12,6 +12,7 @@ import 'services/remote_agent_service.dart';
 import 'services/contacts_directory.dart';
 import 'services/message_collapse_preference.dart';
 import 'services/composer_draft_service.dart';
+import 'services/session/last_activated_session_store.dart';
 import 'services/vision/reference_album_service.dart';
 import 'peer/services/hub_event_client.dart';
 import 'peer/services/hub_group_registry.dart';
@@ -58,6 +59,11 @@ void setupServiceLocator() {
   );
   getIt.registerLazySingleton<ComposerDraftService>(
     () => ComposerDraftService(),
+  );
+  // 「对话入口」回到最近一次人工点开的会话。与 channels.updated_at 分开存，
+  // 不参与会话列表排序，也不被主机同步覆写。
+  getIt.registerLazySingleton<LastActivatedSessionStore>(
+    () => LastActivatedSessionStore(),
   );
 
   // 人脸参考相册：CLI / UI 共用同一实例（embedding 向量库懒加载）。

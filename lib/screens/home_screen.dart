@@ -9,6 +9,7 @@ import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../services/chat_service.dart';
 import '../services/composer_draft_service.dart';
+import '../services/session/activated_session_recorder.dart';
 import 'chat_screen.dart';
 import '../widgets/agent_search_delegate.dart';
 import '../widgets/add_entry_menu.dart';
@@ -374,6 +375,9 @@ class HomeScreenState extends State<HomeScreen> {
     String? highlightMessageId,
     String? groupFamilyId,
   }) {
+    // 全局搜索命中也是人工点开了一条明确的会话；群 / 中转会话由 recorder
+    // 校验后拒绝，不会污染 agent 指针。
+    unawaited(rememberActivatedDmChannel(channelId));
     if (widget.embedded && widget.onConversationSelected != null) {
       widget.onConversationSelected!(ConversationSelection(
         channelId: channelId,

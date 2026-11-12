@@ -23,6 +23,7 @@ import '../services/composer_draft_service.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
+import '../services/session/last_activated_session_store.dart';
 import '../config/product_features.dart';
 import '../services/remote_agent_service.dart';
 
@@ -33,6 +34,7 @@ class ConversationListController extends ChangeNotifier {
     LocalApiService? apiService,
     LocalDatabaseService? databaseService,
     ChatService? chatService,
+    LastActivatedSessionStore? lastActivatedStore,
   })  : _apiService = apiService ?? LocalApiService(),
         _databaseService = databaseService ??
             (getIt.isRegistered<LocalDatabaseService>()
@@ -41,11 +43,25 @@ class ConversationListController extends ChangeNotifier {
         _chatService = chatService ??
             (getIt.isRegistered<ChatService>()
                 ? getIt<ChatService>()
-                : ChatService());
+                : ChatService()),
+        _lastActivatedStore = lastActivatedStore;
 
   final LocalApiService _apiService;
   final LocalDatabaseService _databaseService;
   final ChatService _chatService;
+  final LastActivatedSessionStore? _lastActivatedStore;
+
+  LastActivatedSessionStore? get _lastActivated =>
+      _lastActivatedStore ??
+      (getIt.isRegistered<LastActivatedSessionStore>()
+          ? getIt<LastActivatedSessionStore>()
+          : null);
+
+  ComposerDraftService? get _drafts =>
+      _draftService ??
+      (getIt.isRegistered<ComposerDraftService>()
+          ? getIt<ComposerDraftService>()
+          : null);
 
   List<Agent> _agents = [];
   List<Agent> _filteredAgents = [];
@@ -148,6 +164,11 @@ class ConversationListController extends ChangeNotifier {
   String? groupChannelId(String groupId) => _groupChannelIds[groupId];
 
   /// 聊天页切到新会话后回写，避免列表缓存还指着上一个频道。
+  ///
+  /// 只更新内存缓存，不记人工激活指针：桌面原位换频道的调用方可能带着
+  /// groupFamilyId（群会话 / 群成员中转），在这里写会把 agent 指针污染成
+  /// 一条不是 agent 行落点的频道。指针统一由会话点选处的
+  /// `rememberActivatedDmChannel` 校验后写入。
   void rememberAgentChannel(String agentId, String channelId) {
     _agentChannelIds[agentId] = channelId;
   }
@@ -546,6 +567,25 @@ class ConversationListController extends ChangeNotifier {
       'agent unread counts',
       const <String, int>{},
     );
+    // 本机人工点开的会话。主机同步会覆写 channels.updated_at，所以「上次
+    // 打开的是哪条」不能只靠活跃时间，得单独记一份。指针读失败只回落到
+    // 活跃时间 / 最新消息，不能把整批 agent 预览一起丢掉。
+    Map<String, String> lastActivated = const <String, String>{};
+    final activatedStore = _lastActivated;
+    if (activatedStore != null) {
+      try {
+        lastActivated = await activatedStore.readAll([
+          for (final agent in agents)
+            LastActivatedSessionStore.agentKey(agent.id),
+        ]);
+      } catch (e) {
+        LoggerService().error(
+          'Failed to read last activated sessions',
+          tag: 'ConversationList',
+          error: e,
+        );
+      }
+    }
 
     final viewingChannelId = AppLifecycleService().activeChannelId ?? '';
     for (final agent in agents) {
@@ -570,11 +610,29 @@ class ConversationListController extends ChangeNotifier {
         final previewChannel = latest?['channel_id'] as String?;
         final fallbackChannelId = activeChannels[agent.id] ??
             _chatService.generateChannelId(userId, agent.id);
-        // 预览来自有消息的那条会话。最近被碰过的空壳不能把点击带进空白页。
-        _agentChannelIds[agent.id] =
+        // 对话入口回到用户最近一次亲手点开、且还保留着的那条会话。
+        //
+        // 「保留」= 有落库消息，或输入框里还有没发出去的草稿（与
+        // pruneEmptySessionBeforeSwitch 的口径一致）。误点「新建会话」留下的
+        // 空壳不该把点击带进空白页；会话被删掉后指针也自然失效。
+        // 只有都没有时才回落到「最新消息落在哪条会话」的预览口径 —— 预览
+        // 文字本身仍然取跨会话的最新一条，和入口落在哪条会话无关。
+        String? entryChannelId;
+        for (final candidate in <String?>[
+          lastActivated[LastActivatedSessionStore.agentKey(agent.id)],
+          activeChannels[agent.id],
+        ]) {
+          if (candidate == null || candidate.isEmpty) continue;
+          if (!channelIds.contains(candidate)) continue;
+          if (!_isRetainedSession(candidate, latestByChannel)) continue;
+          entryChannelId = candidate;
+          break;
+        }
+        entryChannelId ??=
             (previewChannel != null && previewChannel.isNotEmpty)
                 ? previewChannel
-                : fallbackChannelId;
+                : null;
+        _agentChannelIds[agent.id] = entryChannelId ?? fallbackChannelId;
         _latestMessages[agent.id] = latest;
         _unreadCounts[agent.id] = unread;
       } catch (e) {
@@ -585,6 +643,19 @@ class ConversationListController extends ChangeNotifier {
         );
       }
     }
+  }
+
+  /// 这条会话是不是「保留下来了」：有落库消息，或输入框里还有没发出去的草稿。
+  ///
+  /// 与 `pruneEmptySessionBeforeSwitch` 的判定口径一致 —— 空壳会话即使还在库里
+  /// 也不该成为对话入口的落点。草稿按频道 id 取，不看 `agent:` 列表别名，
+  /// 否则同一 agent 下任意一条会话都会被误判成有内容。
+  bool _isRetainedSession(
+    String channelId,
+    Map<String, Map<String, dynamic>> latestByChannel,
+  ) {
+    if (latestByChannel.containsKey(channelId)) return true;
+    return _drafts?.getDraft(channelId).trimRight().isNotEmpty ?? false;
   }
 
   /// 批量查询失败时降级为 [fallback] 并记日志，不让整轮刷新崩掉。

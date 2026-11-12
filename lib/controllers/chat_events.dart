@@ -49,12 +49,18 @@ class NavigateToSessionEvent extends ChatEvent {
   final String? agentName;
   final String? agentAvatar;
   final bool embedded;
+
+  /// 目标会话是不是用户亲手挑的。清空 / 批量删除后由代码算出来的兜底会话
+  /// 不是人工点选，不该覆盖「最近人工激活」指针（见
+  /// `ChatNavigationService.openChannel` 的同名约束）。
+  final bool manualActivation;
   NavigateToSessionEvent({
     required this.channelId,
     this.agentId,
     this.agentName,
     this.agentAvatar,
     this.embedded = false,
+    this.manualActivation = true,
   });
 }
 

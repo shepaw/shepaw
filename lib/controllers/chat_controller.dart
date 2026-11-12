@@ -56,6 +56,7 @@ import '../services/group/group_member_session_service.dart';
 import '../services/group/group_orchestration_continuation.dart';
 import '../services/dispatch/she_relay_session_service.dart';
 import '../services/composer_draft_service.dart';
+import '../services/session/last_activated_session_store.dart';
 import '../peer/services/hub_group_registry.dart';
 import '../service_locator.dart' show getIt;
 import '../utils/session_utils.dart';

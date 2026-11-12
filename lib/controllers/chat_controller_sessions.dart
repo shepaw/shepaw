@@ -64,6 +64,7 @@ mixin _SessionOps on _ChatControllerBase {
     }
     await localDatabaseService.deleteChannelMessages(currentId);
     await localDatabaseService.deleteChannel(currentId);
+    await _forgetActivatedSession(currentId);
   }
 
   /// 这条会话的输入框草稿还在（按频道 id，不看列表别名）。
@@ -80,7 +81,18 @@ mixin _SessionOps on _ChatControllerBase {
         .isNotEmpty;
   }
 
-  Future<void> createNewSession() async {
+  /// 会话被删掉后清掉指向它的「最近人工激活」指针，免得同 id 的会话后来
+  /// 又被主机同步回来时把对话入口带错地方。等它落地再返回，避免紧接着的
+  /// 列表补刷（或立刻退进程）又读到盘上的旧值。
+  Future<void> _forgetActivatedSession(String channelId) async {
+    if (channelId.isEmpty) return;
+    if (!getIt.isRegistered<LastActivatedSessionStore>()) return;
+    await getIt<LastActivatedSessionStore>().forgetChannel(channelId);
+  }
+
+  /// [manualActivation] 为 false 时（批量删除后自动补一条空会话）不记人工
+  /// 激活指针：那条频道是算出来的，不是用户挑的。
+  Future<void> createNewSession({bool manualActivation = true}) async {
     if (agentId == null) return;
 
     final userId = getUserId();
@@ -140,6 +152,7 @@ mixin _SessionOps on _ChatControllerBase {
         agentName: agentName,
         agentAvatar: agentAvatar,
         embedded: embedded,
+        manualActivation: manualActivation,
       ));
     } catch (e) {
       _emit(ShowErrorSnackBarEvent('chat_newSessionFailed:$e'));
@@ -263,6 +276,7 @@ mixin _SessionOps on _ChatControllerBase {
       if (sessions.length > 1) {
         await localDatabaseService.deleteChannelMessages(sessionId);
         await localDatabaseService.deleteChannel(sessionId);
+        await _forgetActivatedSession(sessionId);
 
         final remaining = sessions.where((s) => s.id != sessionId).toList();
         final targetSession = remaining.first;
@@ -274,6 +288,8 @@ mixin _SessionOps on _ChatControllerBase {
           agentName: agentName,
           agentAvatar: agentAvatar,
           embedded: embedded,
+          // 清掉当前会话后跳到「剩下第一条」是兜底，不是人工点选。
+          manualActivation: false,
         ));
       } else {
         await localDatabaseService.deleteChannelMessages(sessionId);
@@ -324,6 +340,7 @@ mixin _SessionOps on _ChatControllerBase {
         await localDatabaseService.deleteChannelMessages(session.id);
         if (session.id != defaultChannelId) {
           await localDatabaseService.deleteChannel(session.id);
+          await _forgetActivatedSession(session.id);
         }
       }
 
@@ -355,6 +372,8 @@ mixin _SessionOps on _ChatControllerBase {
           agentName: agentName,
           agentAvatar: agentAvatar,
           embedded: embedded,
+          // 清空全部会话后回默认频道是兜底，不是人工点选。
+          manualActivation: false,
         ));
       }
     } catch (e) {
@@ -382,6 +401,7 @@ mixin _SessionOps on _ChatControllerBase {
         await GroupMemberSessionService(localDatabaseService)
             .deleteMemberSessionsForGroupChannel(currentChannelId!);
         await localDatabaseService.deleteChannel(currentChannelId!);
+        await _forgetActivatedSession(currentChannelId!);
 
         final remaining =
             sessions.where((s) => s.id != currentChannelId).toList();
@@ -391,6 +411,7 @@ mixin _SessionOps on _ChatControllerBase {
         _emit(NavigateToSessionEvent(
           channelId: targetSession.id,
           embedded: embedded,
+          manualActivation: false,
         ));
       } else {
         await chatService.clearGroupSessionHistory(
@@ -437,6 +458,7 @@ mixin _SessionOps on _ChatControllerBase {
         _emit(NavigateToSessionEvent(
           channelId: parentGroupId,
           embedded: embedded,
+          manualActivation: false,
         ));
       }
     } catch (e) {
@@ -537,6 +559,7 @@ mixin _SessionOps on _ChatControllerBase {
         }
         await localDatabaseService.deleteChannelMessages(id);
         await localDatabaseService.deleteChannel(id);
+        await _forgetActivatedSession(id);
       }
 
       _emit(DismissOverlayEvent());
@@ -556,10 +579,12 @@ mixin _SessionOps on _ChatControllerBase {
             agentName: isGroup ? null : agentName,
             agentAvatar: isGroup ? null : agentAvatar,
             embedded: embedded,
+            // 删完当前会话自动补位到剩下的某条，不是人工点选。
+            manualActivation: false,
           ));
         } else if (!isGroup) {
           // 最后一个单聊会话：开一个空会话，避免停在已删除的 channel 上。
-          await createNewSession();
+          await createNewSession(manualActivation: false);
         }
       }
 
