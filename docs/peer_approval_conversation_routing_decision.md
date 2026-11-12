@@ -629,10 +629,8 @@ App：
 
 ### 仍未覆盖（本轮新增）
 
-- 主机回的 `session_mismatch` ack 目前只让「协议上拒绝显式化」；App 的
-  `pouch_interaction_resp` 路径仍不注册 ack waiter，因此还不会自动回滚已乐观
-  写入的选择。要彻底收敛需要给 4 个 `_answerHubInteraction` 调用点统一加
-  归属前置校验或 ack 等待（本轮未扩大改动面）。
+- 第 8 轮留下的「主机回 session_mismatch ack 但 App 不接」缺口已在第 9 轮
+  闭合（见下）：hub 卡提交改为归属前置校验 + 拒绝回执订阅回滚。
 - 主机侧 `card_channel_id(frame)` 的 `session_id` 回退遇到 `group:` /
   `flow:` 主机键仍无法匹配 App 频道；逐一核对生产帧均带 `channel_id`，未找到
   可触发的错判，但属残留兼容缺口。
@@ -640,3 +638,59 @@ App：
   会误拒（id 为 UUID / 确定性 flow id，概率极低）。
 - 沿用第 6–7 轮的既有缺口：`flow:` 审批卡空归属、`take_deferred` 记不到作答
   设备、广播仍是设备级 fan-out、`CardStatus` 账本只在进程内、两阶段上线窗口。
+
+## 第 9 轮：补 hub 交互卡拒绝闭环（2026-11-12）
+
+第 8 轮评审后判断：不再跑泛泛的静态评审（边际收益下降、返修本身在引入
+回归、核心场景从未真机联调），改为**只补一个已确认的功能缺口，然后真机
+联调**。缺口：主机在 `PouchInteractionResp` 跨会话拒绝时已回
+`agent_card_resp_ack(ok=false, session_mismatch)`，但 App 的 hub 交互卡是
+「`sendControl` 后立刻乐观落库 selected_*」，既不注册 ack waiter 也不做归属
+前置校验 → 错误会话一直显示已提交；`hub-ix-<id>` 是全局确定性行，正确会话
+重载同一行也会点不动，主机等待位要挂到 30 分钟超时。
+
+### 两道防线
+
+- **归属前置校验（主防线，零延迟）**：`_renderInteraction` 落库时把
+  `hostSessionIdForChannel(channelId)` 写成消息顶层 `card_channel_id`（此前
+  hub 卡没有归属字段，导致 `handleActionSelected` 里那道校验对它无效）。
+  `_answerHubInteraction` 改为三态返回 `bool?`：`true`=已发送、`false`=不是
+  hub 卡（继续走本地群卡逻辑）、`null`=归属不符已拦下（不发送、不乐观落库、
+  弹提示）。4 个调用点（`handleActionSelected` / `handleSingleSelectSubmitted`
+  / `handleMultiSelectSubmitted` / `handleFormSubmitted`）统一适配。
+- **拒绝回执订阅回滚（兜底，覆盖归属缺失的旧行 / 慢连接）**：
+  `PeerAgentClientService` 新增 `cardRejectedEvents` 广播流，`_onCardRespAck`
+  在 `ok=false` 时发出；`ChatController` 订阅 `_rollbackRejectedCardAnswer`，
+  按 `hub_interaction.interaction_id` 反查，**只撤刚被乐观写成已答的卡**
+  （认 `selected_action_id` / `selected` / `submitted_values`，不认 `closed`
+  ——作废态不该恢复成可答），patch 回写 `mergeMessageMetadata` 并弹提示。
+  没有卡片被回滚时不重复弹（表单 / 审批卡走 `submitForm` 已自己抛异常）。
+  订阅在 `dispose` 里 cancel。
+
+### 为什么不再做 ack 等待
+
+`pouch_interaction_resp` 成功路径主机是 `Quiet`（不回 ack），只有拒绝才回。
+若让 4 个调用点等 ack 再乐观落库，每次点卡都要白等超时；前置校验挡住绝
+大多数，拒绝回执回滚兜住其余，两条都不改变正常路径的延迟。
+
+### 验证
+
+- App：`flutter analyze` 0 error；新增
+  `test/controllers/chat_hub_card_rejection_test.dart` 4 例（跨会话卡提交前
+  被拦且不留已答状态、本会话卡照常提交、session_mismatch 回执撤回选择、
+  已作废卡不被错误恢复）；卡片相关 8 个文件 67 例全绿；全量 3962 例仍是
+  同样的 4 个基线失败，无新增。
+- 主机：本轮无代码改动，765 例复核全绿（拒绝回执见第 8 轮 `7ec1b1d`）。
+
+### 下一步：真机联调（尚未做）
+
+单测全是 mock，以下场景需要重编重启 hub + App 真机验证：
+
+1. 同一 agent 开两个 DM 会话 A / B，各触发一张提问卡；在 A 回答 B 的卡
+   → 应被前置校验挡住并提示，B 的卡仍可答，主机等待位不被消费。
+2. 单会话内正常作答 → 卡片标已答、主机收场、无 `session_mismatch` 误拒。
+3. 跨设备：设备 X 答掉卡、设备 Y 15 秒内复查 → Y 标「已在其他设备回答」
+   并保留卡片；错误会话的残留卡应被移除而不是保活。
+4. hub 重启 / 手机重连补投：旧式 `pouch_turn_event kind=interaction` 卡带
+   的 `channel_id` 与 App 频道口径一致；孤儿审批卡重启后能答。
+5. `flow:` 会话（空归属）的审批卡与群聊 hub 卡：确认不会误删、不会串会话。

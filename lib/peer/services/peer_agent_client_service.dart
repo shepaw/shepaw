@@ -2453,6 +2453,16 @@ class PeerAgentClientService {
   Stream<({String approvalId, String reason})> get interactionClosedEvents =>
       _interactionClosedController.stream;
 
+  /// 主机明确拒收了这张卡的答案（`ok=false`）。hub 交互卡的提交是
+  /// 「发送即乐观落库」，没有 ack waiter，聊天页靠这条流把刚写进去的
+  /// selected_* / submitted_values 撤回来，否则错误会话会一直显示已提交，
+  /// 而 `hub-ix-<id>` 是全局确定性行，正确会话重载后也会点不动。
+  /// 单例上的长期流，[stop] 不关闭它。
+  final _cardRejectedController =
+      StreamController<({String approvalId, String reason})>.broadcast();
+  Stream<({String approvalId, String reason})> get cardRejectedEvents =>
+      _cardRejectedController.stream;
+
   /// 一张已经在回合内等超时的卡片：回合结束，卡片留着。
   /// 聊天页据此把内存里的卡标成 deferred（仍可点），不要收成作废态。
   /// `reopened` 表示本机在回合内提交过、但答案没送到主机：卡片要从「已提交」
@@ -9283,6 +9293,9 @@ class PeerAgentClientService {
     // 把已死卡标成已答。有没有等待位都一样记账。
     if (!ack.ok && PeerCardRejectedException(ack.reason).isTerminal) {
       _noteTerminalRejection(approvalId, ack.reason);
+    }
+    if (!ack.ok) {
+      _cardRejectedController.add((approvalId: approvalId, reason: ack.reason));
     }
     if (waiters == null) return;
     for (final waiter in waiters) {

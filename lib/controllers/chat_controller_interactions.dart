@@ -960,10 +960,12 @@ mixin _InteractionOps on _ChatControllerBase {
       }
     }
 
-    if (await _answerHubInteraction(originalMessage, {
+    final hubAnswer = await _answerHubInteraction(originalMessage, {
       'selected_action_id': actionId,
       'selected_action_label': actionLabel,
-    })) {
+    });
+    if (hubAnswer == null) return; // 归属校验拦下：不发送也不乐观落库
+    if (hubAnswer) {
       _markActionConfirmationSelected(
         originalMessage.id,
         actionId: actionId,
@@ -1075,11 +1077,13 @@ mixin _InteractionOps on _ChatControllerBase {
     String optionId,
     String optionLabel,
   ) async {
-    if (await _answerHubInteraction(originalMessage, {
+    final hubAnswer = await _answerHubInteraction(originalMessage, {
       'selected': [optionId],
       'selected_option_id': optionId,
       'selected_option_label': optionLabel,
-    })) {
+    });
+    if (hubAnswer == null) return;
+    if (hubAnswer) {
       _markSelectAnswered(originalMessage.id, 'single_select', {
         'selected_option_id': optionId,
         'selected_option_label': optionLabel,
@@ -1130,9 +1134,11 @@ mixin _InteractionOps on _ChatControllerBase {
     List<String> optionIds,
     String summary,
   ) async {
-    if (await _answerHubInteraction(originalMessage, {
+    final hubAnswer = await _answerHubInteraction(originalMessage, {
       'selected': optionIds,
-    })) {
+    });
+    if (hubAnswer == null) return;
+    if (hubAnswer) {
       _markSelectAnswered(originalMessage.id, 'multi_select', {
         'selected_option_ids': optionIds,
       });
@@ -1265,9 +1271,11 @@ mixin _InteractionOps on _ChatControllerBase {
       }
       return;
     }
-    if (await _answerHubInteraction(originalMessage, {
+    final hubAnswer = await _answerHubInteraction(originalMessage, {
       'values': values,
-    })) {
+    });
+    if (hubAnswer == null) return;
+    if (hubAnswer) {
       _markPeerFormSubmitted(originalMessage, values);
       return;
     }
@@ -1395,7 +1403,9 @@ mixin _InteractionOps on _ChatControllerBase {
     _notify();
   }
 
-  Future<bool> _answerHubInteraction(
+  /// hub 交互卡的提交结果：true=已发送（调用方可乐观落库）、false=不是 hub
+  /// 卡（继续走本地群卡逻辑）、null=归属校验拦下（既不发送也不乐观落库）。
+  Future<bool?> _answerHubInteraction(
     Message message,
     Map<String, dynamic> result,
   ) async {
@@ -1404,13 +1414,27 @@ mixin _InteractionOps on _ChatControllerBase {
     final peerId = hub['host_peer_id']?.toString() ?? '';
     final interactionId = hub['interaction_id']?.toString() ?? '';
     if (peerId.isEmpty || interactionId.isEmpty) return false;
+    // 卡帧 / 落库行带归属时，先在客户端挡住「A 会话点 B 会话的卡」。
+    // 主机那道校验是第二道防线，但 App 是发送即乐观落库：一旦等回执才
+    // 回滚，错误会话的行已经写成已答，而 hub-ix-<id> 是全局确定性行，
+    // 正确会话重载同一行也会点不动。
+    final cardChannel =
+        message.metadata?['card_channel_id']?.toString().trim() ?? '';
+    final hostChannel = _hostChannelId;
+    if (cardChannel.isNotEmpty &&
+        hostChannel.isNotEmpty &&
+        cardChannel != hostChannel) {
+      _emit(ShowErrorSnackBarEvent(
+          '这张卡片属于另一个会话，请回到发起它的会话再回答'));
+      return null;
+    }
     await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'pouch_interaction_resp',
       'interaction_id': interactionId,
       'result': result,
       // hub 交互卡也按会话收敛：主机拿它和 InteractionWaiter 的归属比对，
       // 拒绝「A 会话点掉 B 会话的卡」。老主机忽略这个字段。
-      if (_hostChannelId.isNotEmpty) 'channel_id': _hostChannelId,
+      if (hostChannel.isNotEmpty) 'channel_id': hostChannel,
     });
     return true;
   }

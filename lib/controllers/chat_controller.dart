@@ -361,6 +361,10 @@ abstract class _ChatControllerBase extends ChangeNotifier
   StreamSubscription<({String requestId, String code, String message})>?
       _deferredCardErrorSub;
 
+  /// 主机明确拒收卡片答案（`agent_card_resp_ack(ok=false)`）订阅：把乐观
+  /// 写入的选择撤回，卡片恢复可答。
+  StreamSubscription<({String approvalId, String reason})>? _cardRejectedSub;
+
   // ---- Reply state ----
   Message? replyingToMessage;
 
@@ -755,8 +759,89 @@ abstract class _ChatControllerBase extends ChangeNotifier
           : event.message;
       _emit(ShowErrorSnackBarEvent(message));
     });
+    // 主机拒收（跨会话 / 已失效）：撤回刚才乐观写进去的选择，别让错误
+    // 会话一直显示「已提交」。hub 卡走的是发送即落库，没有 ack waiter。
+    _cardRejectedSub =
+        PeerAgentClientService.instance.cardRejectedEvents.listen((event) {
+      _rollbackRejectedCardAnswer(event.approvalId, event.reason);
+    });
     // 广播流只发一次：卡片在聊天页没打开时到达就丢了。这里把缓存里的补上。
     unawaited(_drainPendingOrphanCards());
+  }
+
+  /// 主机拒收了这份答案：撤回乐观写入的选择，让卡片恢复可答。
+  ///
+  /// 提交路径（`_answerHubInteraction` 之后）会立刻写 `selected_action_id`
+  /// / `selected` / `submitted_values` 并落库，主机却可能因为「卡属于另一个
+  /// 会话」而拒收。只认带 `hub_interaction` 的行（表单 / 审批 / 单选 / 多选
+  /// 四类 hub 卡），按 id 反查，patch 回写而不是整份覆盖。
+  void _rollbackRejectedCardAnswer(String cardId, String reason) {
+    if (_cardValidityDisposed || cardId.isEmpty) return;
+    var rolledBack = false;
+    for (var i = 0; i < messages.length; i++) {
+      final meta = messages[i].metadata;
+      if (meta == null) continue;
+      final hub = meta['hub_interaction'];
+      if (hub is! Map || hub['interaction_id']?.toString() != cardId) continue;
+      // 只撤「刚被乐观写成已答」的卡：认 selected_* / submitted_values，
+      // 不认 closed（那是作废态，本来就不该恢复成可答）。
+      var optimisticallyAnswered = false;
+      for (final key in const [
+        'action_confirmation',
+        'single_select',
+        'multi_select',
+        'form',
+      ]) {
+        final card = meta[key];
+        if (card is! Map) continue;
+        if (card['selected_action_id'] != null ||
+            card['selected'] != null ||
+            card['submitted_values'] != null) {
+          optimisticallyAnswered = true;
+          break;
+        }
+      }
+      if (!optimisticallyAnswered) continue;
+      final patch = <String, dynamic>{};
+      for (final key in const [
+        'action_confirmation',
+        'single_select',
+        'multi_select',
+        'form',
+      ]) {
+        final card = meta[key];
+        if (card is! Map) continue;
+        final restored = Map<String, dynamic>.from(card)
+          ..remove('selected_action_id')
+          ..remove('selected_action_label')
+          ..remove('selected')
+          ..remove('selected_option_id')
+          ..remove('selected_option_ids')
+          ..remove('selected_option_label')
+          ..remove('submitted_values')
+          ..remove('selected_at');
+        patch[key] = restored;
+      }
+      if (patch.isEmpty) continue;
+      final next = Map<String, dynamic>.from(meta)..addAll(patch);
+      final updated = ChatStreamingText.withMergedMetadata(messages[i], next);
+      messages[i] = updated;
+      messageIdMap[updated.id] = updated;
+      localDatabaseService
+          .mergeMessageMetadata(updated.id, patch)
+          .ignore();
+      rolledBack = true;
+      _notify();
+    }
+    // 没有卡片被回滚时（例如回执属于表单 / 审批卡的 submitForm 路径，那边
+    // 已经自己抛异常了）不要重复弹提示。
+    if (!rolledBack) return;
+    final text = reason == 'session_mismatch'
+        ? '这张卡片属于另一个会话，请回到发起它的会话再回答'
+        : reason == 'expired' || reason == 'answered_elsewhere'
+            ? '这张卡片已失效'
+            : '卡片回答未被主机接住（$reason）';
+    _emit(ShowErrorSnackBarEvent(text));
   }
 
   /// 孤儿 / 补投审批事件转成卡片数据：路由字段不写进卡片本体，但归属
@@ -1302,6 +1387,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
     _interactionClosedSub?.cancel();
     _formDeferredSub?.cancel();
     _deferredCardErrorSub?.cancel();
+    _cardRejectedSub?.cancel();
     if (_sessionRuntimeListener != null &&
         getIt.isRegistered<SessionRuntimeMirror>()) {
       getIt<SessionRuntimeMirror>()

@@ -1278,6 +1278,10 @@ class HubEventClient {
         'interaction_type': kind,
         if (turnId.isNotEmpty) 'turn_id': turnId,
       },
+      // 归属写进消息顶层：提交前置校验、dock 过滤、轮询都靠它。
+      // 用主机会话 id 口径（剥 psess_ 壳），与主机 InteractionWaiter 一致。
+      if (hostSessionIdForChannel(channelId).isNotEmpty)
+        'card_channel_id': hostSessionIdForChannel(channelId),
     };
     if (kind == 'action_confirmation' ||
         kind == 'single_select' ||
